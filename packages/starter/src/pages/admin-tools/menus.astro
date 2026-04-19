@@ -1,0 +1,510 @@
+---
+/**
+ * Menu nester — starter-owned admin tool.
+ *
+ * The emdash admin UI (compiled SPA) doesn't currently expose a way to
+ * set `parent_id` on menu items, which means merchants can't build
+ * nested navigation through the admin (e.g. the homepage mega-menu where
+ * Shop has child links for each category). The underlying API supports
+ * it — `PUT /_emdash/api/menus/:name/items?id=...` with `{ parentId }` —
+ * so this page fills the gap until emdash ships first-class nesting UI.
+ *
+ * Usage:
+ *   1. Sign into the emdash admin at /_emdash/admin (same origin, same
+ *      cookies).
+ *   2. Visit /admin-tools/menus.
+ *   3. For each menu item, pick a parent from the dropdown and Save.
+ *
+ * This page is intentionally bare-bones: no build step, no hydration,
+ * just server-rendered HTML + a small `<script>` that talks to the JSON
+ * API. It's meant to be a temporary escape hatch, not a competing admin.
+ */
+import Shop from "../../layouts/Shop.astro";
+import { getMenus } from "emdash";
+
+export const prerender = false;
+
+// Server-side we can safely enumerate menus (this endpoint is read-only
+// and doesn't expose anything sensitive — just names + labels). Items
+// and edits happen client-side because those endpoints require an admin
+// session cookie which we don't have access to from the server.
+const menus = await getMenus();
+---
+
+<Shop title="Menu nester (admin tool)" description="Set parent_id on menu items to create submenus.">
+  <div class="container mn-wrap">
+    <header class="mn-header">
+      <nav class="mn-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span>›</span>
+        <span aria-current="page">Menu nester</span>
+      </nav>
+      <h1>Menu nester</h1>
+      <p class="mn-intro">
+        Create submenus by assigning a <strong>parent</strong> to each menu
+        item. The emdash admin doesn't yet have a UI for this, so until it
+        does, use this tool.
+      </p>
+      <aside class="mn-callout" role="note">
+        <strong>Heads up.</strong> You need to be signed into the
+        <a href="/_emdash/admin" target="_blank" rel="noopener">emdash
+          admin</a> in this browser first — this page reads and writes
+        your menus through the admin API.
+      </aside>
+    </header>
+
+    {menus.length === 0 ? (
+      <p class="mn-empty">No menus exist yet. Create one in the admin first.</p>
+    ) : (
+      <div class="mn-menus" data-menus>
+        {menus.map((menu) => (
+          <section class="mn-menu-card" data-menu-name={menu.name}>
+            <header class="mn-menu-head">
+              <h2 class="mn-menu-title">{menu.label}</h2>
+              <code class="mn-menu-slug">{menu.name}</code>
+            </header>
+            <div class="mn-menu-body" data-menu-body={menu.name}>
+              <div class="mn-loading">Loading items…</div>
+            </div>
+          </section>
+        ))}
+      </div>
+    )}
+
+    <footer class="mn-footer">
+      <p>
+        Want to get rid of this page? Once emdash adds nesting to the
+        <a href="/_emdash/admin/menus" target="_blank" rel="noopener">
+          admin menu editor</a>, you can delete
+        <code>src/pages/admin-tools/menus.astro</code>.
+      </p>
+    </footer>
+  </div>
+</Shop>
+
+<script>
+  type MenuItem = {
+    id: string;
+    menu_id: string;
+    parent_id: string | null;
+    sort_order: number;
+    type: string;
+    reference_collection: string | null;
+    reference_id: string | null;
+    custom_url: string | null;
+    label: string;
+  };
+
+  type MenuResponse = {
+    data?: {
+      id: string;
+      name: string;
+      label: string;
+      items: MenuItem[];
+    };
+    error?: { message?: string };
+  };
+
+  const menusRoot = document.querySelector<HTMLElement>("[data-menus]");
+  if (menusRoot) {
+    const bodies = menusRoot.querySelectorAll<HTMLElement>("[data-menu-body]");
+    for (const body of Array.from(bodies)) {
+      const name = body.getAttribute("data-menu-body");
+      if (name) void loadMenu(name, body);
+    }
+  }
+
+  async function loadMenu(name: string, container: HTMLElement) {
+    container.innerHTML = `<div class="mn-loading">Loading items…</div>`;
+    try {
+      const res = await fetch(`/_emdash/api/menus/${encodeURIComponent(name)}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        container.innerHTML = `
+          <div class="mn-error">
+            Not signed in as an admin.
+            <a href="/_emdash/admin/login?redirect=${encodeURIComponent(
+              location.pathname,
+            )}">Sign in</a> and reload.
+          </div>`;
+        return;
+      }
+
+      if (!res.ok) {
+        container.innerHTML = `<div class="mn-error">Failed to load (${res.status}).</div>`;
+        return;
+      }
+
+      const json = (await res.json()) as MenuResponse;
+      const items = json.data?.items ?? [];
+
+      if (items.length === 0) {
+        container.innerHTML = `
+          <div class="mn-note">
+            No items in this menu yet. Add some in the
+            <a href="/_emdash/admin/menus/${encodeURIComponent(name)}"
+               target="_blank" rel="noopener">admin</a> first.
+          </div>`;
+        return;
+      }
+
+      renderItems(container, name, items);
+    } catch (err) {
+      container.innerHTML = `
+        <div class="mn-error">Unexpected error: ${escapeHtml(
+          err instanceof Error ? err.message : String(err),
+        )}</div>`;
+    }
+  }
+
+  function renderItems(
+    container: HTMLElement,
+    menuName: string,
+    items: MenuItem[],
+  ) {
+    // Build the "possible parent" dropdown for each item: it's every
+    // item in this menu that isn't the item itself and isn't one of the
+    // item's descendants (otherwise we'd make a cycle). We do a simple
+    // depth-first crawl to gather descendants for each node.
+    const byId = new Map(items.map((it) => [it.id, it]));
+    const childMap = new Map<string, string[]>();
+    for (const it of items) {
+      if (it.parent_id) {
+        const list = childMap.get(it.parent_id) ?? [];
+        list.push(it.id);
+        childMap.set(it.parent_id, list);
+      }
+    }
+
+    function descendants(rootId: string): Set<string> {
+      const out = new Set<string>();
+      const stack = [...(childMap.get(rootId) ?? [])];
+      while (stack.length) {
+        const id = stack.pop();
+        if (!id || out.has(id)) continue;
+        out.add(id);
+        stack.push(...(childMap.get(id) ?? []));
+      }
+      return out;
+    }
+
+    // Sort items top-level first, preserving sort_order, then render.
+    const sorted = items.slice().sort((a, b) => {
+      if (!!a.parent_id !== !!b.parent_id) return a.parent_id ? 1 : -1;
+      return a.sort_order - b.sort_order;
+    });
+
+    const rows = sorted.map((item) => {
+      const blocked = descendants(item.id);
+      const options = [`<option value="">— No parent (top level) —</option>`];
+      for (const it of sorted) {
+        if (it.id === item.id) continue;
+        if (blocked.has(it.id)) continue;
+        const selected = it.id === item.parent_id ? " selected" : "";
+        options.push(
+          `<option value="${escapeAttr(it.id)}"${selected}>${escapeHtml(
+            it.label,
+          )}</option>`,
+        );
+      }
+      const currentLabel = item.parent_id
+        ? byId.get(item.parent_id)?.label ?? "(orphaned)"
+        : "(top level)";
+      const url = displayUrl(item);
+      return `
+        <tr data-item-id="${escapeAttr(item.id)}" data-menu="${escapeAttr(menuName)}">
+          <td class="mn-cell-label">
+            <span class="mn-item-label">${escapeHtml(item.label)}</span>
+            <span class="mn-item-url">${escapeHtml(url)}</span>
+          </td>
+          <td class="mn-cell-current">
+            <span class="mn-pill">${escapeHtml(currentLabel)}</span>
+          </td>
+          <td class="mn-cell-parent">
+            <select data-parent-select>${options.join("")}</select>
+          </td>
+          <td class="mn-cell-actions">
+            <button type="button" data-save>Save</button>
+            <span class="mn-status" data-status></span>
+          </td>
+        </tr>`;
+    });
+
+    container.innerHTML = `
+      <table class="mn-table">
+        <thead>
+          <tr>
+            <th scope="col">Item</th>
+            <th scope="col">Currently under</th>
+            <th scope="col">Move under</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>${rows.join("")}</tbody>
+      </table>`;
+
+    container.querySelectorAll<HTMLButtonElement>("[data-save]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        const row = btn.closest("tr");
+        if (row) void saveRow(row);
+      });
+    });
+  }
+
+  async function saveRow(row: HTMLTableRowElement) {
+    const itemId = row.dataset.itemId;
+    const menuName = row.dataset.menu;
+    const select = row.querySelector<HTMLSelectElement>("[data-parent-select]");
+    const status = row.querySelector<HTMLElement>("[data-status]");
+    if (!itemId || !menuName || !select || !status) return;
+
+    const parentId = select.value || null;
+    status.textContent = "Saving…";
+    status.className = "mn-status mn-status-pending";
+
+    try {
+      const res = await fetch(
+        `/_emdash/api/menus/${encodeURIComponent(menuName)}/items?id=${encodeURIComponent(itemId)}`,
+        {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ parentId }),
+        },
+      );
+
+      if (res.ok) {
+        status.textContent = "Saved ✓";
+        status.className = "mn-status mn-status-ok";
+        // Reload the menu so all dropdowns reflect the new structure.
+        const container = row.closest<HTMLElement>("[data-menu-body]");
+        if (container) {
+          setTimeout(() => void loadMenu(menuName, container), 400);
+        }
+      } else {
+        const body = await res.json().catch(() => null);
+        status.textContent = `Error: ${body?.error?.message ?? res.statusText}`;
+        status.className = "mn-status mn-status-err";
+      }
+    } catch (err) {
+      status.textContent = err instanceof Error ? err.message : String(err);
+      status.className = "mn-status mn-status-err";
+    }
+  }
+
+  function displayUrl(item: MenuItem): string {
+    if (item.type === "custom") return item.custom_url ?? "#";
+    if (item.reference_collection && item.reference_id) {
+      return `${item.type}: ${item.reference_collection}#${item.reference_id.slice(-6)}`;
+    }
+    return item.type;
+  }
+
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"]/g, (c) =>
+      c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;",
+    );
+  }
+
+  function escapeAttr(s: string): string {
+    return escapeHtml(s).replace(/'/g, "&#39;");
+  }
+</script>
+
+<style>
+  .mn-wrap { padding: 3rem 0 6rem; max-width: 1100px; }
+  .mn-header { margin-bottom: 2rem; }
+  .mn-header h1 { margin: .5rem 0 .75rem; font-size: clamp(1.75rem, 3vw, 2.5rem); }
+  .mn-breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; color: var(--text-muted); margin-bottom: 1rem;
+  }
+  .mn-breadcrumb a { color: var(--text-muted); }
+  .mn-breadcrumb a:hover { color: var(--gold); }
+  .mn-breadcrumb [aria-current] { color: var(--text-mid); }
+
+  .mn-intro {
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin: 0 0 1rem;
+    max-width: 65ch;
+  }
+  .mn-callout {
+    display: block;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border-mid);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius);
+    background: var(--surface);
+    font-size: .9rem;
+    color: var(--text-mid);
+    line-height: 1.6;
+    max-width: 65ch;
+  }
+  .mn-callout a { color: var(--gold); }
+  .mn-callout strong { color: var(--text); }
+
+  .mn-empty {
+    padding: 3rem 0;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .mn-menus { display: flex; flex-direction: column; gap: 1.5rem; }
+
+  .mn-menu-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .mn-menu-head {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline;
+    gap: 1rem; flex-wrap: wrap;
+    background: var(--bg-2);
+  }
+  .mn-menu-title { margin: 0; font-size: 1.125rem; }
+  .mn-menu-slug {
+    font-family: var(--font-mono);
+    font-size: .75rem;
+    color: var(--text-subtle);
+    background: var(--bg);
+    padding: .2rem .5rem;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+  .mn-menu-body { padding: 0; }
+
+  .mn-loading, .mn-error, .mn-note {
+    padding: 1.5rem 1.25rem;
+    color: var(--text-muted);
+    font-size: .9rem;
+  }
+  .mn-error {
+    color: var(--ember);
+  }
+  .mn-error a, .mn-note a {
+    color: var(--gold);
+  }
+
+  .mn-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .875rem;
+  }
+  .mn-table th, .mn-table td {
+    text-align: left;
+    padding: .75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .mn-table th {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+    background: var(--bg-2);
+  }
+  .mn-table tbody tr:last-child td { border-bottom: none; }
+  .mn-table tbody tr:hover { background: var(--bg-2); }
+
+  .mn-cell-label { min-width: 180px; }
+  .mn-item-label { display: block; color: var(--text); font-weight: 500; }
+  .mn-item-url {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    color: var(--text-subtle);
+    margin-top: .15rem;
+    word-break: break-all;
+  }
+  .mn-pill {
+    display: inline-block;
+    padding: .2rem .6rem;
+    border-radius: 100px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: .78rem;
+  }
+
+  .mn-cell-parent select {
+    width: 100%;
+    min-width: 200px;
+    padding: .45rem .7rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    font-size: .85rem;
+  }
+  .mn-cell-parent select:focus {
+    outline: none;
+    border-color: var(--gold);
+  }
+
+  .mn-cell-actions {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    white-space: nowrap;
+  }
+  .mn-cell-actions button {
+    padding: .45rem 1rem;
+    background: var(--gold);
+    color: #0b0b0b;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: .8rem;
+    cursor: pointer;
+    transition: opacity .2s;
+  }
+  .mn-cell-actions button:hover { opacity: .85; }
+
+  .mn-status {
+    font-size: .78rem;
+    color: var(--text-subtle);
+  }
+  .mn-status-ok { color: #4caf78; }
+  .mn-status-err { color: var(--ember); }
+  .mn-status-pending { color: var(--gold); }
+
+  .mn-footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-subtle);
+    font-size: .825rem;
+    line-height: 1.6;
+  }
+  .mn-footer a { color: var(--gold); }
+  .mn-footer code {
+    font-family: var(--font-mono);
+    font-size: .8em;
+    background: var(--surface);
+    padding: .1rem .4rem;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  @media (max-width: 700px) {
+    .mn-table thead { display: none; }
+    .mn-table, .mn-table tbody, .mn-table tr, .mn-table td {
+      display: block; width: 100%;
+    }
+    .mn-table tr {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .mn-table td { padding: .4rem 0; border: none; }
+    .mn-cell-actions { margin-top: .5rem; }
+  }
+</style>

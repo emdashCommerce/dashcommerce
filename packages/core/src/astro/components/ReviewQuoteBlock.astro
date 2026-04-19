@@ -1,0 +1,101 @@
+---
+// Portable Text block — inline quote from an approved review.
+//
+// Block node shape: `{ _type: "review-quote", value: { review_id } }`
+
+interface Review {
+  id: string;
+  rating: number;
+  title?: string;
+  body: string;
+  customerName: string;
+  verifiedPurchase: boolean;
+  status: string;
+}
+
+interface Node {
+  _type: "review-quote";
+  value?: {
+    review_id?: string;
+  };
+}
+
+interface Props {
+  node: Node;
+}
+
+const { node } = Astro.props;
+const reviewId = node.value?.review_id?.trim();
+
+async function loadReview(id: string) {
+  try {
+    const res = await fetch(
+      `${Astro.url.origin}/_emdash/api/plugins/dashcommerce/reviews/item?id=${encodeURIComponent(id)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { review?: Review };
+    return body.review ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const review = reviewId ? await loadReview(reviewId) : null;
+const usable =
+  review && review.status === "approved" && (review.body?.length ?? 0) > 0;
+---
+{usable && review ? (
+  <blockquote class="dc-review-quote">
+    <p class="dc-review-quote-stars" aria-label={`${review.rating} out of 5 stars`}>
+      {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+    </p>
+    {review.title && <p class="dc-review-quote-title">{review.title}</p>}
+    <p class="dc-review-quote-body">"{review.body}"</p>
+    <footer>
+      — {review.customerName}
+      {review.verifiedPurchase && <span class="dc-verified"> · Verified purchase</span>}
+    </footer>
+  </blockquote>
+) : (
+  <div class="dc-review-missing">
+    <em>Review not available{reviewId ? `: ${reviewId}` : ""}.</em>
+  </div>
+)}
+<style>
+  .dc-review-quote {
+    margin: 1.5rem 0;
+    padding: 1rem 1.5rem;
+    border-left: 4px solid var(--gold, #c08a00);
+    background: var(--gold-dim, #fffbf0);
+    color: var(--text, #111);
+  }
+  .dc-review-quote-stars {
+    color: var(--gold, #c08a00);
+    margin: 0 0 0.25rem;
+  }
+  .dc-review-quote-title {
+    font-weight: 600;
+    margin: 0 0 0.5rem;
+    color: var(--text, #111);
+  }
+  .dc-review-quote-body {
+    font-style: italic;
+    margin: 0 0 0.5rem;
+    color: var(--text, #111);
+  }
+  .dc-review-quote footer {
+    color: var(--text-muted, #666);
+    font-size: 0.9em;
+  }
+  .dc-verified {
+    color: var(--success, #2d7a3a);
+  }
+  .dc-review-missing {
+    padding: 0.5rem 1rem;
+    color: var(--text-muted, #888);
+    border-left: 3px solid var(--border-mid, #ccc);
+    background: var(--bg-2, #fafafa);
+    margin: 1rem 0;
+  }
+</style>

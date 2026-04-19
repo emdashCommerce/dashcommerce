@@ -1,0 +1,114 @@
+---
+/**
+ * Site-wide logo. Renders the admin-uploaded logo if there is one, else the
+ * starter's original glyph+wordmark using the site title from settings.
+ *
+ * The EmDash themes guide is clear that site identity — title, tagline,
+ * logo — must come from `getSiteSettings()`, never from template strings
+ * (https://docs.emdashcms.com/themes/creating-themes/#no-hard-coded-content).
+ * This component is the only place that decision lives.
+ *
+ * Variants:
+ *   - `header` (default) — small wordmark used in the sticky header.
+ *   - `footer` — slightly tighter wordmark used in the footer brand column.
+ *
+ * The mobile drawer re-uses this with `variant="header"` so the two places
+ * stay in sync.
+ */
+import type { HTMLAttributes } from "astro/types";
+import { getSiteMeta } from "../lib/site-meta";
+
+// We extend <a>'s native attributes so callers can forward things like
+// `data-nav-close` (used by the mobile drawer to close itself when the
+// logo is clicked) without us having to enumerate every possible attr.
+interface Props extends Omit<HTMLAttributes<"a">, "href"> {
+  variant?: "header" | "footer";
+  /** Override the accessible label on the home link. */
+  ariaLabel?: string;
+}
+
+const {
+  variant = "header",
+  ariaLabel,
+  class: className = "",
+  ...rest
+} = Astro.props;
+const meta = await getSiteMeta();
+
+// Accessible label: prefer explicit, else "<title> — Home"
+const label = ariaLabel ?? `${meta.title} — Home`;
+
+// If the admin has uploaded a logo, use it. Otherwise fall back to the
+// starter's original star-glyph + wordmark so a fresh install still looks
+// branded rather than empty.
+const hasImageLogo = meta.logo?.url;
+---
+
+<a
+  href="/"
+  class={`site-logo site-logo--${variant} ${className}`.trim()}
+  aria-label={label}
+  {...rest}
+>
+  {hasImageLogo ? (
+    <img
+      src={meta.logo!.url}
+      alt={meta.logo!.alt ?? meta.title}
+      class="site-logo-img"
+      width="140"
+      height="36"
+    />
+  ) : (
+    <>
+      <span class="site-logo-mark" aria-hidden="true">✦</span>
+      <span class="site-logo-text">{meta.title}</span>
+    </>
+  )}
+</a>
+
+<style>
+  .site-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .site-logo-img {
+    display: block;
+    height: 28px;
+    width: auto;
+    max-width: 180px;
+    object-fit: contain;
+  }
+  .site-logo-mark {
+    color: var(--gold);
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .site-logo-text {
+    font-family: var(--font-display, "Fraunces", Georgia, serif);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    color: var(--text);
+  }
+
+  /* Header variant (matches old .logo-text size) */
+  .site-logo--header .site-logo-text {
+    font-size: 1.15rem;
+  }
+
+  /* Footer variant — tighter wordmark, muted mark */
+  .site-logo--footer {
+    gap: .35rem;
+  }
+  .site-logo--footer .site-logo-mark {
+    font-size: .9rem;
+  }
+  .site-logo--footer .site-logo-text {
+    font-size: 1rem;
+  }
+  .site-logo--footer .site-logo-img {
+    height: 24px;
+  }
+</style>

@@ -1,0 +1,516 @@
+---
+import { getPluginSetting } from "emdash";
+import Shop from "../layouts/Shop.astro";
+import CheckoutForm from "@dashcommerce/core/astro/components/CheckoutForm.astro";
+import CheckoutSidebar from "@dashcommerce/core/astro/components/CheckoutSidebar.astro";
+import HostedCheckoutForm from "@dashcommerce/core/astro/components/HostedCheckoutForm.astro";
+
+export const prerender = false;
+
+const publishableKey = (await getPluginSetting("dashcommerce", "stripePublishableKey")) as string | null | undefined;
+const secretKey      = (await getPluginSetting("dashcommerce", "stripeSecretKey"))      as string | null | undefined;
+const webhookSecret  = (await getPluginSetting("dashcommerce", "stripeWebhookSecret"))  as string | null | undefined;
+// `checkoutMode` controls whether we redirect to Stripe's hosted page
+// (default — lower PCI scope, simpler UI) or render Stripe Elements
+// on-site. Publishable key is only required for the embedded flow.
+const checkoutModeSetting = (await getPluginSetting("dashcommerce", "checkoutMode")) as
+  | "hosted"
+  | "embedded"
+  | null
+  | undefined;
+const checkoutMode: "hosted" | "embedded" = checkoutModeSetting ?? "hosted";
+
+const missingKeys: string[] = [];
+if (!secretKey)                                   missingKeys.push("stripeSecretKey");
+if (checkoutMode === "embedded" && !publishableKey) missingKeys.push("stripePublishableKey");
+if (!webhookSecret)                                missingKeys.push("stripeWebhookSecret");
+
+const canCheckout = missingKeys.length === 0;
+
+// Show a "payment canceled" banner when the customer hit Stripe's back
+// button and landed back here (`success_url`/`cancel_url` on the
+// Checkout Session routes them to this page with `?canceled=1`).
+const canceled = Astro.url.searchParams.get("canceled") === "1";
+---
+
+<Shop title="Checkout" description="Complete your order securely.">
+
+  <!-- Page header -->
+  <div class="co-hero">
+    <div class="container">
+      <nav class="co-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span>›</span>
+        <a href="/cart">Cart</a>
+        <span>›</span>
+        <span aria-current="page">Checkout</span>
+      </nav>
+      <h1 class="co-title">Checkout</h1>
+      <p class="co-subtitle">
+        <span class="co-secure-icon" aria-hidden="true">🔒</span>
+        Secure · Encrypted · Stripe-powered
+      </p>
+    </div>
+  </div>
+
+  <div class="container co-layout">
+
+    <!-- Main form column -->
+    <div class="co-main">
+
+      {!canCheckout && (
+        <div class="co-misconfig" role="alert">
+          <strong>⚠ Stripe is not configured</strong>
+          <p>
+            The following settings are missing:
+            <code>{missingKeys.join(", ")}</code>.
+          </p>
+          <p>
+            Open <a href="/_emdash/admin/plugins/dashcommerce/settings">DashCommerce settings</a> to add them.
+            If using <code>stripe listen</code>, paste the <code>whsec_…</code> secret into <code>stripeWebhookSecret</code>.
+          </p>
+        </div>
+      )}
+
+      {canceled && canCheckout && (
+        <div class="co-canceled" role="status">
+          <strong>Payment canceled.</strong>
+          <p>No charge was made. You can restart the checkout below.</p>
+        </div>
+      )}
+
+      {canCheckout && checkoutMode === "hosted" && (
+        <HostedCheckoutForm />
+      )}
+
+      {canCheckout && checkoutMode === "embedded" && (
+        <>
+      <!-- Step 1: Contact & address -->
+      <section id="contact-form" class="co-step">
+        <div class="co-step-header">
+          <span class="co-step-num">1</span>
+          <h2 class="co-step-title">Your details</h2>
+        </div>
+        <p class="co-step-hint">We'll deliver to this address and use it for billing unless you say otherwise below.</p>
+
+        <form id="contact" class="co-form">
+          <label class="co-label">
+            <span>Email</span>
+            <input required type="email" id="email" autocomplete="email" placeholder="you@example.com" />
+          </label>
+
+          <fieldset class="co-fieldset">
+            <legend class="co-legend">Shipping address</legend>
+
+            <div class="co-row-2">
+              <label class="co-label">
+                <span>First name</span>
+                <input required id="firstName" autocomplete="shipping given-name" />
+              </label>
+              <label class="co-label">
+                <span>Last name</span>
+                <input required id="lastName" autocomplete="shipping family-name" />
+              </label>
+            </div>
+            <label class="co-label">
+              <span>Address line 1</span>
+              <input required id="line1" autocomplete="shipping address-line1" placeholder="123 Main St" />
+            </label>
+            <div class="co-row-3">
+              <label class="co-label">
+                <span>City</span>
+                <input required id="city" autocomplete="shipping address-level2" />
+              </label>
+              <label class="co-label">
+                <span>State / Region</span>
+                <input required id="region" placeholder="CA" autocomplete="shipping address-level1" />
+              </label>
+              <label class="co-label">
+                <span>Postal code</span>
+                <input required id="postalCode" autocomplete="shipping postal-code" />
+              </label>
+            </div>
+            <label class="co-label">
+              <span>Country <small>(ISO-2 code)</small></span>
+              <input required id="country" value="US" maxlength="2" autocomplete="shipping country" />
+            </label>
+          </fieldset>
+
+          <label class="co-toggle">
+            <input type="checkbox" id="sameAsShipping" checked />
+            <span>My billing address is the same as shipping</span>
+          </label>
+
+          <fieldset class="co-fieldset" id="billing-fieldset" hidden>
+            <legend class="co-legend">Billing address</legend>
+
+            <div class="co-row-2">
+              <label class="co-label">
+                <span>First name</span>
+                <input id="bFirstName" autocomplete="billing given-name" />
+              </label>
+              <label class="co-label">
+                <span>Last name</span>
+                <input id="bLastName" autocomplete="billing family-name" />
+              </label>
+            </div>
+            <label class="co-label">
+              <span>Address line 1</span>
+              <input id="bLine1" autocomplete="billing address-line1" placeholder="123 Main St" />
+            </label>
+            <div class="co-row-3">
+              <label class="co-label">
+                <span>City</span>
+                <input id="bCity" autocomplete="billing address-level2" />
+              </label>
+              <label class="co-label">
+                <span>State / Region</span>
+                <input id="bRegion" placeholder="CA" autocomplete="billing address-level1" />
+              </label>
+              <label class="co-label">
+                <span>Postal code</span>
+                <input id="bPostalCode" autocomplete="billing postal-code" />
+              </label>
+            </div>
+            <label class="co-label">
+              <span>Country <small>(ISO-2 code)</small></span>
+              <input id="bCountry" value="US" maxlength="2" autocomplete="billing country" />
+            </label>
+          </fieldset>
+
+          <p id="contact-error" role="alert" class="co-error"></p>
+
+          <button
+            id="contact-submit"
+            type="submit"
+            class="btn-primary co-submit"
+            disabled={!canCheckout}
+          >
+            {canCheckout ? "Continue to payment →" : "Stripe not configured"}
+          </button>
+        </form>
+      </section>
+
+      <!-- Step 2: Payment -->
+      <section id="payment-form" class="co-step" style="display: none;">
+        <div class="co-step-header">
+          <span class="co-step-num">2</span>
+          <h2 class="co-step-title">Payment</h2>
+        </div>
+        {canCheckout && publishableKey ? (
+          <CheckoutForm
+            publishableKey={publishableKey}
+            returnUrl={`${Astro.url.origin}/thank-you/{orderDraftId}`}
+          />
+        ) : null}
+      </section>
+        </>
+      )}
+
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="co-sidebar">
+      <CheckoutSidebar />
+    </aside>
+
+  </div>
+
+</Shop>
+
+<style>
+  /* Hero */
+  .co-hero {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: 3.5rem 0 2.5rem;
+  }
+  .co-breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+  .co-breadcrumb a { color: var(--text-muted); transition: color .2s; }
+  .co-breadcrumb a:hover { color: var(--gold); }
+  .co-breadcrumb [aria-current] { color: var(--text-mid); }
+  .co-title { font-size: clamp(1.75rem, 3vw, 2.5rem); color: var(--text); margin: 0 0 .5rem; }
+  .co-subtitle {
+    display: flex; align-items: center; gap: .4rem;
+    font-size: .8rem; color: var(--text-muted); margin: 0;
+  }
+  .co-secure-icon { font-size: .9rem; }
+
+  /* Layout */
+  .co-layout {
+    display: grid;
+    grid-template-columns: 1fr 22rem;
+    gap: 3rem;
+    align-items: start;
+    padding-top: 3rem;
+    padding-bottom: 6rem;
+  }
+
+  /* Misconfig */
+  .co-misconfig {
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+    background: rgba(217, 79, 61, .08);
+    border: 1px solid rgba(217, 79, 61, .3);
+    border-radius: var(--radius-lg);
+    color: var(--text);
+  }
+  .co-canceled {
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius);
+    color: var(--text);
+  }
+  .co-canceled strong { display: block; margin-bottom: .25rem; }
+  .co-canceled p { margin: 0; font-size: .875rem; color: var(--text-muted); }
+  .co-misconfig strong { display: block; margin-bottom: .5rem; color: var(--ember); }
+  .co-misconfig p { font-size: .875rem; color: var(--text-muted); margin: .4rem 0; }
+  .co-misconfig a { color: var(--gold); text-decoration: underline; }
+  .co-misconfig code {
+    background: var(--bg-3); padding: 1px 5px;
+    border-radius: 3px; font-family: var(--font-mono); font-size: .85em;
+    color: var(--ember);
+  }
+
+  /* Step */
+  .co-step { margin-bottom: 2.5rem; }
+  .co-step-header {
+    display: flex; align-items: center; gap: .875rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .co-step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--gold); color: #0b0b0b;
+    font-size: .8rem; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .co-step-title { font-family: var(--font-sans); font-size: 1.1rem; font-weight: 600; margin: 0; color: var(--text); }
+  .co-step-hint { font-size: .875rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+
+  /* Form */
+  .co-form { display: grid; gap: 1rem; max-width: 30rem; }
+  .co-label {
+    display: flex; flex-direction: column; gap: .4rem;
+    font-size: .82rem; font-weight: 500; color: var(--text-muted);
+  }
+  .co-label small { font-weight: 400; opacity: .7; }
+  .co-label input {
+    padding: .7rem .9rem;
+    background: var(--bg-3); color: var(--text);
+    border: 1px solid var(--border-mid); border-radius: var(--radius);
+    font-family: var(--font-sans); font-size: .9rem;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .co-label input::placeholder { color: var(--text-subtle); }
+  .co-label input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px var(--gold-dim);
+  }
+  .co-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+  .co-row-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .875rem; }
+  .co-fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem 1.25rem;
+    display: grid; gap: 1rem;
+    margin: 0;
+  }
+  .co-fieldset[hidden] { display: none; }
+  .co-legend {
+    padding: 0 .4rem;
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+  }
+  .co-toggle {
+    display: flex; align-items: center; gap: .6rem;
+    font-size: .88rem; color: var(--text-mid);
+    cursor: pointer;
+    user-select: none;
+  }
+  .co-toggle input[type="checkbox"] {
+    width: 1rem; height: 1rem;
+    accent-color: var(--gold);
+    cursor: pointer;
+  }
+  .co-error {
+    color: var(--ember); font-size: .875rem;
+    margin: 0; display: none;
+  }
+  .co-error:not(:empty) { display: block; }
+  .co-submit { width: 100%; justify-content: center; padding: 1rem; font-size: 1rem; }
+
+  /* Sidebar */
+  .co-sidebar { position: sticky; top: 90px; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .co-layout { grid-template-columns: 1fr; }
+    .co-sidebar { position: static; }
+    .co-row-3 { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) {
+    .co-row-2 { grid-template-columns: 1fr; }
+    .co-row-3 { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  // Bail early when the page is rendered in hosted mode — the DOM
+  // this script drives (contact form, payment step) only exists on
+  // the embedded-Elements path. HostedCheckoutForm.astro has its own
+  // self-contained script.
+  const form        = document.getElementById("contact") as HTMLFormElement | null;
+  if (!form) {
+    /* embedded form not mounted; hosted flow owns this page */
+  }
+  const paymentSec  = document.getElementById("payment-form");
+  const contactSec  = document.getElementById("contact-form");
+  const errEl       = document.getElementById("contact-error");
+  const submitBtn   = document.getElementById("contact-submit") as HTMLButtonElement | null;
+
+  const setError = (msg: string | null) => { if (errEl) errEl.textContent = msg ?? ""; };
+
+  const sameAsShipping = document.getElementById("sameAsShipping") as HTMLInputElement | null;
+  const billingFieldset = document.getElementById("billing-fieldset") as HTMLFieldSetElement | null;
+
+  // ---- Returning-customer prefill ------------------------------------------
+  //
+  // DashCommerce doesn't have password accounts. To avoid making repeat
+  // shoppers retype their address on every visit, we cache the last
+  // successful contact payload in localStorage on this device. Nothing
+  // leaves the browser until the customer submits the form.
+  const PREFILL_KEY = "dashcommerce:lastContact";
+  type Prefill = {
+    email?: string;
+    shipping?: Record<string, string>;
+    billing?: Record<string, string>;
+    sameAsShipping?: boolean;
+  };
+  const setVal = (id: string, val: string | undefined) => {
+    if (!val) return;
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el && !el.value) el.value = val;
+  };
+  try {
+    const raw = localStorage.getItem(PREFILL_KEY);
+    if (raw) {
+      const pf = JSON.parse(raw) as Prefill;
+      setVal("email", pf.email);
+      const s = pf.shipping ?? {};
+      setVal("firstName",  s.firstName);  setVal("lastName",   s.lastName);
+      setVal("line1",      s.line1);      setVal("city",       s.city);
+      setVal("region",     s.region);     setVal("postalCode", s.postalCode);
+      setVal("country",    s.country);
+      if (pf.sameAsShipping === false && sameAsShipping) {
+        sameAsShipping.checked = false;
+        const b = pf.billing ?? {};
+        setVal("bFirstName",  b.firstName);  setVal("bLastName",   b.lastName);
+        setVal("bLine1",      b.line1);      setVal("bCity",       b.city);
+        setVal("bRegion",     b.region);     setVal("bPostalCode", b.postalCode);
+        setVal("bCountry",    b.country);
+      }
+    }
+  } catch { /* corrupt localStorage → ignore */ }
+
+  // Also honor ?email=… from abandoned-cart recovery links.
+  const urlEmail = new URL(window.location.href).searchParams.get("email");
+  if (urlEmail) {
+    const el = document.getElementById("email") as HTMLInputElement | null;
+    if (el) el.value = urlEmail;
+  }
+
+  // Toggle billing fields + their `required` status in lockstep with the
+  // checkbox. When billing ≠ shipping, the billing inputs must be required
+  // on the client so the browser catches empty submissions; when they're
+  // hidden, stripping `required` prevents the form from silently refusing
+  // to submit because of invisible-but-required inputs.
+  function syncBillingVisibility(): void {
+    if (!sameAsShipping || !billingFieldset) return;
+    const different = !sameAsShipping.checked;
+    billingFieldset.hidden = !different;
+    const required = ["bFirstName", "bLastName", "bLine1", "bCity", "bRegion", "bPostalCode", "bCountry"];
+    for (const id of required) {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (el) el.required = different;
+    }
+  }
+
+  sameAsShipping?.addEventListener("change", syncBillingVisibility);
+  syncBillingVisibility();
+
+  if (form && paymentSec && contactSec && submitBtn) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setError(null);
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Saving…";
+
+      const v = (id: string) => {
+        const el = document.getElementById(id) as HTMLInputElement | null;
+        return el ? el.value.trim() : "";
+      };
+      const shippingAddress = {
+        firstName: v("firstName"), lastName: v("lastName"),
+        line1: v("line1"), city: v("city"),
+        region: v("region"), postalCode: v("postalCode"),
+        country: v("country").toUpperCase(),
+      };
+      const useSame = !sameAsShipping || sameAsShipping.checked;
+      const billingAddress = useSame
+        ? shippingAddress
+        : {
+            firstName: v("bFirstName"), lastName: v("bLastName"),
+            line1: v("bLine1"), city: v("bCity"),
+            region: v("bRegion"), postalCode: v("bPostalCode"),
+            country: v("bCountry").toUpperCase(),
+          };
+
+      try {
+        const res = await fetch("/_emdash/api/plugins/dashcommerce/cart/contact", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: v("email"), billingAddress, shippingAddress }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error((body as { error?: string }).error ?? `Save failed (${res.status})`);
+        }
+        try {
+          localStorage.setItem(
+            PREFILL_KEY,
+            JSON.stringify({
+              email: v("email"),
+              shipping: shippingAddress,
+              billing: useSame ? undefined : billingAddress,
+              sameAsShipping: useSame,
+            } satisfies Prefill),
+          );
+        } catch { /* quota / private-mode → non-fatal */ }
+        window.dispatchEvent(new CustomEvent("dashcommerce:cart-updated"));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save details.");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Continue to payment →";
+        return;
+      }
+
+      contactSec.style.display = "none";
+      paymentSec.style.display = "block";
+    });
+  }
+</script>

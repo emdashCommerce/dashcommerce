@@ -1,0 +1,383 @@
+---
+/**
+ * Hosted checkout form — redirects to Stripe Checkout.
+ *
+ * Flow, server-side of Stripe:
+ *   1. Customer picks ship-to country + postal code.
+ *   2. Storefront fetches `cart/shipping-methods` and shows radio options.
+ *   3. Customer picks a method; storefront calls `cart/shipping-method`.
+ *   4. Customer clicks "Pay with Stripe" → `checkout/create-session`
+ *      returns a Stripe-hosted URL; we `window.location.href = url`.
+ *
+ * On the Stripe side, the customer enters email, full shipping + billing
+ * address, and card details. On success they're redirected to
+ * `/thank-you/{orderDraftId}` and the session.completed webhook
+ * creates the order.
+ *
+ * Digital-only carts skip the shipping step and go straight to the
+ * Pay button.
+ */
+export interface Props {
+  /** When true, the customer's cart is all digital — skip the ship-to step. */
+  digitalOnly?: boolean;
+}
+const { digitalOnly = false } = Astro.props;
+---
+
+<section class="hc" data-digital-only={digitalOnly ? "1" : "0"}>
+  {!digitalOnly && (
+    <div class="hc-step" id="hc-step-location">
+      <div class="hc-step-header">
+        <span class="hc-step-num">1</span>
+        <h2 class="hc-step-title">Where does this ship to?</h2>
+      </div>
+      <p class="hc-step-hint">Enter your country and postal code — we'll show available shipping options. Stripe collects your full address on the next page.</p>
+
+      <form id="hc-location-form" class="hc-form">
+        <div class="hc-row-2">
+          <label class="hc-label">
+            <span>Country <small>(ISO-2)</small></span>
+            <input required id="hc-country" value="US" maxlength="2" autocomplete="shipping country" />
+          </label>
+          <label class="hc-label">
+            <span>Postal code</span>
+            <input required id="hc-postal" autocomplete="shipping postal-code" />
+          </label>
+        </div>
+        <p id="hc-location-error" class="hc-error" role="alert"></p>
+        <button id="hc-location-submit" type="submit" class="btn-secondary hc-submit">
+          Get shipping options →
+        </button>
+      </form>
+    </div>
+  )}
+
+  {!digitalOnly && (
+    <div class="hc-step" id="hc-step-method" hidden>
+      <div class="hc-step-header">
+        <span class="hc-step-num">2</span>
+        <h2 class="hc-step-title">Choose shipping</h2>
+      </div>
+      <div id="hc-method-options" class="hc-method-list"></div>
+      <p id="hc-method-error" class="hc-error" role="alert"></p>
+    </div>
+  )}
+
+  <div class="hc-step" id="hc-step-pay" data-ready={digitalOnly ? "1" : "0"}>
+    <div class="hc-step-header">
+      <span class="hc-step-num">{digitalOnly ? 1 : 3}</span>
+      <h2 class="hc-step-title">Pay securely</h2>
+    </div>
+    <p class="hc-step-hint">
+      You'll be redirected to Stripe to enter your email, {digitalOnly ? "billing address, " : "full address, "}
+      and card details. We never see your card.
+    </p>
+    <p id="hc-pay-error" class="hc-error" role="alert"></p>
+    <button id="hc-pay-btn" type="button" class="btn-primary hc-submit" disabled={!digitalOnly}>
+      <span class="hc-lock" aria-hidden="true">🔒</span>
+      Pay with Stripe →
+    </button>
+  </div>
+</section>
+
+<style>
+  .hc-step { margin-bottom: 2.5rem; }
+  .hc-step[hidden] { display: none; }
+  .hc-step-header {
+    display: flex; align-items: center; gap: .875rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .hc-step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--gold); color: #0b0b0b;
+    font-size: .8rem; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .hc-step-title {
+    font-family: var(--font-sans);
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text);
+  }
+  .hc-step-hint {
+    font-size: .875rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+  }
+
+  .hc-form { display: grid; gap: 1rem; max-width: 30rem; }
+  .hc-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+  .hc-label {
+    display: flex; flex-direction: column; gap: .4rem;
+    font-size: .82rem; font-weight: 500; color: var(--text-muted);
+  }
+  .hc-label small { font-weight: 400; opacity: .7; }
+  .hc-label input {
+    padding: .7rem .9rem;
+    background: var(--bg-3); color: var(--text);
+    border: 1px solid var(--border-mid); border-radius: var(--radius);
+    font-family: var(--font-sans); font-size: .9rem;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .hc-label input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px var(--gold-dim);
+  }
+
+  .hc-method-list { display: grid; gap: .5rem; max-width: 30rem; }
+  .hc-method-option {
+    display: flex; align-items: center; gap: .875rem;
+    padding: .9rem 1rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .hc-method-option:hover { border-color: var(--text-mid); }
+  .hc-method-option input[type="radio"] {
+    accent-color: var(--gold);
+    width: 1rem; height: 1rem;
+  }
+  .hc-method-option.is-selected {
+    border-color: var(--gold);
+    background: var(--gold-dim);
+  }
+  .hc-method-name { flex: 1; font-size: .9rem; color: var(--text); }
+  .hc-method-delivery {
+    font-size: .75rem;
+    color: var(--text-muted);
+  }
+  .hc-method-price {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text);
+    font-size: .95rem;
+  }
+
+  .hc-error { color: var(--ember); font-size: .875rem; margin: 0; display: none; }
+  .hc-error:not(:empty) { display: block; }
+  .hc-submit { width: 100%; justify-content: center; padding: 1rem; font-size: 1rem; }
+  .hc-lock { margin-right: .4rem; font-size: .9rem; }
+</style>
+
+<script>
+  type Money = { amount: number; currency: string };
+  type CartState = {
+    sessionId: string;
+    currency: string;
+    items: Array<{ lineId: string; isDigital?: boolean }>;
+    shippingAddress?: { country: string; postalCode: string };
+    shippingMethod?: { id: string; label: string; amount: Money };
+    total: Money;
+  };
+  type ShippingOption = {
+    methodId: string;
+    label: string;
+    amount: Money;
+    deliveryEstimate?: { min?: number; max?: number };
+  };
+
+  const API = "/_emdash/api/plugins/dashcommerce";
+
+  const hcRoot   = document.querySelector<HTMLElement>(".hc");
+  const locStep  = document.getElementById("hc-step-location");
+  const locForm  = document.getElementById("hc-location-form") as HTMLFormElement | null;
+  const locBtn   = document.getElementById("hc-location-submit") as HTMLButtonElement | null;
+  const locErr   = document.getElementById("hc-location-error");
+  const methStep = document.getElementById("hc-step-method");
+  const methList = document.getElementById("hc-method-options");
+  const methErr  = document.getElementById("hc-method-error");
+  const payStep  = document.getElementById("hc-step-pay");
+  const payBtn   = document.getElementById("hc-pay-btn") as HTMLButtonElement | null;
+  const payErr   = document.getElementById("hc-pay-error");
+  const payStepNum = payStep?.querySelector<HTMLElement>(".hc-step-num");
+  const payStepHint = payStep?.querySelector<HTMLElement>(".hc-step-hint");
+
+  let digitalOnly = hcRoot?.dataset.digitalOnly === "1";
+
+  function setError(el: HTMLElement | null, msg: string | null) {
+    if (el) el.textContent = msg ?? "";
+  }
+
+  /**
+   * Render the "digital-only" variant: hide the shipping-location +
+   * shipping-method steps, renumber the Pay step as "1", update its
+   * hint to drop the shipping-address mention, and enable the Pay
+   * button immediately.
+   */
+  function applyDigitalOnlyLayout() {
+    digitalOnly = true;
+    hcRoot?.setAttribute("data-digital-only", "1");
+    if (locStep) locStep.hidden = true;
+    if (methStep) methStep.hidden = true;
+    if (payStep) payStep.dataset.ready = "1";
+    if (payStepNum) payStepNum.textContent = "1";
+    if (payStepHint) {
+      payStepHint.textContent =
+        "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card.";
+    }
+    if (payBtn) payBtn.disabled = false;
+  }
+
+  // Runtime auto-detect: if the server-rendered page guessed wrong (or
+  // didn't know), ask the cart API whether all items are digital and
+  // collapse to the one-step Pay layout. We debounce this on an
+  // outstanding `digitalOnly` hint to skip the roundtrip when the
+  // Astro prop already set things up correctly.
+  (async () => {
+    if (digitalOnly) return;
+    try {
+      const res = await fetch(`${API}/cart`, { credentials: "include" });
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        cart?: { items?: Array<{ isDigital?: boolean }> };
+      };
+      const items = body.cart?.items ?? [];
+      if (items.length > 0 && items.every((l) => l.isDigital === true)) {
+        applyDigitalOnlyLayout();
+      }
+    } catch {
+      /* network error → leave default layout; nothing is broken */
+    }
+  })();
+
+  // --- 1. Ship-to location form -------------------------------------------
+  //
+  // Sends a minimal `{country, postalCode}` to `cart/shipping-location`.
+  // That writes a placeholder shipping address on the server cart so
+  // that `cart/shipping-methods` can compute rates. Stripe will collect
+  // the full address (line1, city, region) after we redirect.
+  if (!digitalOnly && locForm) {
+    locForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setError(locErr, null);
+      if (locBtn) { locBtn.disabled = true; locBtn.textContent = "Looking up rates…"; }
+
+      const country = (document.getElementById("hc-country") as HTMLInputElement).value.trim().toUpperCase();
+      const postalCode = (document.getElementById("hc-postal") as HTMLInputElement).value.trim();
+
+      try {
+        const locRes = await fetch(`${API}/cart/shipping-location`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ country, postalCode }),
+        });
+        if (!locRes.ok) {
+          const b = await locRes.json().catch(() => ({}));
+          throw new Error((b as { error?: string }).error ?? `Save failed (${locRes.status})`);
+        }
+
+        const optsRes = await fetch(`${API}/cart/shipping-methods`, { credentials: "include" });
+        if (!optsRes.ok) {
+          const b = await optsRes.json().catch(() => ({}));
+          throw new Error((b as { error?: string }).error ?? `Couldn't load shipping options (${optsRes.status})`);
+        }
+        const { options } = (await optsRes.json()) as { options: ShippingOption[] };
+        if (!options || options.length === 0) {
+          setError(locErr, "We don't ship to that location yet.");
+          return;
+        }
+        renderMethods(options);
+        if (methStep) methStep.hidden = false;
+        methStep?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        setError(locErr, err instanceof Error ? err.message : "Could not load shipping options.");
+      } finally {
+        if (locBtn) { locBtn.disabled = false; locBtn.textContent = "Get shipping options →"; }
+      }
+    });
+  }
+
+  // --- 2. Render shipping-method radios -----------------------------------
+  function formatMoney(m: Money): string {
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: m.currency }).format(m.amount / 100);
+    } catch {
+      return `${(m.amount / 100).toFixed(2)} ${m.currency}`;
+    }
+  }
+  function renderMethods(options: ShippingOption[]) {
+    if (!methList) return;
+    methList.innerHTML = "";
+    options.forEach((opt, i) => {
+      const label = document.createElement("label");
+      label.className = "hc-method-option" + (i === 0 ? " is-selected" : "");
+      label.innerHTML = `
+        <input type="radio" name="hc-method" value="${opt.methodId}"${i === 0 ? " checked" : ""} />
+        <div class="hc-method-name">
+          ${opt.label}
+          ${opt.deliveryEstimate ? `<div class="hc-method-delivery">${fmtEstimate(opt.deliveryEstimate)}</div>` : ""}
+        </div>
+        <div class="hc-method-price">${formatMoney(opt.amount)}</div>
+      `;
+      methList.appendChild(label);
+    });
+    methList.querySelectorAll<HTMLInputElement>('input[name="hc-method"]').forEach((input) => {
+      input.addEventListener("change", async () => {
+        methList.querySelectorAll(".hc-method-option").forEach((el) => el.classList.remove("is-selected"));
+        input.closest(".hc-method-option")?.classList.add("is-selected");
+        setError(methErr, null);
+        if (payBtn) payBtn.disabled = true;
+        try {
+          const res = await fetch(`${API}/cart/shipping-method`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ methodId: input.value }),
+          });
+          if (!res.ok) {
+            const b = await res.json().catch(() => ({}));
+            throw new Error((b as { error?: string }).error ?? `Save failed (${res.status})`);
+          }
+          window.dispatchEvent(new CustomEvent("dashcommerce:cart-updated"));
+          if (payBtn) payBtn.disabled = false;
+          if (payStep) payStep.dataset.ready = "1";
+        } catch (err) {
+          setError(methErr, err instanceof Error ? err.message : "Could not save shipping method.");
+        }
+      });
+    });
+    // Auto-apply the first option
+    methList.querySelector<HTMLInputElement>('input[name="hc-method"]:checked')
+      ?.dispatchEvent(new Event("change"));
+  }
+  function fmtEstimate(e: { min?: number; max?: number }): string {
+    if (e.min && e.max && e.min !== e.max) return `${e.min}–${e.max} business days`;
+    if (e.min) return `${e.min}+ business days`;
+    return "";
+  }
+
+  // --- 3. Pay with Stripe ----------------------------------------------------
+  payBtn?.addEventListener("click", async () => {
+    setError(payErr, null);
+    payBtn.disabled = true;
+    payBtn.textContent = "Redirecting to Stripe…";
+    try {
+      const res = await fetch(`${API}/checkout/create-session`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error((b as { error?: string }).error ?? `Payment setup failed (${res.status})`);
+      }
+      const body = (await res.json()) as { url?: string; orderDraftId?: string };
+      if (!body.url) throw new Error("Stripe did not return a checkout URL");
+      window.location.href = body.url;
+    } catch (err) {
+      setError(payErr, err instanceof Error ? err.message : "Could not start checkout.");
+      payBtn.disabled = false;
+      payBtn.innerHTML = '<span class="hc-lock" aria-hidden="true">🔒</span>Pay with Stripe →';
+    }
+  });
+</script>

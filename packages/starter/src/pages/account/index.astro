@@ -1,0 +1,289 @@
+---
+import Shop from "../../layouts/Shop.astro";
+---
+<Shop title="Account">
+	<div class="container-narrow acc-wrap">
+		<h1>Your account</h1>
+		<p class="lead">
+			We use <strong>email-gated accounts</strong>. There's nothing to sign
+			up for — the email you enter at checkout <em>is</em> your account.
+		</p>
+
+		<section class="explainer">
+			<h2>How it works</h2>
+			<ul>
+				<li>
+					<strong>Receipts &amp; magic links.</strong> Every order, refund, and
+					subscription self-service link is emailed to you. No passwords, no
+					shared devices to worry about.
+				</li>
+				<li>
+					<strong>Abandoned-cart reminders.</strong> If you enter your email on
+					the checkout page and don't finish, we'll email you a one-click link
+					back to your cart.
+				</li>
+				<li>
+					<strong>Repeat shopping.</strong> On this device, your details are
+					remembered locally so you don't have to retype them. Nothing about
+					your address is stored on our servers until you place an order.
+				</li>
+			</ul>
+		</section>
+
+		<section class="lookup">
+			<h2>Find a past order</h2>
+			<p>
+				Lost your receipt? Enter the order ID from your confirmation email and
+				we'll pull it up.
+			</p>
+			<a class="acc-cta acc-cta--primary" href="/orders/lookup">
+				Look up an order <span aria-hidden="true">→</span>
+			</a>
+		</section>
+
+		<section class="lookup">
+			<h2>Manage billing &amp; subscriptions</h2>
+			<p>
+				Update your card, download invoices, or manage any active
+				subscriptions in Stripe's secure billing portal. Enter your email and
+				we'll send you a one-time link.
+			</p>
+			<form id="portal-form" class="portal-form" novalidate>
+				<label class="portal-label">
+					<span>Email</span>
+					<input
+						required
+						type="email"
+						name="email"
+						id="portal-email"
+						autocomplete="email"
+						placeholder="you@example.com"
+					/>
+				</label>
+				<button type="submit" class="acc-cta acc-cta--primary" id="portal-submit">
+					Email me a portal link <span aria-hidden="true">→</span>
+				</button>
+				<p class="portal-status" id="portal-status" role="status"></p>
+			</form>
+		</section>
+
+		<nav class="acc-cards" aria-label="Shortcuts">
+			<a class="acc-card" href="/shop">
+				<h3>Keep shopping</h3>
+				<p>Browse the full catalog.</p>
+				<span class="acc-card-arrow" aria-hidden="true">→</span>
+			</a>
+			<a class="acc-card" href="/cart">
+				<h3>Your cart</h3>
+				<p>Pick up where you left off.</p>
+				<span class="acc-card-arrow" aria-hidden="true">→</span>
+			</a>
+		</nav>
+	</div>
+</Shop>
+
+<style is:global>
+	/* Scoped manually via .acc-wrap parent so these rules don't leak to other
+	   pages. (Astro's automatic scoping was not applying reliably in the dev
+	   HMR for this page.) */
+	.acc-wrap { padding: 3rem 0 5rem; }
+
+	.acc-wrap h1 { color: var(--text); }
+
+	.acc-wrap .lead {
+		color: var(--text-mid);
+		font-size: 1rem;
+		max-width: 42rem;
+	}
+	.acc-wrap .lead strong,
+	.acc-wrap .lead em { color: var(--text); font-style: normal; font-weight: 600; }
+
+	.acc-wrap .explainer,
+	.acc-wrap .lookup {
+		margin-top: 2.5rem;
+		padding: 1.5rem 1.75rem;
+		background: var(--bg-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		color: var(--text);
+	}
+	.acc-wrap .explainer h2,
+	.acc-wrap .lookup h2 {
+		margin: 0 0 .75rem;
+		font-family: var(--font-sans);
+		font-size: .78rem;
+		letter-spacing: .08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+		font-weight: 600;
+	}
+	.acc-wrap .explainer ul { margin: 0; padding-left: 1.25rem; display: grid; gap: .75rem; }
+	.acc-wrap .explainer li { color: var(--text-mid); line-height: 1.55; }
+	.acc-wrap .explainer strong { color: var(--text); }
+	.acc-wrap .lookup p {
+		margin: 0 0 1.25rem;
+		color: var(--text-mid);
+	}
+
+	.acc-wrap .acc-cta {
+		display: inline-flex; align-items: center; gap: .4rem;
+		padding: .75rem 1.5rem;
+		border-radius: var(--radius);
+		font-family: var(--font-sans);
+		font-size: .9rem;
+		font-weight: 600;
+		letter-spacing: .025em;
+		text-decoration: none;
+		transition: background var(--dur) var(--ease), border-color .2s, transform .15s;
+	}
+	.acc-wrap .acc-cta--primary {
+		background: var(--gold);
+		color: var(--accent-on, #0b0b0b);
+		border: 1px solid var(--gold);
+	}
+	.acc-wrap .acc-cta--primary:hover {
+		background: var(--gold-light);
+		border-color: var(--gold-light);
+		transform: translateY(-1px);
+		text-decoration: none;
+	}
+
+	.acc-wrap .acc-cards {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+		margin-top: 2rem;
+	}
+	.acc-wrap .acc-card {
+		position: relative;
+		display: block;
+		padding: 1.5rem 2.5rem 1.5rem 1.5rem;
+		background: var(--bg-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text);
+		text-decoration: none;
+		transition: border-color .15s, background .15s, transform .15s;
+	}
+	.acc-wrap .acc-card:hover {
+		background: var(--surface);
+		border-color: var(--gold);
+		text-decoration: none;
+		transform: translateY(-1px);
+	}
+	.acc-wrap .acc-card h3 {
+		margin: 0 0 0.25rem;
+		color: var(--text);
+		font-family: var(--font-display);
+	}
+	.acc-wrap .acc-card p {
+		margin: 0;
+		color: var(--text-mid);
+		font-size: 0.9rem;
+	}
+	.acc-wrap .acc-card-arrow {
+		position: absolute;
+		right: 1rem; top: 50%;
+		transform: translateY(-50%);
+		color: var(--gold);
+		font-size: 1.1rem;
+		transition: transform .15s;
+	}
+	.acc-wrap .acc-card:hover .acc-card-arrow { transform: translate(2px, -50%); }
+
+	@media (max-width: 600px) {
+		.acc-wrap .acc-cards { grid-template-columns: 1fr; }
+	}
+
+	.acc-wrap .portal-form {
+		display: grid;
+		gap: 1rem;
+		max-width: 28rem;
+	}
+	.acc-wrap .portal-label {
+		display: flex;
+		flex-direction: column;
+		gap: .4rem;
+		font-size: .82rem;
+		font-weight: 500;
+		color: var(--text-muted);
+	}
+	.acc-wrap .portal-label input {
+		padding: .7rem .9rem;
+		background: var(--bg-3);
+		color: var(--text);
+		border: 1px solid var(--border-mid);
+		border-radius: var(--radius);
+		font-family: var(--font-sans);
+		font-size: .9rem;
+		transition: border-color .2s, box-shadow .2s;
+	}
+	.acc-wrap .portal-label input:focus {
+		outline: none;
+		border-color: var(--gold);
+		box-shadow: 0 0 0 3px var(--gold-dim);
+	}
+	.acc-wrap .portal-status {
+		margin: 0;
+		font-size: .85rem;
+		color: var(--text-mid);
+		min-height: 1.2em;
+	}
+	.acc-wrap .portal-status.is-error { color: var(--ember); }
+	.acc-wrap .portal-status.is-success { color: var(--text); }
+</style>
+
+<script>
+	const API = "/_emdash/api/plugins/dashcommerce";
+	const form = document.getElementById("portal-form") as HTMLFormElement | null;
+	const input = document.getElementById("portal-email") as HTMLInputElement | null;
+	const submit = document.getElementById("portal-submit") as HTMLButtonElement | null;
+	const status = document.getElementById("portal-status");
+
+	function setStatus(msg: string, tone: "info" | "error" | "success" = "info") {
+		if (!status) return;
+		status.textContent = msg;
+		status.classList.remove("is-error", "is-success");
+		if (tone === "error") status.classList.add("is-error");
+		if (tone === "success") status.classList.add("is-success");
+	}
+
+	form?.addEventListener("submit", async (ev) => {
+		ev.preventDefault();
+		const email = (input?.value ?? "").trim();
+		if (!email) {
+			setStatus("Enter the email you used at checkout.", "error");
+			return;
+		}
+		if (submit) { submit.disabled = true; submit.textContent = "Sending…"; }
+		setStatus("");
+		try {
+			const res = await fetch(`${API}/customer/portal-link`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email, returnUrl: `${window.location.origin}/account` }),
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				setStatus(
+					(body as { error?: string }).error ?? `Something went wrong (${res.status}).`,
+					"error",
+				);
+				return;
+			}
+			setStatus(
+				"If we have a billing account on file for that email, a portal link is on the way. Check your inbox.",
+				"success",
+			);
+			if (input) input.value = "";
+		} catch {
+			setStatus("Network error. Please try again.", "error");
+		} finally {
+			if (submit) {
+				submit.disabled = false;
+				submit.innerHTML = 'Email me a portal link <span aria-hidden="true">→</span>';
+			}
+		}
+	});
+</script>

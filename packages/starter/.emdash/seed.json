@@ -1,0 +1,2805 @@
+{
+	"$schema": "https://emdashcms.com/seed.schema.json",
+	"version": "1",
+	"meta": {
+		"name": "DashCommerce starter",
+		"description": "A Stripe-powered storefront with 6 demo products spanning every DashCommerce product type.",
+		"author": "DashCommerce"
+	},
+	"settings": {
+		"title": "The Edit",
+		"tagline": "A Stripe-powered storefront, editable entirely from the admin.",
+		"postsPerPage": 9,
+		"social": {
+			"instagram": "https://instagram.com/",
+			"twitter": "https://x.com/"
+		},
+		"seo": {
+			"titleSeparator": " — "
+		}
+	},
+	"collections": [
+		{
+			"slug": "products",
+			"label": "Products",
+			"labelSingular": "Product",
+			"urlPattern": "/shop/{slug}",
+			"supports": [
+				"drafts",
+				"revisions",
+				"search",
+				"seo"
+			],
+			"fields": [
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true,
+					"searchable": true
+				},
+				{
+					"slug": "featured_image",
+					"label": "Featured Image",
+					"type": "image",
+					"help": "Primary image used on the PDP and in shop listings."
+				},
+				{
+					"slug": "gallery_2",
+					"label": "Gallery Image 2",
+					"type": "image"
+				},
+				{
+					"slug": "gallery_3",
+					"label": "Gallery Image 3",
+					"type": "image"
+				},
+				{
+					"slug": "gallery_4",
+					"label": "Gallery Image 4",
+					"type": "image"
+				},
+				{
+					"slug": "gallery_5",
+					"label": "Gallery Image 5",
+					"type": "image"
+				},
+				{
+					"slug": "description",
+					"label": "Description",
+					"type": "portableText",
+					"searchable": true
+				},
+				{
+					"slug": "type",
+					"label": "Product Type",
+					"type": "select",
+					"required": true,
+					"options": [
+						{
+							"value": "simple",
+							"label": "simple"
+						},
+						{
+							"value": "variable",
+							"label": "variable"
+						},
+						{
+							"value": "grouped",
+							"label": "grouped"
+						},
+						{
+							"value": "external",
+							"label": "external"
+						},
+						{
+							"value": "subscription",
+							"label": "subscription"
+						}
+					],
+					"default": "simple"
+				},
+				{
+					"slug": "sku",
+					"label": "SKU",
+					"type": "string",
+					"required": true,
+					"unique": true,
+					"help": "Stock-keeping unit. Must be unique across all products."
+				},
+				{
+					"slug": "prices",
+					"label": "Prices",
+					"type": "json",
+					"required": true,
+					"widget": "dashcommerce:price-map",
+					"help": "Set a price in each currency your store accepts. Customers whose cart is set to an unpriced currency will not be able to add this product."
+				},
+				{
+					"slug": "manage_stock",
+					"label": "Track Inventory",
+					"type": "boolean",
+					"default": true
+				},
+				{
+					"slug": "stock_quantity",
+					"label": "Stock Quantity",
+					"type": "integer"
+				},
+				{
+					"slug": "stock_status",
+					"label": "Stock Status",
+					"type": "select",
+					"required": true,
+					"default": "instock",
+					"options": [
+						{
+							"value": "instock",
+							"label": "In stock"
+						},
+						{
+							"value": "outofstock",
+							"label": "Out of stock"
+						},
+						{
+							"value": "onbackorder",
+							"label": "On backorder"
+						}
+					]
+				},
+				{
+					"slug": "backorders",
+					"label": "Allow Backorders",
+					"type": "select",
+					"default": "no",
+					"options": [
+						{
+							"value": "no",
+							"label": "Do not allow"
+						},
+						{
+							"value": "notify",
+							"label": "Allow, but notify customer"
+						},
+						{
+							"value": "yes",
+							"label": "Allow"
+						}
+					]
+				},
+				{
+					"slug": "low_stock_threshold",
+					"label": "Low-stock Threshold",
+					"type": "integer",
+					"help": "Triggers the LowStockAlerts widget when stock crosses below this value."
+				},
+				{
+					"slug": "weight_grams",
+					"label": "Weight (g)",
+					"type": "integer",
+					"help": "Used by weight-based shipping calculations."
+				},
+				{
+					"slug": "tax_class",
+					"label": "Tax Class",
+					"type": "string",
+					"default": "standard"
+				},
+				{
+					"slug": "shipping_class_slug",
+					"label": "Shipping Class",
+					"type": "string",
+					"help": "Must match a ShippingClass slug configured in DashCommerce → Shipping."
+				},
+				{
+					"slug": "featured",
+					"label": "Featured",
+					"type": "boolean",
+					"default": false
+				},
+				{
+					"slug": "is_downloadable",
+					"label": "Downloadable",
+					"type": "boolean",
+					"default": false
+				},
+				{
+					"slug": "is_virtual",
+					"label": "Virtual (no shipping)",
+					"type": "boolean",
+					"default": false
+				},
+				{
+					"slug": "downloadable_files",
+					"label": "Downloadable Files",
+					"type": "json",
+					"help": "JSON array. Each entry: { \"name\": \"Manual.pdf\", \"mediaId\": \"01K...\" } or { \"name\": \"...\", \"url\": \"https://...\" }. Only used when Downloadable is on."
+				},
+				{
+					"slug": "subscription_config",
+					"label": "Subscription Config",
+					"type": "json",
+					"help": "Required for subscription products. JSON: { \"interval\": \"month\", \"intervalCount\": 1, \"trialDays\": 7 }. Interval is one of day | week | month | year."
+				},
+				{
+					"slug": "child_product_ids",
+					"label": "Child Products (for grouped type)",
+					"type": "json",
+					"help": "JSON array of product ULIDs, e.g. [\"01KP...\", \"01KP...\"]. Only used when Product Type = grouped."
+				},
+				{
+					"slug": "product_url",
+					"label": "Product URL (for external type)",
+					"type": "string",
+					"help": "Affiliate / external link. Only used when Product Type = external."
+				},
+				{
+					"slug": "button_text",
+					"label": "Button Text (for external type)",
+					"type": "string",
+					"default": "Buy now"
+				},
+				{
+					"slug": "vendor_id",
+					"label": "Vendor",
+					"type": "string",
+					"widget": "dashcommerce:vendor-select",
+					"help": "Marketplace vendor whose Stripe Connect account receives funds for this product. Only active when multi-vendor is enabled in Settings."
+				}
+			],
+			"taxonomies": [
+				"product_category",
+				"product_tag"
+			]
+		},
+		{
+			"slug": "hero_slides",
+			"label": "Hero Slides",
+			"labelSingular": "Hero Slide",
+			"description": "Rotating banner shown at the top of the home page.",
+			"icon": "image",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "eyebrow",
+					"label": "Eyebrow",
+					"type": "string",
+					"required": false,
+					"help": "Small label above the headline (e.g. 'New arrivals')."
+				},
+				{
+					"slug": "headline",
+					"label": "Headline",
+					"type": "text",
+					"required": true,
+					"help": "Main display text. Use line breaks for visual line wrapping."
+				},
+				{
+					"slug": "subtitle",
+					"label": "Subtitle",
+					"type": "text",
+					"required": false,
+					"help": "Short supporting copy under the headline."
+				},
+				{
+					"slug": "cta_label",
+					"label": "CTA label",
+					"type": "string",
+					"required": false,
+					"defaultValue": "Shop now"
+				},
+				{
+					"slug": "cta_href",
+					"label": "CTA link",
+					"type": "string",
+					"required": false,
+					"defaultValue": "/shop",
+					"help": "Relative or absolute URL the primary button navigates to."
+				},
+				{
+					"slug": "bg_type",
+					"label": "Background type",
+					"type": "select",
+					"required": false,
+					"defaultValue": "gradient",
+					"widget": "dashcommerce:bg-type-select",
+					"options": [
+						{
+							"value": "gradient",
+							"label": "Gradient / CSS"
+						},
+						{
+							"value": "image",
+							"label": "Image"
+						},
+						{
+							"value": "video",
+							"label": "Video (MP4, YouTube, Vimeo)"
+						}
+					],
+					"help": "Switching this reveals only the fields you need. The storefront also auto-picks Video URL > Image > Gradient as a fallback, so uploading a richer medium 'just works' even if this stays on a simpler mode."
+				},
+				{
+					"slug": "bg_css",
+					"label": "Gradient / CSS (fallback background)",
+					"type": "string",
+					"required": false,
+					"defaultValue": "radial-gradient(ellipse at 70% 50%, #1a1000 0%, #0b0b0b 70%)",
+					"help": "Used when no image or video is set. Any valid CSS background — paste a gradient, solid colour, or image() function. Also shows behind a video while it loads."
+				},
+				{
+					"slug": "bg_image",
+					"label": "Background image",
+					"type": "image",
+					"required": false,
+					"help": "If set, takes precedence over the gradient. Recommended: 2400×1200, JPG/WebP. Leave empty to use the gradient."
+				},
+				{
+					"slug": "bg_focal_point",
+					"label": "Image focal point",
+					"type": "string",
+					"required": false,
+					"defaultValue": "center",
+					"help": "Applies when a background image is set. CSS object-position (e.g. 'center', 'top right', '30% 60%')."
+				},
+				{
+					"slug": "bg_video_url",
+					"label": "Video URL (highest priority)",
+					"type": "string",
+					"required": false,
+					"help": "If set, overrides both the image and the gradient. Paste a direct MP4/WebM URL, a YouTube link, or a Vimeo link. Leave empty to use the image or gradient instead."
+				},
+				{
+					"slug": "bg_video_poster",
+					"label": "Video poster (fallback image)",
+					"type": "image",
+					"required": false,
+					"help": "Shown while the video loads or on devices that block autoplay."
+				},
+				{
+					"slug": "bg_overlay",
+					"label": "Overlay (over image/video)",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(90deg, rgba(11,11,11,.78) 0%, rgba(11,11,11,.35) 100%)",
+					"help": "CSS background layered over image/video backgrounds to keep the text legible. Use e.g. 'rgba(0,0,0,.45)' for a flat dim, or a gradient for directional shading."
+				},
+				{
+					"slug": "accent_css",
+					"label": "Accent bar",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(90deg, #c8a46e, #8b6520)",
+					"help": "CSS background for the thin bar at the bottom of the slide."
+				},
+				{
+					"slug": "sort_order",
+					"label": "Sort order",
+					"type": "integer",
+					"required": false,
+					"defaultValue": 0,
+					"help": "Slides display in ascending order. Lower numbers first."
+				}
+			]
+		},
+		{
+			"slug": "posts",
+			"label": "Posts",
+			"labelSingular": "Post",
+			"description": "Editorial content — product stories, buying guides, and behind-the-scenes. Shown on the homepage 'From the journal' section and the /blog index.",
+			"icon": "file-text",
+			"supports": [
+				"drafts",
+				"revisions",
+				"seo",
+				"search"
+			],
+			"urlPattern": "/blog/{slug}",
+			"hasSeo": true,
+			"fields": [
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true
+				},
+				{
+					"slug": "excerpt",
+					"label": "Excerpt",
+					"type": "text",
+					"required": false,
+					"help": "Short summary shown on listing cards and meta descriptions. 140–180 chars."
+				},
+				{
+					"slug": "cover_image",
+					"label": "Cover image",
+					"type": "image",
+					"required": false,
+					"help": "Hero image at the top of the article and the thumbnail on listing cards."
+				},
+				{
+					"slug": "cover_gradient",
+					"label": "Cover fallback gradient",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+					"help": "Shown when no cover image is set. Any valid CSS background."
+				},
+				{
+					"slug": "author_name",
+					"label": "Author name",
+					"type": "string",
+					"required": false,
+					"defaultValue": "The Edit",
+					"help": "Display byline. Leave blank to hide the author line."
+				},
+				{
+					"slug": "published_date",
+					"label": "Published date",
+					"type": "datetime",
+					"required": false,
+					"help": "Override the auto publish time if you want a specific display date."
+				},
+				{
+					"slug": "reading_minutes",
+					"label": "Reading time (minutes)",
+					"type": "integer",
+					"required": false,
+					"defaultValue": 4,
+					"help": "Estimated reading time shown next to the author line."
+				},
+				{
+					"slug": "body",
+					"label": "Body",
+					"type": "portableText",
+					"required": false,
+					"help": "Rich article content — supports headings, paragraphs, lists, quotes, images, and embeds."
+				}
+			]
+		},
+		{
+			"slug": "banners",
+			"label": "Banners",
+			"labelSingular": "Banner",
+			"description": "Reusable promo blocks. Look them up by slug from any page template (e.g. the homepage 'Our promise' section is the `home-promise` banner).",
+			"icon": "megaphone",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "internal_name",
+					"label": "Internal name",
+					"type": "string",
+					"required": true,
+					"help": "Admin-only label. Not shown on the storefront."
+				},
+				{
+					"slug": "eyebrow",
+					"label": "Eyebrow",
+					"type": "string",
+					"required": false,
+					"help": "Short uppercase kicker above the headline (e.g. 'Our promise')."
+				},
+				{
+					"slug": "headline",
+					"label": "Headline",
+					"type": "string",
+					"required": true,
+					"help": "Main banner title. Use `\\n` to force a line break."
+				},
+				{
+					"slug": "body",
+					"label": "Body",
+					"type": "portableText",
+					"required": false,
+					"help": "Rich body copy — supports bold, links, and short lists."
+				},
+				{
+					"slug": "primary_cta_label",
+					"label": "Primary CTA label",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "primary_cta_href",
+					"label": "Primary CTA link",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "secondary_cta_label",
+					"label": "Secondary CTA label",
+					"type": "string",
+					"required": false,
+					"help": "Optional second CTA. Rendered as an outline button next to the primary."
+				},
+				{
+					"slug": "secondary_cta_href",
+					"label": "Secondary CTA link",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "theme",
+					"label": "Theme",
+					"type": "select",
+					"required": false,
+					"defaultValue": "dark",
+					"options": [
+						{
+							"value": "dark",
+							"label": "Dark (light text on dark bg)"
+						},
+						{
+							"value": "light",
+							"label": "Light (dark text on light bg)"
+						}
+					]
+				},
+				{
+					"slug": "alignment",
+					"label": "Text alignment",
+					"type": "select",
+					"required": false,
+					"defaultValue": "left",
+					"options": [
+						{
+							"value": "left",
+							"label": "Left"
+						},
+						{
+							"value": "center",
+							"label": "Center"
+						},
+						{
+							"value": "right",
+							"label": "Right"
+						}
+					]
+				},
+				{
+					"slug": "bg_type",
+					"label": "Background type",
+					"type": "select",
+					"required": false,
+					"defaultValue": "gradient",
+					"widget": "dashcommerce:bg-type-select",
+					"options": [
+						{
+							"value": "gradient",
+							"label": "Gradient / CSS"
+						},
+						{
+							"value": "image",
+							"label": "Image"
+						},
+						{
+							"value": "video",
+							"label": "Video (MP4, YouTube, Vimeo)"
+						}
+					],
+					"help": "Switching this reveals only the fields you need. The storefront also auto-picks Video URL > Image > Gradient as a fallback."
+				},
+				{
+					"slug": "bg_css",
+					"label": "Gradient / CSS (fallback background)",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(135deg, #1a1000 0%, #0b0b0b 100%)",
+					"help": "Used when no image or video is set. Any valid CSS background."
+				},
+				{
+					"slug": "bg_image",
+					"label": "Background image",
+					"type": "image",
+					"required": false,
+					"help": "If set, takes precedence over the gradient. Leave empty to use the gradient."
+				},
+				{
+					"slug": "bg_focal_point",
+					"label": "Image focal point",
+					"type": "string",
+					"required": false,
+					"defaultValue": "center",
+					"help": "Applies when a background image is set. CSS object-position (e.g. 'center', 'top right', '30% 60%')."
+				},
+				{
+					"slug": "bg_video_url",
+					"label": "Video URL (highest priority)",
+					"type": "string",
+					"required": false,
+					"help": "If set, overrides both the image and the gradient. Paste a direct MP4/WebM URL, a YouTube link, or a Vimeo link."
+				},
+				{
+					"slug": "bg_video_poster",
+					"label": "Video poster",
+					"type": "image",
+					"required": false
+				},
+				{
+					"slug": "bg_overlay",
+					"label": "Overlay (over image/video)",
+					"type": "string",
+					"required": false,
+					"help": "CSS background layered over image/video for legibility. E.g. 'rgba(0,0,0,.45)'."
+				}
+			]
+		},
+		{
+			"slug": "trust_items",
+			"label": "Trust Items",
+			"labelSingular": "Trust Item",
+			"description": "Homepage 'trust strip' items — small benefit-bullets shown above the footer (free shipping, secure checkout, etc.).",
+			"icon": "shield-check",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "icon",
+					"label": "Icon / symbol",
+					"type": "string",
+					"required": false,
+					"defaultValue": "✦",
+					"help": "A single-character symbol or emoji used as the item's visual mark."
+				},
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true
+				},
+				{
+					"slug": "description",
+					"label": "Description",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "sort_order",
+					"label": "Sort order",
+					"type": "integer",
+					"required": false,
+					"defaultValue": 10,
+					"help": "Lower numbers appear first. Leave gaps (10, 20, 30) to make reordering easy."
+				}
+			]
+		},
+		{
+			"slug": "category_tiles",
+			"label": "Category Tiles",
+			"labelSingular": "Category Tile",
+			"description": "Powers the homepage 'Browse by type' bento grid. Each tile links to a category page and has a size that controls how it lays out.",
+			"icon": "grid-2x2",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "label",
+					"label": "Label",
+					"type": "string",
+					"required": true,
+					"help": "Big title shown on the tile (e.g. 'Physical Goods')."
+				},
+				{
+					"slug": "description",
+					"label": "Description",
+					"type": "string",
+					"required": false,
+					"help": "Small kicker shown above the label."
+				},
+				{
+					"slug": "href",
+					"label": "Link",
+					"type": "string",
+					"required": true,
+					"help": "Where the tile goes when clicked (e.g. '/category/physical-goods')."
+				},
+				{
+					"slug": "size",
+					"label": "Size",
+					"type": "select",
+					"required": false,
+					"defaultValue": "large",
+					"options": [
+						{
+							"value": "large",
+							"label": "Large (spans 2 columns)"
+						},
+						{
+							"value": "small",
+							"label": "Small (spans 1 column)"
+						}
+					],
+					"help": "Controls how the tile lays out in the bento grid."
+				},
+				{
+					"slug": "bg_css",
+					"label": "Background gradient / CSS",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+					"help": "Any valid CSS background. Used as a fallback behind the image."
+				},
+				{
+					"slug": "image",
+					"label": "Background image",
+					"type": "image",
+					"required": false,
+					"help": "Optional. If set, shown over the gradient with a dark overlay."
+				},
+				{
+					"slug": "sort_order",
+					"label": "Sort order",
+					"type": "integer",
+					"required": false,
+					"defaultValue": 10
+				}
+			]
+		},
+		{
+			"slug": "announcements",
+			"label": "Announcements",
+			"labelSingular": "Announcement",
+			"description": "Messages shown in the top bar and/or the homepage marquee strip. Toggle `enabled` to show/hide without deleting.",
+			"icon": "megaphone",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "message",
+					"label": "Message",
+					"type": "string",
+					"required": true
+				},
+				{
+					"slug": "location",
+					"label": "Show in",
+					"type": "select",
+					"required": false,
+					"defaultValue": "both",
+					"options": [
+						{
+							"value": "top_bar",
+							"label": "Top bar only"
+						},
+						{
+							"value": "marquee",
+							"label": "Marquee strip only"
+						},
+						{
+							"value": "both",
+							"label": "Both"
+						}
+					]
+				},
+				{
+					"slug": "href",
+					"label": "Link (optional)",
+					"type": "string",
+					"required": false,
+					"help": "If set, the message becomes a link."
+				},
+				{
+					"slug": "enabled",
+					"label": "Enabled",
+					"type": "boolean",
+					"required": false,
+					"defaultValue": true
+				},
+				{
+					"slug": "sort_order",
+					"label": "Sort order",
+					"type": "integer",
+					"required": false,
+					"defaultValue": 10
+				}
+			]
+		},
+		{
+			"slug": "site_text",
+			"label": "Site Text",
+			"labelSingular": "Site Text",
+			"description": "Footer-specific copy that doesn't belong on native Site Settings — newsletter strip, copyright template, and overrides for the footer tagline. Identity (title, tagline, logo, social) lives under Site Settings. Homepage section headers live under Section Headers.",
+			"icon": "type",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "footer_tagline",
+					"label": "Footer tagline override",
+					"type": "text",
+					"help": "Leave blank to use the site tagline from Site Settings. Set to customise the footer brand block specifically."
+				},
+				{
+					"slug": "footer_newsletter_title",
+					"label": "Footer newsletter title",
+					"type": "string",
+					"defaultValue": "Stay in the loop"
+				},
+				{
+					"slug": "footer_newsletter_body",
+					"label": "Footer newsletter body",
+					"type": "text",
+					"defaultValue": "New arrivals, exclusive offers, and carefully chosen recommendations."
+				},
+				{
+					"slug": "footer_newsletter_placeholder",
+					"label": "Footer newsletter input placeholder",
+					"type": "string",
+					"defaultValue": "your@email.com"
+				},
+				{
+					"slug": "footer_newsletter_cta",
+					"label": "Footer newsletter button label",
+					"type": "string",
+					"defaultValue": "Subscribe"
+				},
+				{
+					"slug": "footer_copyright",
+					"label": "Footer copyright template",
+					"type": "string",
+					"defaultValue": "© {year} {title}. All rights reserved.",
+					"help": "Placeholders: `{year}` is the current year, `{title}` is the site title from Site Settings."
+				},
+				{
+					"slug": "social_pinterest",
+					"label": "Social · Pinterest URL",
+					"type": "string",
+					"required": false,
+					"help": "Instagram/Twitter and other major channels are managed on Site Settings. Pinterest lives here because EmDash's native social schema doesn't include it yet."
+				}
+			]
+		},
+		{
+			"slug": "section_headers",
+			"label": "Section Headers",
+			"labelSingular": "Section Header",
+			"description": "Eyebrow + title + optional body & CTA for each content band (homepage Bento, Products, Journal, etc.). Each entry can optionally carry a full background (gradient / image / video) so section intros can coordinate with the visuals of the items beneath them.",
+			"icon": "layout-template",
+			"supports": [
+				"drafts"
+			],
+			"fields": [
+				{
+					"slug": "label",
+					"label": "Admin label",
+					"type": "string",
+					"required": true,
+					"help": "Internal name shown in the admin list — e.g. 'Homepage · Bento'. Not rendered on the site."
+				},
+				{
+					"slug": "eyebrow",
+					"label": "Eyebrow",
+					"type": "string",
+					"required": false,
+					"help": "Small uppercase kicker shown above the title (e.g. 'Browse by type')."
+				},
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true,
+					"help": "Main heading. Use `\\n` to force a line break — the second line is rendered italic to match the homepage style."
+				},
+				{
+					"slug": "subtitle",
+					"label": "Subtitle",
+					"type": "text",
+					"required": false,
+					"help": "Optional supporting paragraph under the title."
+				},
+				{
+					"slug": "cta_label",
+					"label": "CTA label",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "cta_href",
+					"label": "CTA URL",
+					"type": "string",
+					"required": false
+				},
+				{
+					"slug": "render_mode",
+					"label": "Render style",
+					"type": "select",
+					"required": false,
+					"defaultValue": "compact",
+					"options": [
+						{
+							"value": "compact",
+							"label": "Compact (simple eyebrow + title)"
+						},
+						{
+							"value": "band",
+							"label": "Band (full-width with background)"
+						}
+					],
+					"help": "Compact mirrors the plain section intros of most e-commerce sites. Band wraps the header in a full-width panel using the background fields below — use this when the items below have their own strong visuals (e.g. the Bento tiles)."
+				},
+				{
+					"slug": "theme",
+					"label": "Theme (when rendered as a band)",
+					"type": "select",
+					"required": false,
+					"defaultValue": "dark",
+					"options": [
+						{
+							"value": "dark",
+							"label": "Dark text on light bg"
+						},
+						{
+							"value": "light",
+							"label": "Light text on dark bg"
+						}
+					]
+				},
+				{
+					"slug": "alignment",
+					"label": "Text alignment",
+					"type": "select",
+					"required": false,
+					"defaultValue": "left",
+					"options": [
+						{
+							"value": "left",
+							"label": "Left"
+						},
+						{
+							"value": "center",
+							"label": "Center"
+						},
+						{
+							"value": "right",
+							"label": "Right"
+						}
+					]
+				},
+				{
+					"slug": "bg_type",
+					"label": "Background type",
+					"type": "select",
+					"required": false,
+					"defaultValue": "gradient",
+					"widget": "dashcommerce:bg-type-select",
+					"options": [
+						{
+							"value": "gradient",
+							"label": "Gradient / CSS"
+						},
+						{
+							"value": "image",
+							"label": "Image"
+						},
+						{
+							"value": "video",
+							"label": "Video (MP4, YouTube, Vimeo)"
+						}
+					],
+					"help": "Only applies when render style is 'Band'. Switching reveals only the fields you need."
+				},
+				{
+					"slug": "bg_css",
+					"label": "Gradient / CSS",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(135deg, #1a1000 0%, #0b0b0b 100%)"
+				},
+				{
+					"slug": "bg_image",
+					"label": "Background image",
+					"type": "image",
+					"required": false
+				},
+				{
+					"slug": "bg_focal_point",
+					"label": "Image focal point",
+					"type": "string",
+					"required": false,
+					"defaultValue": "center",
+					"help": "CSS object-position (e.g. 'center', 'top right', '30% 60%')."
+				},
+				{
+					"slug": "bg_video_url",
+					"label": "Video URL",
+					"type": "string",
+					"required": false,
+					"help": "MP4/WebM direct URL, YouTube, or Vimeo link."
+				},
+				{
+					"slug": "bg_video_poster",
+					"label": "Video poster",
+					"type": "image",
+					"required": false
+				},
+				{
+					"slug": "bg_overlay",
+					"label": "Overlay (over image/video)",
+					"type": "string",
+					"required": false,
+					"defaultValue": "linear-gradient(180deg, rgba(11,11,11,.55) 0%, rgba(11,11,11,.8) 100%)",
+					"help": "CSS layer placed over image/video backgrounds to keep the text legible."
+				}
+			]
+		}
+	],
+	"taxonomies": [
+		{
+			"name": "product_category",
+			"label": "Product Categories",
+			"labelSingular": "Product Category",
+			"hierarchical": true,
+			"collections": [
+				"products"
+			],
+			"terms": [
+				{
+					"slug": "physical-goods",
+					"label": "Physical Goods",
+					"description": "Tangible products that ship — apparel, ceramics, accessories, and everyday objects."
+				},
+				{
+					"slug": "digital-downloads",
+					"label": "Digital Downloads",
+					"description": "Instantly-delivered files — templates, presets, fonts, e-books, or any downloadable asset."
+				},
+				{
+					"slug": "subscriptions",
+					"label": "Subscriptions",
+					"description": "Recurring products — monthly boxes, memberships, and any product billed on a schedule."
+				},
+				{
+					"slug": "bundles",
+					"label": "Bundles & Sets",
+					"description": "Grouped products sold together as a set, typically at a discount."
+				}
+			]
+		},
+		{
+			"name": "product_tag",
+			"label": "Product Tags",
+			"labelSingular": "Product Tag",
+			"hierarchical": false,
+			"collections": [
+				"products"
+			],
+			"terms": [
+				{
+					"slug": "new-arrival",
+					"label": "New Arrival",
+					"description": "Fresh additions to the shop."
+				},
+				{
+					"slug": "bestseller",
+					"label": "Bestseller",
+					"description": "Our most-loved products of the season."
+				},
+				{
+					"slug": "sale",
+					"label": "On Sale",
+					"description": "Discounted products — while stocks last."
+				},
+				{
+					"slug": "limited-edition",
+					"label": "Limited Edition",
+					"description": "Small-run drops. Once they're gone, they're gone."
+				},
+				{
+					"slug": "eco-friendly",
+					"label": "Eco-Friendly",
+					"description": "Made from recycled, renewable, or low-impact materials."
+				},
+				{
+					"slug": "gift",
+					"label": "Great as a Gift",
+					"description": "Thoughtful picks that make good presents."
+				}
+			]
+		},
+		{
+			"name": "post_category",
+			"label": "Post Categories",
+			"labelSingular": "Post Category",
+			"hierarchical": false,
+			"collections": [
+				"posts"
+			],
+			"terms": [
+				{
+					"slug": "behind-the-scenes",
+					"label": "Behind the Scenes",
+					"description": "How products are made, sourced, or designed. Craft, process, and provenance stories."
+				},
+				{
+					"slug": "product-stories",
+					"label": "Product Stories",
+					"description": "Deep dives on individual products — why they're in the edit, what makes them worth owning."
+				},
+				{
+					"slug": "buying-guides",
+					"label": "Buying Guides",
+					"description": "Practical, gift-style roundups that help readers pick the right product for the job."
+				}
+			]
+		}
+	],
+	"menus": [
+		{
+			"name": "primary",
+			"label": "Primary navigation",
+			"items": [
+				{
+					"type": "custom",
+					"label": "Shop",
+					"url": "/shop",
+					"children": [
+						{
+							"type": "custom",
+							"label": "Physical Goods",
+							"url": "/category/physical-goods",
+							"titleAttr": "Everyday objects, made well",
+							"cssClasses": "grad-amber"
+						},
+						{
+							"type": "custom",
+							"label": "Digital Downloads",
+							"url": "/category/digital-downloads",
+							"titleAttr": "Instant access, no shipping",
+							"cssClasses": "grad-blue"
+						},
+						{
+							"type": "custom",
+							"label": "Subscriptions",
+							"url": "/category/subscriptions",
+							"titleAttr": "Curated monthly deliveries",
+							"cssClasses": "grad-green"
+						},
+						{
+							"type": "custom",
+							"label": "Bundles",
+							"url": "/category/bundles",
+							"titleAttr": "More for less, always",
+							"cssClasses": "grad-purple"
+						}
+					]
+				},
+				{
+					"type": "custom",
+					"label": "New",
+					"url": "/shop?sort=newest",
+					"cssClasses": "is-accent"
+				},
+				{
+					"type": "custom",
+					"label": "Journal",
+					"url": "/blog",
+					"titleAttr": "Product stories, buying guides and behind-the-scenes"
+				},
+				{
+					"type": "custom",
+					"label": "About",
+					"url": "/about"
+				}
+			]
+		},
+		{
+			"name": "footer-shop",
+			"label": "Footer · Shop column",
+			"items": [
+				{
+					"type": "custom",
+					"label": "All Products",
+					"url": "/shop"
+				},
+				{
+					"type": "custom",
+					"label": "Physical Goods",
+					"url": "/category/physical-goods"
+				},
+				{
+					"type": "custom",
+					"label": "Digital Downloads",
+					"url": "/category/digital-downloads"
+				},
+				{
+					"type": "custom",
+					"label": "Subscriptions",
+					"url": "/category/subscriptions"
+				},
+				{
+					"type": "custom",
+					"label": "Bundles & Sets",
+					"url": "/category/bundles"
+				}
+			]
+		},
+		{
+			"name": "footer-account",
+			"label": "Footer · Account column",
+			"items": [
+				{
+					"type": "custom",
+					"label": "Your Account",
+					"url": "/account"
+				},
+				{
+					"type": "custom",
+					"label": "Order History",
+					"url": "/account"
+				},
+				{
+					"type": "custom",
+					"label": "Downloads",
+					"url": "/account"
+				},
+				{
+					"type": "custom",
+					"label": "Subscriptions",
+					"url": "/subscriptions"
+				}
+			]
+		},
+		{
+			"name": "footer-help",
+			"label": "Footer · Help column",
+			"items": [
+				{
+					"type": "custom",
+					"label": "FAQ",
+					"url": "/shop"
+				},
+				{
+					"type": "custom",
+					"label": "Shipping Policy",
+					"url": "/shop"
+				},
+				{
+					"type": "custom",
+					"label": "Returns",
+					"url": "/shop"
+				},
+				{
+					"type": "custom",
+					"label": "Contact",
+					"url": "/shop"
+				}
+			]
+		},
+		{
+			"name": "footer-legal",
+			"label": "Footer · Legal (bottom bar)",
+			"items": [
+				{
+					"type": "custom",
+					"label": "Privacy Policy",
+					"url": "/shop"
+				},
+				{
+					"type": "custom",
+					"label": "Terms of Service",
+					"url": "/shop"
+				}
+			]
+		}
+	],
+	"content": {
+		"products": [
+			{
+				"id": "enamel-mug",
+				"slug": "enamel-mug",
+				"status": "published",
+				"data": {
+					"title": "Enamel Mug",
+					"type": "simple",
+					"sku": "MUG-001",
+					"prices": {
+						"USD": {
+							"amount": 1599
+						}
+					},
+					"manage_stock": true,
+					"stock_quantity": 25,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": 5,
+					"weight_grams": 320,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": true,
+					"is_downloadable": false,
+					"is_virtual": false
+				},
+				"taxonomies": {
+					"product_category": [
+						"physical-goods"
+					],
+					"product_tag": [
+						"bestseller",
+						"eco-friendly",
+						"gift"
+					]
+				}
+			},
+			{
+				"id": "graphic-tee",
+				"slug": "graphic-tee",
+				"status": "published",
+				"data": {
+					"title": "Logo Tee",
+					"type": "variable",
+					"sku": "TEE-001",
+					"prices": {
+						"USD": {
+							"amount": 2999
+						}
+					},
+					"manage_stock": false,
+					"stock_quantity": null,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": null,
+					"weight_grams": 180,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": false,
+					"is_downloadable": false,
+					"is_virtual": false
+				},
+				"taxonomies": {
+					"product_category": [
+						"physical-goods"
+					],
+					"product_tag": [
+						"new-arrival",
+						"gift"
+					]
+				}
+			},
+			{
+				"id": "starter-bundle",
+				"slug": "starter-bundle",
+				"status": "published",
+				"data": {
+					"title": "Starter Bundle",
+					"type": "grouped",
+					"sku": "BUNDLE-001",
+					"prices": {
+						"USD": {
+							"amount": 4499
+						}
+					},
+					"manage_stock": false,
+					"stock_quantity": null,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": null,
+					"weight_grams": null,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": false,
+					"is_downloadable": false,
+					"is_virtual": false,
+					"child_product_ids": [
+						"enamel-mug",
+						"graphic-tee"
+					]
+				},
+				"taxonomies": {
+					"product_category": [
+						"bundles"
+					],
+					"product_tag": [
+						"sale",
+						"gift",
+						"bestseller"
+					]
+				}
+			},
+			{
+				"id": "partner-good",
+				"slug": "partner-good",
+				"status": "published",
+				"data": {
+					"title": "Partner Good (external)",
+					"type": "external",
+					"sku": "EXT-001",
+					"prices": {
+						"USD": {
+							"amount": 9900
+						}
+					},
+					"manage_stock": false,
+					"stock_quantity": null,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": null,
+					"weight_grams": null,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": false,
+					"is_downloadable": false,
+					"is_virtual": false,
+					"product_url": "https://example.com/product",
+					"button_text": "Buy on partner site"
+				},
+				"taxonomies": {
+					"product_category": [
+						"physical-goods"
+					],
+					"product_tag": [
+						"limited-edition"
+					]
+				}
+			},
+			{
+				"id": "monthly-box",
+				"slug": "monthly-box",
+				"status": "published",
+				"data": {
+					"title": "Monthly Box",
+					"type": "subscription",
+					"sku": "SUB-001",
+					"prices": {
+						"USD": {
+							"amount": 2900
+						}
+					},
+					"manage_stock": false,
+					"stock_quantity": null,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": null,
+					"weight_grams": 600,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": false,
+					"is_downloadable": false,
+					"is_virtual": false,
+					"subscription_config": {
+						"interval": "month",
+						"interval_count": 1
+					}
+				},
+				"taxonomies": {
+					"product_category": [
+						"subscriptions"
+					],
+					"product_tag": [
+						"bestseller",
+						"new-arrival",
+						"gift"
+					]
+				}
+			},
+			{
+				"id": "design-templates",
+				"slug": "design-templates",
+				"status": "published",
+				"data": {
+					"title": "Design Templates (digital)",
+					"type": "simple",
+					"sku": "DIG-001",
+					"prices": {
+						"USD": {
+							"amount": 900
+						}
+					},
+					"manage_stock": false,
+					"stock_quantity": null,
+					"stock_status": "instock",
+					"backorders": "no",
+					"low_stock_threshold": null,
+					"weight_grams": null,
+					"tax_class": "standard",
+					"shipping_class_slug": null,
+					"featured": false,
+					"is_downloadable": true,
+					"is_virtual": true,
+					"downloadable_files": []
+				},
+				"taxonomies": {
+					"product_category": [
+						"digital-downloads"
+					],
+					"product_tag": [
+						"new-arrival",
+						"sale"
+					]
+				}
+			}
+		],
+		"hero_slides": [
+			{
+				"id": "slide-new-arrivals",
+				"slug": "slide-new-arrivals",
+				"status": "published",
+				"data": {
+					"eyebrow": "New arrivals",
+					"headline": "Discover\nThe Collection",
+					"subtitle": "Curated physical goods, digital downloads and monthly boxes — all in one place.",
+					"cta_label": "Shop now",
+					"cta_href": "/shop",
+					"bg_type": "gradient",
+					"bg_css": "radial-gradient(ellipse at 70% 50%, #1a1000 0%, #0b0b0b 70%)",
+					"accent_css": "linear-gradient(90deg, #c8a46e, #8b6520)",
+					"sort_order": 10
+				}
+			},
+			{
+				"id": "slide-digital-goods",
+				"slug": "slide-digital-goods",
+				"status": "published",
+				"data": {
+					"eyebrow": "Digital goods",
+					"headline": "Instant\nAccess, Always",
+					"subtitle": "Download premium design assets, templates, and tools the moment you purchase.",
+					"cta_label": "Browse digital",
+					"cta_href": "/category/digital-downloads",
+					"bg_type": "gradient",
+					"bg_css": "radial-gradient(ellipse at 30% 60%, #00102a 0%, #0b0b0b 70%)",
+					"accent_css": "linear-gradient(90deg, #5b9bd5, #1a4a8a)",
+					"sort_order": 20
+				}
+			},
+			{
+				"id": "slide-subscriptions",
+				"slug": "slide-subscriptions",
+				"status": "published",
+				"data": {
+					"eyebrow": "Subscriptions",
+					"headline": "Curated Monthly,\nFor You",
+					"subtitle": "A thoughtfully assembled box of goods, delivered to your door every month.",
+					"cta_label": "Explore boxes",
+					"cta_href": "/category/subscriptions",
+					"bg_type": "gradient",
+					"bg_css": "radial-gradient(ellipse at 60% 40%, #001a0a 0%, #0b0b0b 70%)",
+					"accent_css": "linear-gradient(90deg, #4caf78, #1a5c35)",
+					"sort_order": 30
+				}
+			}
+		],
+		"posts": [
+			{
+				"id": "post-craft-of-enamel",
+				"slug": "the-craft-of-enamel",
+				"status": "published",
+				"data": {
+					"title": "The Craft of Enamel: Behind Our Signature Mugs",
+					"excerpt": "Every enamel mug in The Edit is dipped and fired by hand. Here's what goes into one.",
+					"cover_gradient": "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+					"author_name": "Maren Osei",
+					"published_date": "2026-03-12T09:00:00.000Z",
+					"reading_minutes": 5,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-0",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1",
+									"marks": [],
+									"text": "Enamelware sits at a strange intersection of the industrial and the handmade. At a glance, our signature mug looks like a mass-produced kitchen staple. Up close — once you know what to look for — every piece is unmistakably the work of a small team in a single workshop."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-3",
+									"marks": [],
+									"text": "From blank steel to finished piece"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-4",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-5",
+									"marks": [],
+									"text": "Each mug begins life as a pressed steel blank. The blanks are pickled to remove any mill scale, then dipped twice in a liquid enamel slurry. Between dips, they're hung on a rack to dry for at least four hours — rush it, and you get hairline cracks that show up only after firing."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-6",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-7",
+									"marks": [],
+									"text": "Pressed steel blanks sourced from a Midlands fabricator"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-8",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-9",
+									"marks": [],
+									"text": "Two-coat dipping (base + topcoat) to resist chipping"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-a",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-b",
+									"marks": [],
+									"text": "Fired at 820°C for 180 seconds, then air-cooled"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-c",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-d",
+									"marks": [],
+									"text": "Inspected for pinholes, glossed rims, and weight parity"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-e",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-f",
+									"marks": [],
+									"text": "Why we fire at 820°C"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-g",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-h",
+									"marks": [],
+									"text": "Most factory enamelware is fired hotter and faster to move product. At 820°C the coat fuses a touch more gently — it takes longer per piece, but the resulting surface is harder and the colour sits a little deeper."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-i",
+							"style": "blockquote",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-j",
+									"marks": [],
+									"text": "The difference isn't visible from across the room. It's visible on the lip of the mug, in your hand, every morning for ten years."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-k",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-l",
+									"marks": [],
+									"text": "We've had customers send us photos of our mugs still going strong after a decade of daily use. That's the point of enamel — it should outlast the kitchen you bought it for."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"behind-the-scenes"
+					]
+				}
+			},
+			{
+				"id": "post-why-we-ship-monthly",
+				"slug": "why-we-ship-monthly-boxes",
+				"status": "published",
+				"data": {
+					"title": "Why We Ship Monthly Boxes Instead of Bigger Catalogues",
+					"excerpt": "Three years in, subscription boxes are still our favourite product. Here's why constraint beats abundance.",
+					"cover_gradient": "linear-gradient(135deg, #001a0a 0%, #0b0b0b 100%)",
+					"author_name": "Theo Park",
+					"published_date": "2026-03-04T09:00:00.000Z",
+					"reading_minutes": 6,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-m",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-n",
+									"marks": [],
+									"text": "When we launched the Monthly Box, the internal pitch was half-serious: 'make the smallest possible product with the largest possible meaning.' Three years and 14,000 boxes later, it's still our highest-NPS line."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-o",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-p",
+									"marks": [],
+									"text": "Constraint is the product"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-q",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-r",
+									"marks": [],
+									"text": "A monthly box forces us to pick four things we genuinely believe in. Not forty. Not four hundred. That's the feature — it filters out the noise on behalf of the customer, because we've done the filtering for them."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-s",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-t",
+									"marks": [],
+									"text": "Our customers don't subscribe for the 12% discount. They subscribe because 'four good things a month' is a better editorial contract than 'an unlimited online shop.'"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-u",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-v",
+									"marks": [],
+									"text": "How we plan a year ahead"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-w",
+							"style": "normal",
+							"listItem": "number",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-x",
+									"marks": [],
+									"text": "February each year, we lock the theme for the next twelve months."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-y",
+							"style": "normal",
+							"listItem": "number",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-z",
+									"marks": [],
+									"text": "Each month gets a lead item (~50% of the box value) and three supporting items."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-10",
+							"style": "normal",
+							"listItem": "number",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-11",
+									"marks": [],
+									"text": "We try to ensure one digital good per quarter — it keeps the ratio balanced."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-12",
+							"style": "normal",
+							"listItem": "number",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-13",
+									"marks": [],
+									"text": "Final composition signs off ten weeks before the ship date."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-14",
+							"style": "blockquote",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-15",
+									"marks": [],
+									"text": "The best subscription products feel like letters from a friend with better taste than you. Ours tries to read that way."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"behind-the-scenes"
+					]
+				}
+			},
+			{
+				"id": "post-in-defense-of-the-logo-tee",
+				"slug": "in-defense-of-the-logo-tee",
+				"status": "published",
+				"data": {
+					"title": "In Defence of the Logo Tee",
+					"excerpt": "The plain T-shirt is having a moment again. We make the case for putting a small mark back on it.",
+					"cover_gradient": "linear-gradient(135deg, #1a0f00 0%, #0b0b0b 100%)",
+					"author_name": "Priya Nair",
+					"published_date": "2026-02-22T09:00:00.000Z",
+					"reading_minutes": 4,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-16",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-17",
+									"marks": [],
+									"text": "Fashion has spent the last decade convinced the future of the T-shirt is quiet. Heavyweight cotton. No branding. A small tonal label that you had to squint to read. We loved it too — for a while."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-18",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-19",
+									"marks": [],
+									"text": "The case for a small mark"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1a",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1b",
+									"marks": [],
+									"text": "A logo, done sparingly, does two things a blank tee can't. It tells the wearer this piece is part of something — a shop, a scene, a point of view. And it lets other people recognise it without a caption."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1c",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1d",
+									"marks": [],
+									"text": "How we approached ours"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-1e",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1f",
+									"marks": [],
+									"text": "2cm wide, centred at the chest — smaller than a coin."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-1g",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1h",
+									"marks": [],
+									"text": "Tonal embroidery, not print: matte thread on matte fabric."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-1i",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1j",
+									"marks": [],
+									"text": "220gsm ringspun cotton, pre-washed. Same body as the blank."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1k",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1l",
+									"marks": [],
+									"text": "The goal isn't to make the logo the point. The goal is to make the logo the reason the tee has a point."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"product-stories"
+					]
+				}
+			},
+			{
+				"id": "post-how-to-pick-a-subscription",
+				"slug": "how-to-pick-a-subscription-box",
+				"status": "published",
+				"data": {
+					"title": "How to Pick the Right Subscription Box",
+					"excerpt": "Four questions we ask any customer who's on the fence between our Monthly, Quarterly, and Annual plans.",
+					"cover_gradient": "linear-gradient(135deg, #001433 0%, #0b0b0b 100%)",
+					"author_name": "Theo Park",
+					"published_date": "2026-02-14T09:00:00.000Z",
+					"reading_minutes": 3,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-1m",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1n",
+									"marks": [],
+									"text": "Subscription fatigue is real. Before you sign up for anything — ours or anyone else's — ask yourself these four things."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1o",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1p",
+									"marks": [],
+									"text": "1. How often do you actually need new things?"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1q",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1r",
+									"marks": [],
+									"text": "If the honest answer is 'rarely,' a monthly box will sit unopened and you'll resent it. Quarterly or annual is almost always the better pick."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1s",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1t",
+									"marks": [],
+									"text": "2. Do you trust the curator?"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1u",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1v",
+									"marks": [],
+									"text": "Subscription boxes live or die on taste. Read one issue of the curator's newsletter or look at their Instagram. If their eye doesn't match yours, a discount won't fix it."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1w",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1x",
+									"marks": [],
+									"text": "3. Can you pause?"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-1y",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-1z",
+									"marks": [],
+									"text": "Most good subscriptions let you skip or pause. Check this before you sign up — not after."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-20",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-21",
+									"marks": [],
+									"text": "4. What's the exit?"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-22",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-23",
+									"marks": [],
+									"text": "Look for a one-click cancel link inside the account page. If you can't find it in the T&Cs, that's your answer."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"buying-guides"
+					]
+				}
+			},
+			{
+				"id": "post-the-digital-download",
+				"slug": "the-quiet-return-of-the-digital-download",
+				"status": "published",
+				"data": {
+					"title": "The Quiet Return of the Digital Download",
+					"excerpt": "Streaming was meant to be the end of ownership. Our digital download numbers have tripled. Here's what's going on.",
+					"cover_gradient": "linear-gradient(135deg, #00102a 0%, #0b0b0b 100%)",
+					"author_name": "Maren Osei",
+					"published_date": "2026-02-02T09:00:00.000Z",
+					"reading_minutes": 5,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-24",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-25",
+									"marks": [],
+									"text": "A quiet thing has been happening inside the catalogue. Over the last 18 months, our digital download sales have grown three times faster than the rest of the shop. They're a quarter of revenue now."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-26",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-27",
+									"marks": [],
+									"text": "People are buying again"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-28",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-29",
+									"marks": [],
+									"text": "A decade of 'streaming-everything' built a generation of customers who realised they don't own any of the things they pay for. A paid-once, forever-downloadable file is, by contrast, radically calm."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2a",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2b",
+									"marks": [],
+									"text": "What's selling"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-2c",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2d",
+									"marks": [],
+									"text": "Lightroom + Capture One presets — up 312% YoY."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-2e",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2f",
+									"marks": [],
+									"text": "High-res icon packs — up 180%."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-2g",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2h",
+									"marks": [],
+									"text": "Brush and texture sets — up 145%."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "li-2i",
+							"style": "normal",
+							"listItem": "bullet",
+							"level": 1,
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2j",
+									"marks": [],
+									"text": "Printable zines — surprisingly strong, up 98%."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2k",
+							"style": "blockquote",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2l",
+									"marks": [],
+									"text": "Digital goods are having a second wind because owning something — anything — feels novel again."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"product-stories"
+					]
+				}
+			},
+			{
+				"id": "post-gifting-guide",
+				"slug": "the-gifting-guide-for-people-who-dont-do-gifts",
+				"status": "published",
+				"data": {
+					"title": "The Gifting Guide for People Who Don't Do Gifts",
+					"excerpt": "Seven quietly excellent things from The Edit, picked for the hardest person on your list: the one who says they don't want anything.",
+					"cover_gradient": "linear-gradient(135deg, #1a001f 0%, #0b0b0b 100%)",
+					"author_name": "Priya Nair",
+					"published_date": "2026-01-20T09:00:00.000Z",
+					"reading_minutes": 4,
+					"body": [
+						{
+							"_type": "block",
+							"_key": "b-2m",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2n",
+									"marks": [],
+									"text": "Every year someone on your list says they don't want anything. They're usually lying — they just don't want bad things. Here's what we'd pick."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2o",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2p",
+									"marks": [],
+									"text": "Under £30"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2q",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2r",
+									"marks": [],
+									"text": "The enamel mug. Nothing about it screams gift, which is exactly why it works as one. A mug that looks good on a shelf for ten years is a better present than a scented candle they'll burn in three."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2s",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2t",
+									"marks": [],
+									"text": "Under £75"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2u",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2v",
+									"marks": [],
+									"text": "Pair the logo tee with the starter bundle — it lands as a thoughtful set rather than one obvious thing."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2w",
+							"style": "h2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2x",
+									"marks": [],
+									"text": "Under £150"
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-2y",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-2z",
+									"marks": [],
+									"text": "The quarterly subscription. It spreads the gift across four seasons; you get to be the 'something nice showed up today' friend three more times."
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"_key": "b-30",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "s-31",
+									"marks": [],
+									"text": "The secret to gifting people who don't do gifts is to give them permission to keep the thing around without feeling guilty about it. Quietly excellent objects — mugs, tees, well-designed software — pass that test."
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"post_category": [
+						"buying-guides"
+					]
+				}
+			}
+		],
+		"banners": [
+			{
+				"id": "banner-home-promise",
+				"slug": "home-promise",
+				"status": "published",
+				"data": {
+					"internal_name": "Homepage · Our promise",
+					"eyebrow": "Our promise",
+					"headline": "Quality goods,\nwithout compromise.",
+					"body": [
+						{
+							"_type": "block",
+							"_key": "pb1",
+							"style": "normal",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"_key": "ps1",
+									"marks": [],
+									"text": "Every product in The Edit is selected for quality, function, and lasting value. We don't chase trends — we curate things worth keeping."
+								}
+							]
+						}
+					],
+					"primary_cta_label": "Explore the full catalog",
+					"primary_cta_href": "/shop",
+					"secondary_cta_label": "Read our story",
+					"secondary_cta_href": "/about",
+					"theme": "dark",
+					"alignment": "left",
+					"bg_type": "gradient",
+					"bg_css": "linear-gradient(135deg, #1a1000 0%, #0b0b0b 100%)"
+				}
+			}
+		],
+		"trust_items": [
+			{
+				"id": "trust-shipping",
+				"slug": "free-shipping",
+				"status": "published",
+				"data": {
+					"icon": "✦",
+					"title": "Free Shipping",
+					"description": "On all orders over $75",
+					"sort_order": 10
+				}
+			},
+			{
+				"id": "trust-checkout",
+				"slug": "secure-checkout",
+				"status": "published",
+				"data": {
+					"icon": "◈",
+					"title": "Secure Checkout",
+					"description": "Stripe-powered, PCI compliant",
+					"sort_order": 20
+				}
+			},
+			{
+				"id": "trust-returns",
+				"slug": "returns",
+				"status": "published",
+				"data": {
+					"icon": "↺",
+					"title": "30-Day Returns",
+					"description": "No questions asked",
+					"sort_order": 30
+				}
+			},
+			{
+				"id": "trust-downloads",
+				"slug": "instant-downloads",
+				"status": "published",
+				"data": {
+					"icon": "⬇",
+					"title": "Instant Downloads",
+					"description": "Digital goods, immediately",
+					"sort_order": 40
+				}
+			}
+		],
+		"category_tiles": [
+			{
+				"id": "tile-physical",
+				"slug": "physical-goods",
+				"status": "published",
+				"data": {
+					"label": "Physical Goods",
+					"description": "Everyday objects, made well",
+					"href": "/category/physical-goods",
+					"size": "large",
+					"bg_css": "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+					"sort_order": 10
+				}
+			},
+			{
+				"id": "tile-digital",
+				"slug": "digital-downloads",
+				"status": "published",
+				"data": {
+					"label": "Digital Downloads",
+					"description": "Instant access, no shipping",
+					"href": "/category/digital-downloads",
+					"size": "small",
+					"bg_css": "linear-gradient(135deg, #001433 0%, #0b0b0b 100%)",
+					"sort_order": 20
+				}
+			},
+			{
+				"id": "tile-subscriptions",
+				"slug": "monthly-boxes",
+				"status": "published",
+				"data": {
+					"label": "Monthly Boxes",
+					"description": "Curated and delivered",
+					"href": "/category/subscriptions",
+					"size": "small",
+					"bg_css": "linear-gradient(135deg, #001a0a 0%, #0b0b0b 100%)",
+					"sort_order": 30
+				}
+			},
+			{
+				"id": "tile-bundles",
+				"slug": "bundles",
+				"status": "published",
+				"data": {
+					"label": "Bundles",
+					"description": "More value, less friction",
+					"href": "/category/bundles",
+					"size": "large",
+					"bg_css": "linear-gradient(135deg, #1a001f 0%, #0b0b0b 100%)",
+					"sort_order": 40
+				}
+			}
+		],
+		"announcements": [
+			{
+				"id": "ann-shipping",
+				"slug": "free-shipping",
+				"status": "published",
+				"data": {
+					"message": "Free shipping on orders over $75",
+					"location": "both",
+					"enabled": true,
+					"sort_order": 10
+				}
+			},
+			{
+				"id": "ann-returns",
+				"slug": "thirty-day-returns",
+				"status": "published",
+				"data": {
+					"message": "30-day returns, no questions asked",
+					"location": "top_bar",
+					"enabled": true,
+					"sort_order": 20
+				}
+			},
+			{
+				"id": "ann-stripe",
+				"slug": "secure-checkout",
+				"status": "published",
+				"data": {
+					"message": "Secure checkout powered by Stripe",
+					"location": "top_bar",
+					"enabled": true,
+					"sort_order": 30
+				}
+			},
+			{
+				"id": "ann-new",
+				"slug": "new-arrivals",
+				"status": "published",
+				"data": {
+					"message": "New arrivals every week",
+					"location": "top_bar",
+					"enabled": true,
+					"sort_order": 40
+				}
+			},
+			{
+				"id": "ann-digital",
+				"slug": "digital-instant",
+				"status": "published",
+				"data": {
+					"message": "Digital downloads — instant access",
+					"location": "top_bar",
+					"enabled": true,
+					"sort_order": 50
+				}
+			},
+			{
+				"id": "ann-m-physical",
+				"slug": "m-physical",
+				"status": "published",
+				"data": {
+					"message": "Physical Goods",
+					"location": "marquee",
+					"enabled": true,
+					"sort_order": 100
+				}
+			},
+			{
+				"id": "ann-m-digital",
+				"slug": "m-digital",
+				"status": "published",
+				"data": {
+					"message": "Digital Downloads",
+					"location": "marquee",
+					"enabled": true,
+					"sort_order": 110
+				}
+			},
+			{
+				"id": "ann-m-subs",
+				"slug": "m-subs",
+				"status": "published",
+				"data": {
+					"message": "Subscriptions",
+					"location": "marquee",
+					"enabled": true,
+					"sort_order": 120
+				}
+			},
+			{
+				"id": "ann-m-bundles",
+				"slug": "m-bundles",
+				"status": "published",
+				"data": {
+					"message": "Curated Bundles",
+					"location": "marquee",
+					"enabled": true,
+					"sort_order": 130
+				}
+			},
+			{
+				"id": "ann-m-stripe",
+				"slug": "m-stripe",
+				"status": "published",
+				"data": {
+					"message": "Stripe Secure",
+					"location": "marquee",
+					"enabled": true,
+					"sort_order": 140
+				}
+			}
+		],
+		"site_text": [
+			{
+				"id": "site-text-main",
+				"slug": "main",
+				"status": "published",
+				"data": {
+					"footer_newsletter_title": "Stay in the loop",
+					"footer_newsletter_body": "New arrivals, exclusive offers, and carefully chosen recommendations.",
+					"footer_newsletter_placeholder": "your@email.com",
+					"footer_newsletter_cta": "Subscribe",
+					"footer_copyright": "© {year} {title}. All rights reserved.",
+					"social_pinterest": "https://pinterest.com/"
+				}
+			}
+		],
+		"section_headers": [
+			{
+				"id": "section-homepage-bento",
+				"slug": "homepage-bento",
+				"status": "published",
+				"data": {
+					"label": "Homepage · Bento (categories)",
+					"eyebrow": "Browse by type",
+					"title": "Everything you need,\nin one place",
+					"subtitle": "Four ways to shop — from everyday objects to digital downloads and curated monthly boxes.",
+					"render_mode": "band",
+					"theme": "light",
+					"alignment": "left",
+					"bg_type": "gradient",
+					"bg_css": "radial-gradient(ellipse at 20% 0%, #1a1000 0%, #0b0b0b 55%, #000 100%)",
+					"bg_overlay": "linear-gradient(180deg, rgba(11,11,11,0) 0%, rgba(11,11,11,.25) 100%)"
+				}
+			},
+			{
+				"id": "section-homepage-products",
+				"slug": "homepage-products",
+				"status": "published",
+				"data": {
+					"label": "Homepage · Products (shop grid)",
+					"eyebrow": "The selection",
+					"title": "New in\nthis season",
+					"render_mode": "compact",
+					"theme": "dark",
+					"alignment": "left",
+					"cta_label": "View all products",
+					"cta_href": "/shop"
+				}
+			},
+			{
+				"id": "section-homepage-journal",
+				"slug": "homepage-journal",
+				"status": "published",
+				"data": {
+					"label": "Homepage · Journal (posts)",
+					"eyebrow": "The Journal",
+					"title": "From the editors",
+					"subtitle": "Product stories, buying guides, and notes from the workshop.",
+					"render_mode": "compact",
+					"theme": "dark",
+					"alignment": "left",
+					"cta_label": "View all posts",
+					"cta_href": "/blog"
+				}
+			}
+		]
+	}
+}

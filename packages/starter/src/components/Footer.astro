@@ -1,0 +1,318 @@
+---
+/**
+ * Site footer.
+ *
+ * Every piece of content is admin-managed:
+ *   - Logo + brand name come from Site Settings (title + logo).
+ *   - Social URLs come from Site Settings (`social.instagram` etc.),
+ *     with pinterest (not in the typed SiteSettings schema) still sourced
+ *     from `site_text.main` via `getSiteMeta()`.
+ *   - Column 2-4 navigation links come from emdash menus:
+ *       `footer-shop`, `footer-account`, `footer-help`
+ *   - Bottom-bar legal links come from the `footer-legal` menu.
+ *   - Footer-specific free-form copy (tagline override, newsletter strip,
+ *     copyright template) still lives in `site_text.main`.
+ *
+ * If any piece is missing (fresh install, menu renamed, etc.) we fall back
+ * to sensible defaults so the footer always renders.
+ */
+import { getEmDashEntry, getMenu } from "emdash";
+import { getSiteMeta } from "../lib/site-meta";
+import SiteLogo from "./SiteLogo.astro";
+
+const year = new Date().getFullYear();
+const meta = await getSiteMeta();
+
+// ── Menus for the 3 link columns + bottom-bar legal nav ────────────────────
+type SimpleMenuItem = { label: string; url: string };
+
+async function safeMenu(name: string): Promise<SimpleMenuItem[]> {
+	try {
+		const menu = await getMenu(name);
+		if (!menu) return [];
+		return menu.items
+			.filter((it) => it.url)
+			.map((it) => ({
+				label: it.label ?? "",
+				url: it.url ?? "#",
+			}));
+	} catch {
+		return [];
+	}
+}
+
+const [shopItems, accountItems, helpItems, legalItems] = await Promise.all([
+	safeMenu("footer-shop"),
+	safeMenu("footer-account"),
+	safeMenu("footer-help"),
+	safeMenu("footer-legal"),
+]);
+
+const columns: Array<{ heading: string; links: SimpleMenuItem[] }> = [
+	{ heading: "Shop", links: shopItems },
+	{ heading: "Account", links: accountItems },
+	{ heading: "Help", links: helpItems },
+].filter((c) => c.links.length > 0);
+
+// ── Editorial copy (singleton site_text.main) ──────────────────────────────
+const { entry: siteText } = await getEmDashEntry("site_text", "main");
+const t = (siteText?.data ?? {}) as Record<string, unknown>;
+
+// Footer tagline: editor can override per-footer via site_text, otherwise
+// use the global tagline from Site Settings. Empty string is fine.
+const tagline = String(t.footer_tagline ?? meta.tagline ?? "");
+const newsletterTitle = String(t.footer_newsletter_title ?? "Stay in the loop");
+const newsletterBody = String(
+	t.footer_newsletter_body ??
+		"New arrivals, exclusive offers, and carefully chosen recommendations.",
+);
+const newsletterPlaceholder = String(
+	t.footer_newsletter_placeholder ?? "your@email.com",
+);
+const newsletterCta = String(t.footer_newsletter_cta ?? "Subscribe");
+// Copyright template: `{year}` and `{title}` are replaced at render time so
+// editors can customise the template without the site name ever being
+// hard-coded. Default template reads the site title from settings.
+const copyrightTemplate = String(
+	t.footer_copyright ?? `© {year} {title}. All rights reserved.`,
+);
+const copyrightHtml = copyrightTemplate
+	.replace("{year}", String(year))
+	.replace("{title}", meta.title);
+
+const { instagram, twitter, pinterest } = meta.social;
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+
+    <!-- Brand column -->
+    <div class="footer-brand">
+      <SiteLogo variant="footer" class="footer-logo" />
+      {tagline && (
+        <p class="footer-tagline" set:html={tagline.replace(/\n/g, "<br />")} />
+      )}
+      {(instagram || twitter || pinterest) && (
+        <div class="footer-social">
+          {instagram && (
+            <a href={instagram} target="_blank" rel="noopener" aria-label="Instagram" class="social-link">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                <circle cx="12" cy="12" r="4"/>
+                <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
+              </svg>
+            </a>
+          )}
+          {twitter && (
+            <a href={twitter} target="_blank" rel="noopener" aria-label="Twitter / X" class="social-link">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+            </a>
+          )}
+          {pinterest && (
+            <a href={pinterest} target="_blank" rel="noopener" aria-label="Pinterest" class="social-link">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.236 2.636 7.855 6.356 9.312-.088-.791-.167-2.005.035-2.868.181-.78 1.172-4.97 1.172-4.97s-.299-.598-.299-1.482c0-1.388.806-2.428 1.808-2.428.853 0 1.267.64 1.267 1.408 0 .858-.546 2.14-.828 3.33-.236.995.499 1.806 1.476 1.806 1.772 0 3.138-1.868 3.138-4.565 0-2.386-1.716-4.055-4.165-4.055-2.837 0-4.502 2.127-4.502 4.326 0 .856.33 1.774.741 2.276a.3.3 0 01.069.286c-.075.314-.243.995-.276 1.134-.044.183-.146.222-.337.134-1.249-.581-2.03-2.407-2.03-3.874 0-3.154 2.292-6.052 6.608-6.052 3.469 0 6.165 2.473 6.165 5.776 0 3.447-2.173 6.22-5.19 6.22-1.013 0-1.966-.527-2.292-1.148l-.623 2.378c-.226.869-.835 1.958-1.244 2.621.937.29 1.931.446 2.962.446 5.522 0 10-4.477 10-10S17.522 2 12 2z"/>
+              </svg>
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+
+    <!-- Nav columns (from emdash menus) -->
+    {columns.map((col) => (
+      <div class="footer-col">
+        <h3 class="footer-col-heading">{col.heading}</h3>
+        <ul>
+          {col.links.map((link) => (
+            <li><a href={link.url}>{link.label}</a></li>
+          ))}
+        </ul>
+      </div>
+    ))}
+
+    <!-- Newsletter -->
+    <div class="footer-newsletter">
+      <h3 class="footer-col-heading">{newsletterTitle}</h3>
+      <p>{newsletterBody}</p>
+      <form class="newsletter-form" onsubmit="return false;">
+        <input
+          type="email"
+          placeholder={newsletterPlaceholder}
+          aria-label="Email for newsletter"
+          autocomplete="email"
+        />
+        <button type="submit">{newsletterCta}</button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- Bottom bar -->
+  <div class="footer-bottom">
+    <div class="container footer-bottom-row">
+      <p set:html={copyrightHtml} />
+      {legalItems.length > 0 && (
+        <nav aria-label="Legal">
+          {legalItems.map((link) => (
+            <a href={link.url}>{link.label}</a>
+          ))}
+        </nav>
+      )}
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: 6rem;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    border-top: 1px solid var(--border);
+    background: #111111;
+    background: var(--bg-2);
+  }
+
+  .footer-inner {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr 1.6fr;
+    gap: 3rem;
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+  }
+
+  .footer-logo {
+    display: inline-flex; align-items: center; gap: .4rem;
+    margin-bottom: 1rem;
+  }
+  .footer-logo-mark { color: var(--gold); font-size: .9rem; }
+  .footer-logo-text {
+    font-family: "Fraunces", Georgia, serif;
+    font-family: var(--font-display);
+    font-size: 1.05rem; font-weight: 600;
+    letter-spacing: -.01em;
+    color: #f0ece3;
+    color: var(--text);
+  }
+  .footer-tagline {
+    font-size: .85rem;
+    color: #76736b;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+  .footer-social {
+    display: flex; gap: .75rem;
+  }
+  .social-link {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    transition: color .2s, border-color .2s;
+  }
+  .social-link:hover { color: var(--gold); border-color: var(--gold); }
+
+  .footer-col { display: flex; flex-direction: column; gap: .5rem; }
+  .footer-col-heading {
+    font-family: "DM Sans", Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #3c3a36;
+    color: var(--text-subtle);
+    margin-bottom: .75rem;
+  }
+  .footer-col ul {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: .6rem;
+  }
+  .footer-col a {
+    font-size: .875rem;
+    color: #76736b;
+    color: var(--text-muted);
+    transition: color .2s;
+  }
+  .footer-col a:hover { color: #f0ece3; color: var(--text); }
+
+  .footer-newsletter { display: flex; flex-direction: column; gap: 0; }
+  .footer-newsletter p {
+    font-size: .85rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    line-height: 1.65;
+  }
+  .newsletter-form {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+  }
+  .newsletter-form input {
+    width: 100%;
+    padding: .7rem 1rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font-sans); font-size: .875rem;
+    transition: border-color .2s;
+  }
+  .newsletter-form input::placeholder { color: var(--text-subtle); }
+  .newsletter-form input:focus {
+    outline: none;
+    border-color: var(--gold);
+  }
+  .newsletter-form button {
+    padding: .7rem 1rem;
+    background: var(--gold); color: #0b0b0b;
+    border: none; border-radius: var(--radius);
+    font-family: var(--font-sans); font-size: .875rem; font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .newsletter-form button:hover { background: var(--gold-light); }
+
+  .footer-bottom {
+    border-top: 1px solid var(--border);
+    padding: 1.25rem 0;
+  }
+  .footer-bottom-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .75rem;
+  }
+  .footer-bottom p {
+    font-size: .8rem;
+    color: var(--text-subtle);
+    margin: 0;
+  }
+  .footer-bottom a { color: var(--text-muted); transition: color .2s; }
+  .footer-bottom a:hover { color: var(--gold); }
+  .footer-bottom nav {
+    display: flex; gap: 1.5rem;
+  }
+  .footer-bottom nav a { font-size: .8rem; }
+
+  @media (max-width: 1100px) {
+    .footer-inner {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    .footer-brand { grid-column: 1 / -1; }
+    .footer-newsletter { grid-column: 1 / -1; }
+    .newsletter-form { flex-direction: row; }
+    .newsletter-form input { flex: 1; }
+    .newsletter-form button { flex-shrink: 0; }
+  }
+  @media (max-width: 640px) {
+    .footer-inner { grid-template-columns: 1fr 1fr; gap: 2rem; padding-top: 2.5rem; }
+    .footer-brand, .footer-newsletter { grid-column: 1 / -1; }
+    .newsletter-form { flex-direction: column; }
+    .footer-bottom-row { flex-direction: column; align-items: flex-start; }
+  }
+</style>

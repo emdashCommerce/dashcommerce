@@ -1,0 +1,173 @@
+---
+// ProductDetails — full product page.
+//
+// Reads emdash content entry `data` with snake_case field slugs —
+// matches `defineProductsCollection()` output exactly. Callers don't
+// need to pre-normalize.
+
+import AddToCartIsland from "../islands/AddToCartIsland.tsx";
+
+interface Variant {
+	id: string;
+	sku: string;
+	prices: Record<string, { amount: number; compareAtAmount?: number }>;
+	stockQuantity: number | null;
+	attributes: Record<string, string>;
+	isActive: boolean;
+}
+
+interface RawPrice {
+	amount: number;
+	compareAtAmount?: number;
+}
+
+export interface ProductDetailsProduct {
+	/** emdash entry.id — this is the SLUG in live-collection mode. */
+	id: string;
+	slug?: string | null;
+	data: {
+		/** ULID — the actual DB primary key used by cart/inventory. */
+		id: string;
+		title: string;
+		type: string;
+		prices: Record<string, RawPrice>;
+		sku: string;
+		stock_status?: string;
+		stock_quantity?: number | null;
+		is_downloadable?: boolean;
+		product_url?: string;
+		button_text?: string;
+	};
+}
+
+interface Props {
+	product: ProductDetailsProduct;
+	variants?: Variant[];
+	currency?: string;
+	locale?: string;
+	reviewsSummary?: {
+		averageRating: number;
+		count: number;
+	} | null;
+}
+
+const { product, variants = [], currency, locale, reviewsSummary } = Astro.props;
+const d = product.data;
+const prices = d.prices ?? {};
+const cc = (currency ?? Object.keys(prices)[0] ?? "USD").toUpperCase();
+const price = prices[cc];
+
+const formatMoney = (amountMinor: number) => {
+	try {
+		return new Intl.NumberFormat(locale ?? "en-US", {
+			style: "currency",
+			currency: cc,
+		}).format(amountMinor / 100);
+	} catch {
+		return `${cc} ${amountMinor / 100}`;
+	}
+};
+
+const attributeKeys = new Set<string>();
+for (const v of variants) {
+	for (const k of Object.keys(v.attributes ?? {})) attributeKeys.add(k);
+}
+
+const isExternal = d.type === "external";
+const outOfStock = d.stock_status === "outofstock";
+---
+<article class="dc-product-details">
+	<header>
+		<h1>{d.title}</h1>
+		{reviewsSummary && reviewsSummary.count > 0 && (
+			<p
+				class="dc-rating"
+				aria-label={`${reviewsSummary.averageRating} out of 5 stars`}
+			>
+				{'★'.repeat(Math.round(reviewsSummary.averageRating))}
+				{'☆'.repeat(5 - Math.round(reviewsSummary.averageRating))}
+				<span class="dc-rating-count">({reviewsSummary.count})</span>
+			</p>
+		)}
+	</header>
+
+	{price ? (
+		<p class="dc-price">
+			{price.compareAtAmount && price.compareAtAmount > price.amount ? (
+				<>
+					<s>{formatMoney(price.compareAtAmount)}</s>{' '}
+					<strong>{formatMoney(price.amount)}</strong>
+				</>
+			) : (
+				<strong>{formatMoney(price.amount)}</strong>
+			)}
+		</p>
+	) : (
+		<p class="dc-unavailable">Not available in {cc}.</p>
+	)}
+
+	<div class="dc-product-meta">
+		<p><strong>SKU:</strong> {d.sku}</p>
+		{outOfStock && <p class="dc-outofstock">Out of stock</p>}
+	</div>
+
+	<slot name="description" />
+
+	{isExternal ? (
+		d.product_url ? (
+			<a
+				class="dc-external-cta"
+				href={d.product_url}
+				target="_blank"
+				rel="noopener"
+			>
+				{d.button_text ?? "Buy now"}
+			</a>
+		) : (
+			<p class="dc-unavailable">
+				This product has no external link configured.
+			</p>
+		)
+	) : (
+		<AddToCartIsland
+			client:load
+			productId={product.data.id}
+			variants={variants.map((v) => ({
+				id: v.id,
+				sku: v.sku,
+				attributes: v.attributes,
+				stockQuantity: v.stockQuantity,
+				priceMinor: v.prices[cc]?.amount ?? null,
+				currency: cc,
+			}))}
+			attributeKeys={Array.from(attributeKeys)}
+			disabled={outOfStock}
+		/>
+	)}
+</article>
+
+<style>
+	.dc-product-details {
+		max-width: 48rem;
+		margin: 0 auto;
+		padding: 2rem 1rem;
+		color: var(--text, #111);
+	}
+	.dc-product-details h1 { margin: 0 0 0.5rem; color: var(--text, #111); }
+	.dc-rating { color: var(--gold, #c08a00); margin: 0 0 1rem; }
+	.dc-rating-count { color: var(--text-muted, #666); margin-left: 0.5rem; font-size: 0.9em; }
+	.dc-price { font-size: 1.5rem; color: var(--text, #111); }
+	.dc-unavailable { color: var(--text-muted, #888); }
+	.dc-outofstock { color: var(--ember, #a00); font-weight: 600; }
+	.dc-external-cta {
+		display: inline-block;
+		padding: 0.75rem 1.5rem;
+		background: var(--accent, var(--gold, #111));
+		color: var(--accent-on, #fff);
+		text-decoration: none;
+		border-radius: var(--radius, 4px);
+		font-weight: 500;
+		transition: background .2s, filter .2s;
+	}
+	.dc-external-cta:hover { background: var(--gold-light, var(--accent, #333)); filter: brightness(1.08); }
+</style>

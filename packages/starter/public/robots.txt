@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Block admin + internal API surface from crawling.
+Disallow: /_emdash/
+Disallow: /thank-you/
+Disallow: /account/
+Disallow: /subscriptions/
+
+# Emit sitemap location once @astrojs/sitemap is wired into
+# astro.config.mjs.
+# Sitemap: https://example.com/sitemap-index.xml

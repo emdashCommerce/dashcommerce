@@ -1,0 +1,13 @@
+---
+import Shop from "../../layouts/Shop.astro";
+import SubscriptionPortal from "@dashcommerce/core/astro/components/SubscriptionPortal.astro";
+
+export const prerender = false;
+
+const { token } = Astro.params;
+---
+<Shop title="Your subscription">
+	<div class="container-narrow" style="padding: 2rem 0;">
+		<SubscriptionPortal token={token ?? ""} />
+	</div>
+</Shop>

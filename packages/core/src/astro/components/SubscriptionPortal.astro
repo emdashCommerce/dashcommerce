@@ -1,0 +1,16 @@
+---
+// SubscriptionPortal — customer self-service.
+//
+// Takes a signed token (generated at order time, emailed to customer)
+// and renders cancel/pause/resume controls against the
+// /subscriptions/:token/* routes.
+
+import SubscriptionPortalIsland from "../islands/SubscriptionPortalIsland.tsx";
+
+interface Props {
+  token: string;
+}
+
+const { token } = Astro.props;
+---
+<SubscriptionPortalIsland client:load token={token} />

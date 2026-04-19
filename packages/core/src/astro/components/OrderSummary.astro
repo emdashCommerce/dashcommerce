@@ -1,0 +1,16 @@
+---
+// OrderSummary — post-checkout thank-you page.
+//
+// Renders a polling island that hits /orders/by-draft/:orderDraftId
+// until the webhook has persisted the order. Stripe redirects the
+// customer back with the draft id in the URL.
+
+import OrderSummaryIsland from "../islands/OrderSummaryIsland.tsx";
+
+interface Props {
+  orderDraftId: string;
+}
+
+const { orderDraftId } = Astro.props;
+---
+<OrderSummaryIsland client:load orderDraftId={orderDraftId} />

@@ -1,0 +1,353 @@
+---
+/**
+ * SectionHeader — reusable eyebrow + title + optional subtitle / CTA for
+ * content bands across the site (homepage Bento, Products, Journal,
+ * Trust, etc.).
+ *
+ * Reads the entry by slug from the `section_headers` collection so the
+ * whole block is editable from the admin. Falls back to the props passed
+ * in if the entry doesn't exist — that way a brand-new install still
+ * renders something sensible before the seed has been applied.
+ *
+ * Two render modes:
+ *
+ *   - "compact" (default): plain eyebrow + title + subtitle + CTA stack.
+ *     Flows with the surrounding page, no band chrome.
+ *
+ *   - "band": full-width panel with the same background system as the
+ *     Banner component (gradient / image / video + overlay). Use this
+ *     when the items beneath the header have strong visuals of their own
+ *     and you want the intro to visually anchor them.
+ *
+ * Editors swap between modes from the admin; the underlying data shape
+ * is the same.
+ *
+ * Usage:
+ *
+ *   <SectionHeader slug="homepage-bento" />
+ *   <SectionHeader slug="homepage-products"
+ *                  fallbackEyebrow="The selection"
+ *                  fallbackTitle={`New in\nthis season`} />
+ */
+import { getEmDashEntry } from "emdash";
+import { Image } from "emdash/ui";
+
+interface Props {
+	/** Slug of the entry in the `section_headers` collection. */
+	slug: string;
+	/** Shown if the entry is missing / unpublished. */
+	fallbackEyebrow?: string;
+	fallbackTitle?: string;
+	fallbackSubtitle?: string;
+	fallbackCtaLabel?: string;
+	fallbackCtaHref?: string;
+	/** Optional override — useful when the page has a custom count. */
+	ctaLabelOverride?: string;
+}
+
+const {
+	slug,
+	fallbackEyebrow = "",
+	fallbackTitle = "",
+	fallbackSubtitle = "",
+	fallbackCtaLabel = "",
+	fallbackCtaHref = "",
+	ctaLabelOverride,
+} = Astro.props;
+
+const { entry } = await getEmDashEntry("section_headers", slug);
+const d = (entry?.data ?? {}) as Record<string, unknown>;
+
+const eyebrow = String(d.eyebrow ?? fallbackEyebrow);
+const titleRaw = String(d.title ?? fallbackTitle);
+const subtitle = String(d.subtitle ?? fallbackSubtitle);
+const ctaLabel = ctaLabelOverride ?? String(d.cta_label ?? fallbackCtaLabel);
+const ctaHref = String(d.cta_href ?? fallbackCtaHref);
+
+// Split the title on the first `\n` — the second line is rendered italic
+// to match the existing homepage typography.
+function splitTitle(raw: string): { first: string; second: string } {
+	const idx = raw.indexOf("\n");
+	if (idx === -1) return { first: raw, second: "" };
+	return { first: raw.slice(0, idx), second: raw.slice(idx + 1) };
+}
+const titleParts = splitTitle(titleRaw);
+
+// Render mode + theme + alignment
+const renderMode: "compact" | "band" =
+	d.render_mode === "band" ? "band" : "compact";
+const theme: "dark" | "light" = d.theme === "light" ? "light" : "dark";
+const alignment: "left" | "center" | "right" =
+	d.alignment === "center" ? "center" : d.alignment === "right" ? "right" : "left";
+
+// Background resolution — identical to Banner.astro so behaviour is
+// predictable across components.
+const bgVideoUrl = String(d.bg_video_url ?? "").trim();
+const bgImage = d.bg_image ?? null;
+const hasImage = Boolean(bgImage);
+const bgType: "gradient" | "image" | "video" = bgVideoUrl
+	? "video"
+	: hasImage
+		? "image"
+		: "gradient";
+const bgCss = String(
+	d.bg_css ?? "linear-gradient(135deg, #1a1000 0%, #0b0b0b 100%)",
+);
+const bgFocal = String(d.bg_focal_point ?? "center");
+const bgOverlay = String(
+	d.bg_overlay ??
+		"linear-gradient(180deg, rgba(11,11,11,.55) 0%, rgba(11,11,11,.8) 100%)",
+);
+const bgVideoPoster = d.bg_video_poster ?? null;
+
+type EmbedKind = "mp4" | "youtube" | "vimeo" | null;
+function parseVideo(raw: string): { kind: EmbedKind; src: string } {
+	if (!raw) return { kind: null, src: "" };
+	const yt = raw.match(
+		/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/,
+	);
+	if (yt) {
+		const id = yt[1];
+		const params = new URLSearchParams({
+			autoplay: "1",
+			mute: "1",
+			loop: "1",
+			playlist: id,
+			controls: "0",
+			showinfo: "0",
+			rel: "0",
+			modestbranding: "1",
+			playsinline: "1",
+			iv_load_policy: "3",
+		});
+		return {
+			kind: "youtube",
+			src: `https://www.youtube.com/embed/${id}?${params}`,
+		};
+	}
+	const vm = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+	if (vm) {
+		const id = vm[1];
+		const params = new URLSearchParams({
+			autoplay: "1",
+			muted: "1",
+			loop: "1",
+			background: "1",
+			controls: "0",
+			playsinline: "1",
+		});
+		return {
+			kind: "vimeo",
+			src: `https://player.vimeo.com/video/${id}?${params}`,
+		};
+	}
+	return { kind: "mp4", src: raw };
+}
+const video = bgType === "video" ? parseVideo(bgVideoUrl) : { kind: null, src: "" };
+
+// Nothing to render — avoid emitting an empty wrapper.
+const hasAnything = Boolean(titleRaw || eyebrow || subtitle);
+---
+
+{hasAnything && renderMode === "compact" && (
+	<header class={`sh-compact sh-align-${alignment} sh-theme-${theme}`}>
+		{eyebrow && <p class="sh-eyebrow">{eyebrow}</p>}
+		<h2 class="sh-title">
+			{titleParts.first}
+			{titleParts.second && (<><br /><em>{titleParts.second}</em></>)}
+		</h2>
+		{subtitle && <p class="sh-sub">{subtitle}</p>}
+		{ctaLabel && ctaHref && (
+			<a href={ctaHref} class="sh-cta">
+				{ctaLabel} <span aria-hidden="true">→</span>
+			</a>
+		)}
+	</header>
+)}
+
+{hasAnything && renderMode === "band" && (
+	<section
+		class={`sh-band sh-theme-${theme} sh-align-${alignment} sh-band-bg-${bgType}`}
+		style={bgType === "gradient" ? `background: ${bgCss};` : undefined}
+	>
+		{bgType === "image" && bgImage && (
+			<div class="sh-band-media">
+				<Image
+					image={bgImage}
+					alt=""
+					class="sh-band-img"
+					loading="lazy"
+					decoding="async"
+					style={`object-position: ${bgFocal};`}
+				/>
+			</div>
+		)}
+		{bgType === "video" && video.kind === "mp4" && video.src && (
+			<div class="sh-band-media">
+				<video
+					class="sh-band-video"
+					src={video.src}
+					autoplay
+					muted
+					loop
+					playsinline
+					preload="metadata"
+					aria-hidden="true"
+				>
+					{bgVideoPoster && (
+						<Image image={bgVideoPoster} alt="" class="sh-band-img" />
+					)}
+				</video>
+			</div>
+		)}
+		{bgType === "video" && (video.kind === "youtube" || video.kind === "vimeo") && video.src && (
+			<div class="sh-band-media sh-band-embed">
+				<iframe
+					class="sh-band-iframe"
+					src={video.src}
+					title=""
+					aria-hidden="true"
+					tabindex="-1"
+					allow="autoplay; fullscreen; picture-in-picture"
+					frameborder="0"
+					loading="lazy"
+				></iframe>
+			</div>
+		)}
+
+		{(bgType === "image" || bgType === "video") && (
+			<div class="sh-band-overlay" style={`background: ${bgOverlay};`}></div>
+		)}
+
+		<div class="container sh-band-inner">
+			{eyebrow && <p class="sh-eyebrow">{eyebrow}</p>}
+			<h2 class="sh-title">
+				{titleParts.first}
+				{titleParts.second && (<><br /><em>{titleParts.second}</em></>)}
+			</h2>
+			{subtitle && <p class="sh-sub">{subtitle}</p>}
+			{ctaLabel && ctaHref && (
+				<a href={ctaHref} class="sh-cta sh-cta-band">
+					{ctaLabel} <span aria-hidden="true">→</span>
+				</a>
+			)}
+		</div>
+	</section>
+)}
+
+<style>
+	/* ── Compact ─────────────────────────────────────────────────── */
+	.sh-compact {
+		max-width: 60ch;
+		margin: 0 0 2.5rem;
+	}
+	.sh-align-center { text-align: center; margin-left: auto; margin-right: auto; }
+	.sh-align-right  { text-align: right;  margin-left: auto; }
+	.sh-align-left   { text-align: left; }
+
+	.sh-eyebrow {
+		font-family: var(--font-mono);
+		font-size: .72rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--accent);
+		margin: 0 0 .65rem;
+	}
+	.sh-title {
+		font-family: var(--font-serif);
+		font-size: clamp(1.75rem, 3.3vw, 2.6rem);
+		line-height: 1.1;
+		letter-spacing: -0.02em;
+		margin: 0 0 .5rem;
+		color: var(--text);
+	}
+	.sh-title em {
+		font-style: italic;
+		font-weight: 400;
+		color: var(--accent);
+	}
+	.sh-sub {
+		margin: .4rem 0 0;
+		max-width: 52ch;
+		color: var(--text-muted);
+		line-height: 1.55;
+		font-size: 1.02rem;
+	}
+	.sh-align-center .sh-sub  { margin-left: auto; margin-right: auto; }
+	.sh-align-right  .sh-sub  { margin-left: auto; }
+
+	.sh-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: .4rem;
+		margin-top: 1rem;
+		font-family: var(--font-mono);
+		font-size: .82rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--accent);
+		text-decoration: none;
+		border-bottom: 1px solid currentColor;
+		padding-bottom: 2px;
+		transition: opacity .2s ease, transform .2s ease;
+	}
+	.sh-cta:hover { opacity: .75; transform: translateX(2px); }
+
+	/* ── Band ────────────────────────────────────────────────────── */
+	.sh-band {
+		position: relative;
+		padding: 4.5rem 0 4rem;
+		overflow: hidden;
+		margin: 0 0 3rem;
+	}
+	.sh-band-bg-gradient { /* background: set inline */ }
+
+	.sh-band-media { position: absolute; inset: 0; z-index: 0; }
+	.sh-band-img   { width: 100%; height: 100%; object-fit: cover; display: block; }
+	.sh-band-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+	.sh-band-embed { pointer-events: none; }
+	.sh-band-iframe {
+		position: absolute;
+		inset: 50% 0 0 50%;
+		/* Cover trick for 16:9 embeds */
+		width: 177.78vw;
+		height: 100%;
+		min-width: 100%;
+		min-height: 56.25vw;
+		transform: translate(-50%, -50%);
+		border: 0;
+	}
+	.sh-band-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+	.sh-band-inner   { position: relative; z-index: 2; }
+
+	/* Themes: only "light" (light text on dark) really cares about
+	   forcing colors — "dark" theme inherits page vars for natural mix. */
+	.sh-band.sh-theme-light .sh-eyebrow { color: #ffd28c; }
+	.sh-band.sh-theme-light .sh-title    { color: #fff; }
+	.sh-band.sh-theme-light .sh-title em { color: #ffd28c; }
+	.sh-band.sh-theme-light .sh-sub      { color: rgba(255,255,255,.8); }
+	.sh-band.sh-theme-light .sh-cta      { color: #ffd28c; }
+
+	.sh-band .sh-title {
+		font-size: clamp(2rem, 4vw, 3.2rem);
+		max-width: 22ch;
+	}
+	.sh-band .sh-sub { max-width: 48ch; }
+	.sh-band.sh-align-center .sh-title,
+	.sh-band.sh-align-center .sh-sub { margin-left: auto; margin-right: auto; }
+	.sh-band.sh-align-right  .sh-title,
+	.sh-band.sh-align-right  .sh-sub { margin-left: auto; }
+
+	.sh-cta-band {
+		margin-top: 1.25rem;
+		padding: .55rem 1.1rem;
+		border: 1px solid currentColor;
+		border-bottom: 1px solid currentColor;
+	}
+
+	@media (max-width: 768px) {
+		.sh-band { padding: 3.25rem 0 2.75rem; }
+	}
+</style>

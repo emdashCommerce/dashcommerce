@@ -1,0 +1,63 @@
+---
+// Portable Text block — embeds a single product inline in article body.
+//
+// Block node shape (from the editor): `{ _type: "product-embed", value: { product_slug } }`
+// Emdash passes the block as `Astro.props.node`. We resolve the product
+// from the host content collection, then defer to ProductCard for the
+// actual render.
+
+import ProductCard from "./ProductCard.astro";
+
+interface Node {
+  _type: "product-embed";
+  value?: {
+    product_slug?: string;
+  };
+}
+
+interface Props {
+  node: Node;
+  currency?: string;
+  locale?: string;
+}
+
+const { node, currency, locale } = Astro.props;
+const slug = node.value?.product_slug?.trim();
+
+// Prefer the host's content helper when available. Falls back to the
+// plugin's admin API if not.
+async function loadProduct(s: string) {
+  try {
+    const mod = await import("emdash") as {
+      getEmDashEntry?: (collection: string, id: string) => Promise<unknown>;
+    };
+    if (mod.getEmDashEntry) {
+      const record = await mod.getEmDashEntry("products", s);
+      return record ?? null;
+    }
+  } catch {}
+  return null;
+}
+
+const product = slug ? await loadProduct(slug) : null;
+---
+{product ? (
+  <ProductCard
+    product={product as Parameters<typeof ProductCard>[0]["product"]}
+    currency={currency}
+    locale={locale}
+  />
+) : (
+  <div class="dc-embed-missing">
+    <em>Product not found{slug ? `: ${slug}` : ""}</em>
+  </div>
+)}
+<style>
+  .dc-embed-missing {
+    padding: 0.5rem 1rem;
+    color: var(--text-muted, #888);
+    border-left: 3px solid var(--border-mid, #ccc);
+    background: var(--bg-2, #fafafa);
+    margin: 1rem 0;
+  }
+</style>

@@ -1,0 +1,86 @@
+---
+// CurrencySwitcher — visible in site header. Only allowed to flip when
+// cart is empty (backend enforces this). Wraps CurrencySwitcherIsland.
+//
+// Usage:
+//   <CurrencySwitcher />                         // self-fetches
+//   <CurrencySwitcher currencies={["USD","GBP"]} current="USD" />
+
+import CurrencySwitcherIsland from "../islands/CurrencySwitcherIsland.tsx";
+
+interface Props {
+  currencies?: string[];
+  current?: string;
+  label?: string;
+  afterChange?: "auto-reload" | "event-only";
+}
+
+const { currencies, current, label, afterChange } = Astro.props;
+---
+
+<CurrencySwitcherIsland
+  client:load
+  currencies={currencies}
+  current={current}
+  label={label}
+  afterChange={afterChange}
+/>
+
+<style is:global>
+  .dc-currency-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    color: var(--text-mid, #b5b0a7);
+  }
+  .dc-currency-switcher__label {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-subtle, #8a857c);
+  }
+  .dc-currency-switcher select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--border-mid, rgba(255,255,255,.14));
+    border-radius: var(--radius, 6px);
+    padding: .3rem 1.6rem .3rem .55rem;
+    font: inherit;
+    font-size: .82rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .dc-currency-switcher select:hover:not(:disabled) {
+    color: var(--text, #f0ece3);
+    border-color: var(--border-strong, rgba(255,255,255,.22));
+  }
+  .dc-currency-switcher select:focus-visible {
+    outline: 2px solid var(--accent, #c8a165);
+    outline-offset: 2px;
+  }
+  .dc-currency-switcher select:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+  }
+  /* Native <option> elements are drawn by the OS, so keep explicit
+     light colors so the dropdown is legible on both dark and light
+     host themes. */
+  .dc-currency-switcher option {
+    color: #111;
+    background: #fff;
+  }
+  .dc-currency-switcher__error {
+    color: var(--ember, #e57373);
+    font-size: .75rem;
+    margin-left: .25rem;
+  }
+</style>

@@ -1,0 +1,476 @@
+---
+import { getEmDashCollection, getEntryTerms } from "emdash";
+import { Image } from "emdash/ui";
+import Shop from "../../layouts/Shop.astro";
+import ProductDetails, { type ProductDetailsProduct } from "@dashcommerce/core/astro/components/ProductDetails.astro";
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+if (!slug) return new Response("Product not found", { status: 404 });
+
+const { entries: products } = await getEmDashCollection("products");
+const record = products.find((p) => p.data.slug === slug || p.id === slug);
+
+if (!record) return new Response("Product not found", { status: 404 });
+
+// Canonical redirect: ULID → slug
+if (record.data.slug && slug !== record.data.slug) {
+  return Astro.redirect(`/shop/${record.data.slug}`, 301);
+}
+
+const d = record.data;
+
+// Pull this product's categories + tags so we can surface them as chips
+// on the PDP. Tags here link to `/tag/{slug}`, categories to
+// `/category/{slug}`. Emdash expects the database ID (not the public
+// slug) when resolving taxonomy relationships.
+const productDbId = String(d.id ?? record.id);
+const productCategories = await getEntryTerms(
+  "products",
+  productDbId,
+  "product_category",
+).catch(() => []);
+const productTags = await getEntryTerms(
+  "products",
+  productDbId,
+  "product_tag",
+).catch(() => []);
+
+// Build the gallery from featured_image + gallery_2..5. EmDash's `image`
+// field stores either a MediaValue object, a bare URL string, or null.
+// Anything falsy is skipped so the thumbnail row only shows real images.
+const galleryImages = [
+  d.featured_image,
+  d.gallery_2,
+  d.gallery_3,
+  d.gallery_4,
+  d.gallery_5,
+].filter((v): v is NonNullable<typeof v> => v != null && v !== "");
+const hasGallery = galleryImages.length > 0;
+
+// Related products (same type, different product)
+const related = products
+  .filter((p) => p.id !== record.id && p.data.type === d.type)
+  .slice(0, 4);
+
+type PriceMap = Record<string, { amount: number; compareAtAmount?: number }>;
+
+const typeGrad: Record<string, string> = {
+  simple:       "linear-gradient(135deg,#2d1800,#4a2c0a)",
+  variable:     "linear-gradient(135deg,#1a0f00,#3d2200)",
+  grouped:      "linear-gradient(135deg,#1f1400,#3a2800)",
+  subscription: "linear-gradient(135deg,#001a0a,#0a2d18)",
+  external:     "linear-gradient(135deg,#1a001f,#2d0a38)",
+};
+const getGrad = (type?: string) => (type && typeGrad[type as string]) ?? typeGrad.simple;
+
+const priceMap = (d.prices ?? {}) as Record<string, { amount: number; compareAtAmount?: number }>;
+const firstCurrency = Object.keys(priceMap)[0];
+const firstPrice    = firstCurrency ? priceMap[firstCurrency] : undefined;
+const canonical     = `${Astro.url.origin}/shop/${d.slug ?? record.id}`;
+
+const relatedCards = related.map((p) => {
+  const pm = p.data.prices as PriceMap;
+  const priceEntry = firstCurrency ? pm?.[firstCurrency] : undefined;
+  const img = p.data.featured_image ?? p.data.gallery_2 ?? null;
+  return {
+    href:  `/shop/${p.data.slug ?? p.id}`,
+    title: String(p.data.title ?? ""),
+    grad:  getGrad(String(p.data.type)),
+    image: img && img !== "" ? img : null,
+    price: priceEntry && firstCurrency
+      ? new Intl.NumberFormat("en-US", { style: "currency", currency: firstCurrency }).format(priceEntry.amount / 100)
+      : null,
+  };
+});
+
+// JSON-LD
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org/",
+  "@type": "Product",
+  name: d.title,
+  sku: d.sku,
+  ...(d.description
+    ? { description: typeof d.description === "string" ? d.description : "See product page for details." }
+    : {}),
+  url: canonical,
+  ...(firstPrice && firstCurrency
+    ? {
+        offers: {
+          "@type": "Offer",
+          priceCurrency: firstCurrency,
+          price: (firstPrice.amount / 100).toFixed(2),
+          availability: d.stock_status === "outofstock"
+            ? "https://schema.org/OutOfStock"
+            : "https://schema.org/InStock",
+          url: canonical,
+        },
+      }
+    : {}),
+});
+
+const descStr = typeof d.description === "string" ? d.description : "";
+const metaDescription = descStr.length > 0
+  ? descStr.slice(0, 155)
+  : `${d.title} — available from ${Astro.url.host}.`;
+---
+
+<Shop
+  title={d.title ?? "Product"}
+  description={metaDescription}
+  canonical={canonical}
+  ogType="product"
+  jsonLd={jsonLd}
+>
+  <!-- Breadcrumb -->
+  <nav class="breadcrumb container" aria-label="Breadcrumb">
+    <a href="/">Home</a>
+    <span aria-hidden="true">›</span>
+    <a href="/shop">Shop</a>
+    <span aria-hidden="true">›</span>
+    <span aria-current="page">{d.title}</span>
+  </nav>
+
+  <!-- Product detail layout -->
+  <div class="container pdp-layout">
+    <!-- Left: image / visual -->
+    <div class="pdp-gallery">
+      {hasGallery ? (
+        <>
+          <div class="pdp-main-img pdp-main-img-real" data-pdp-main>
+            {galleryImages.map((img, i) => (
+              <div class="pdp-main-slot" data-pdp-slot={i} data-active={i === 0 ? "true" : "false"}>
+                <Image image={img} alt={`${d.title ?? "Product"} image ${i + 1}`} />
+              </div>
+            ))}
+          </div>
+          {galleryImages.length > 1 && (
+            <div class="pdp-thumbs" role="tablist" aria-label="Product images">
+              {galleryImages.map((img, i) => (
+                <button
+                  type="button"
+                  class="pdp-thumb"
+                  role="tab"
+                  aria-selected={i === 0 ? "true" : "false"}
+                  aria-label={`Show image ${i + 1}`}
+                  data-pdp-thumb={i}
+                >
+                  <Image image={img} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <div class="pdp-main-img" style={`background: ${getGrad(d.type as string)};`} aria-hidden="true">
+          <div class="pdp-img-deco pdp-img-deco-1"></div>
+          <div class="pdp-img-deco pdp-img-deco-2"></div>
+        </div>
+      )}
+
+      {/* Product type badge */}
+      <div class="pdp-type-badge">
+        <span class="pdp-type-dot"></span>
+        {(d.type as string) ?? "product"}
+      </div>
+
+      {/* SKU */}
+      {d.sku && (
+        <p class="pdp-sku">
+          <span class="pdp-sku-label">SKU</span>
+          <span class="pdp-sku-val">{d.sku}</span>
+        </p>
+      )}
+
+      {/* Categories + tags. Both are edited from the admin's taxonomy
+          pages. Categories are full sections (go to /category/...),
+          tags are merchandising labels (/tag/...). */}
+      {(productCategories.length > 0 || productTags.length > 0) && (
+        <div class="pdp-taxonomies">
+          {productCategories.length > 0 && (
+            <div class="pdp-tax-row">
+              <span class="pdp-tax-label">In</span>
+              {productCategories.map((c) => (
+                <a href={`/category/${c.slug}`} class="pdp-chip pdp-chip-cat">
+                  {c.label}
+                </a>
+              ))}
+            </div>
+          )}
+          {productTags.length > 0 && (
+            <div class="pdp-tax-row">
+              <span class="pdp-tax-label">Tagged</span>
+              {productTags.map((t) => (
+                <a href={`/tag/${t.slug}`} class="pdp-chip pdp-chip-tag">
+                  <span class="pdp-chip-hash">#</span>{t.label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+
+    <!-- Right: details from core -->
+    <div class="pdp-info">
+      <ProductDetails product={record as unknown as ProductDetailsProduct} />
+    </div>
+  </div>
+
+  <!-- Related products -->
+  {related.length > 0 && (
+    <section class="container related-section">
+      <h2 class="related-title">More like this</h2>
+      <div class="related-grid">
+        {relatedCards.map((c) => (
+          <a href={c.href} class="related-card">
+            <div class="related-img" style={`background: ${c.grad};`}>
+              {c.image && <Image image={c.image} alt={c.title} />}
+            </div>
+            <div class="related-body">
+              <h3>{c.title}</h3>
+              {c.price && <span class="related-price">{c.price}</span>}
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  )}
+
+  <!-- Back to shop -->
+  <div class="container pdp-back">
+    <a href="/shop" class="btn-ghost">← Back to shop</a>
+  </div>
+
+</Shop>
+
+<style>
+  /* Breadcrumb */
+  .breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    padding-top: 2rem; padding-bottom: 1.5rem;
+    font-size: .8rem; color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .breadcrumb a { color: var(--text-muted); transition: color .2s; }
+  .breadcrumb a:hover { color: var(--gold); }
+  .breadcrumb [aria-current] { color: var(--text-mid); }
+
+  /* PDP layout */
+  .pdp-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+    align-items: start;
+    padding-bottom: 6rem;
+  }
+
+  /* Gallery */
+  .pdp-gallery { display: flex; flex-direction: column; gap: 1rem; position: sticky; top: 90px; }
+  .pdp-main-img {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-xl);
+    position: relative; overflow: hidden;
+    border: 1px solid var(--border-mid);
+    background: var(--surface, #0b0b0b);
+  }
+  .pdp-img-deco {
+    position: absolute; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .pdp-img-deco-1 { width: 60%; height: 60%; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+  .pdp-img-deco-2 { width: 30%; height: 30%; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(200,164,110,.08); border-color: rgba(200,164,110,.3); }
+
+  /* Real-image main slot — all slots stacked, only the active one shown.
+     Keeps the swap instantaneous without a flash of blank background. */
+  .pdp-main-slot {
+    position: absolute; inset: 0;
+    opacity: 0; visibility: hidden;
+    transition: opacity .25s var(--ease);
+  }
+  .pdp-main-slot[data-active="true"] { opacity: 1; visibility: visible; }
+  .pdp-main-slot :global(img) {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+
+  /* Thumbnail strip */
+  .pdp-thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+    gap: .5rem;
+  }
+  .pdp-thumb {
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    padding: 0; background: var(--surface, #0b0b0b);
+    cursor: pointer;
+    transition: border-color .2s, transform .2s var(--ease);
+  }
+  .pdp-thumb :global(img) {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .pdp-thumb:hover { border-color: var(--border-mid); }
+  .pdp-thumb[aria-selected="true"] {
+    border-color: var(--gold, #c8a46e);
+    box-shadow: 0 0 0 1px var(--gold, #c8a46e);
+  }
+
+  .pdp-type-badge {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .pdp-type-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold);
+    flex-shrink: 0;
+  }
+
+  .pdp-sku {
+    display: flex; align-items: center; gap: .75rem;
+    font-size: .8rem; margin: 0;
+  }
+  .pdp-sku-label {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+  }
+  .pdp-sku-val { font-family: var(--font-mono); color: var(--text-muted); }
+
+  /* Categories + tags chip rows */
+  .pdp-taxonomies {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+  }
+  .pdp-tax-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .pdp-tax-label {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+    margin-right: .25rem;
+  }
+  .pdp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    font-size: .78rem;
+    padding: .3rem .7rem;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: var(--surface);
+    transition: color .2s, border-color .2s, background .2s;
+    text-decoration: none;
+  }
+  .pdp-chip:hover {
+    color: var(--text);
+    border-color: var(--border-mid);
+  }
+  .pdp-chip-cat {
+    color: var(--text-mid);
+  }
+  .pdp-chip-cat:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+  .pdp-chip-hash {
+    color: var(--gold);
+    font-family: var(--font-mono);
+    opacity: .7;
+  }
+
+  /* Related */
+  .related-section { padding-bottom: 6rem; }
+  .related-title {
+    font-size: 1.5rem; margin-bottom: 2rem;
+    padding-top: 3rem; border-top: 1px solid var(--border);
+    color: var(--text);
+  }
+  .related-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+  .related-card {
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: border-color .25s, transform .25s var(--ease);
+  }
+  .related-card:hover { border-color: var(--border-mid); transform: translateY(-3px); }
+  .related-img {
+    aspect-ratio: 4/3;
+    position: relative;
+    overflow: hidden;
+  }
+  .related-img :global(img) {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .related-body { padding: .875rem 1rem; }
+  .related-body h3 {
+    font-family: var(--font-display);
+    font-size: .95rem; font-weight: 600;
+    color: var(--text); margin: 0 0 .35rem;
+  }
+  .related-price { font-family: var(--font-mono); font-size: .85rem; color: var(--gold); }
+
+  /* Back */
+  .pdp-back { padding-bottom: 4rem; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .pdp-layout { grid-template-columns: 1fr; gap: 2.5rem; }
+    .pdp-gallery { position: static; }
+    .related-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .related-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  /* PDP gallery: swap the active main image when a thumbnail is clicked.
+     Zero-dep, vanilla DOM — no hydration cost. */
+  (() => {
+    const root = document.querySelector<HTMLElement>("[data-pdp-main]");
+    if (!root) return;
+    const slots = root.querySelectorAll<HTMLElement>("[data-pdp-slot]");
+    const thumbs = document.querySelectorAll<HTMLButtonElement>("[data-pdp-thumb]");
+    function activate(i: number) {
+      slots.forEach((s) => {
+        const idx = Number(s.dataset.pdpSlot);
+        s.dataset.active = idx === i ? "true" : "false";
+      });
+      thumbs.forEach((t) => {
+        const idx = Number(t.dataset.pdpThumb);
+        t.setAttribute("aria-selected", idx === i ? "true" : "false");
+      });
+    }
+    thumbs.forEach((t) => {
+      t.addEventListener("click", () => activate(Number(t.dataset.pdpThumb)));
+    });
+  })();
+</script>

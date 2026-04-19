@@ -1,0 +1,530 @@
+---
+import {
+  getEmDashEntry,
+  getEntryTerms,
+  getEntriesByTerm,
+  getTerm,
+} from "emdash";
+import { Image, PortableText } from "emdash/ui";
+import Shop from "../../layouts/Shop.astro";
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+if (!slug) return new Response("Not found", { status: 404 });
+
+const { entry: post, error } = await getEmDashEntry("posts", slug);
+if (error) return new Response("Failed to load post", { status: 500 });
+if (!post) return Astro.redirect("/blog", 302);
+
+const title = String(post.data.title ?? "");
+const excerpt = String(post.data.excerpt ?? "");
+const coverImage = post.data.cover_image ?? null;
+const coverGradient = String(
+  post.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+);
+const author = String(post.data.author_name ?? "");
+const minutes = Number(post.data.reading_minutes ?? 0);
+// `body` is a portable-text array, but depending on how the entry was saved
+// (seeded vs edited via admin vs draft revisions), emdash may return it as
+// either a parsed array, a stringified JSON array, or null. Normalise all
+// three shapes so the rendered page always has real PT blocks when content
+// exists — otherwise the portable-text component silently renders nothing
+// and the page looks bodyless.
+const rawBody = (post.data as Record<string, unknown>).body;
+let body: unknown[] = [];
+if (Array.isArray(rawBody)) {
+  body = rawBody;
+} else if (typeof rawBody === "string" && rawBody.trim().startsWith("[")) {
+  try {
+    const parsed = JSON.parse(rawBody);
+    if (Array.isArray(parsed)) body = parsed;
+  } catch {
+    // Malformed JSON — fall through to empty body.
+  }
+}
+
+const fmtDate = (raw: unknown) => {
+  if (!raw) return "";
+  const d = new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+};
+const dateLabel = fmtDate(post.data.published_date ?? post.publishedAt);
+
+// Resolve this post's categories via the taxonomy. `getEntryTerms` returns
+// term rows (with slug + label). We use the first category as the primary
+// for "Related posts" below.
+//
+// emdash stores taxonomy links by the canonical DB id, which is exposed as
+// `data.id` on fetched entries (falling back to `entry.id` if absent).
+const postDbId = String((post.data as Record<string, unknown>).id ?? post.id);
+const termRows = await getEntryTerms("posts", postDbId, "post_category");
+const categories = termRows.map((t) => ({
+  slug: t.slug,
+  label: t.label,
+}));
+
+// Related posts — other entries that share any of this post's categories.
+// Dedupe and cap at 3 so the card row stays balanced.
+const related: Array<{
+  id: string;
+  href: string;
+  title: string;
+  excerpt: string;
+  gradient: string;
+  cover: unknown;
+  date: string;
+  minutes: number;
+}> = [];
+const seen = new Set<string>([postDbId]);
+for (const c of categories) {
+  if (related.length >= 3) break;
+  const peers = await getEntriesByTerm("posts", "post_category", c.slug);
+  for (const p of peers) {
+    if (related.length >= 3) break;
+    const peerDbId = String((p.data as Record<string, unknown>).id ?? p.id);
+    if (seen.has(peerDbId)) continue;
+    seen.add(peerDbId);
+    related.push({
+      id: peerDbId,
+      href: `/blog/${p.data.slug ?? p.id}`,
+      title: String(p.data.title ?? ""),
+      excerpt: String(p.data.excerpt ?? ""),
+      gradient: String(
+        p.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+      ),
+      cover: p.data.cover_image ?? null,
+      date: fmtDate(p.data.published_date ?? p.publishedAt),
+      minutes: Number(p.data.reading_minutes ?? 0),
+    });
+  }
+}
+
+// Used for the category link under the title — prefer the first category
+// that actually resolves to a real term label.
+const primaryCategory = categories[0] ?? null;
+const primaryTerm = primaryCategory
+  ? await getTerm("post_category", primaryCategory.slug)
+  : null;
+---
+
+<Shop
+  title={title}
+  description={excerpt || title}
+>
+  <!-- ═══════════ ARTICLE HERO ═══════════ -->
+  <header class="article-hero" style={`background: ${coverGradient};`}>
+    {coverImage && (
+      <div class="article-hero-media">
+        <Image image={coverImage} alt="" class="article-hero-img" loading="eager" />
+        <div class="article-hero-overlay"></div>
+      </div>
+    )}
+    <div class="container article-hero-inner">
+      <nav class="article-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span aria-hidden="true">›</span>
+        <a href="/blog">Journal</a>
+        {primaryCategory && (
+          <>
+            <span aria-hidden="true">›</span>
+            <a href={`/blog/category/${primaryCategory.slug}`}>
+              {primaryTerm?.label ?? primaryCategory.label}
+            </a>
+          </>
+        )}
+      </nav>
+
+      {categories.length > 0 && (
+        <p class="article-kicker">
+          {categories.map((c, i) => (
+            <>
+              {i > 0 && <span aria-hidden="true"> · </span>}
+              <a href={`/blog/category/${c.slug}`}>{c.label}</a>
+            </>
+          ))}
+        </p>
+      )}
+
+      <h1 class="article-title">{title}</h1>
+      {excerpt && <p class="article-excerpt">{excerpt}</p>}
+
+      <div class="article-meta">
+        {author && (
+          <span class="article-author">
+            <span class="article-author-dot" aria-hidden="true"></span>
+            By <strong>{author}</strong>
+          </span>
+        )}
+        {dateLabel && <span>{dateLabel}</span>}
+        {minutes > 0 && <span>{minutes} min read</span>}
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════ ARTICLE BODY ═══════════ -->
+  <article class="article-body">
+    <div class="container article-container">
+      {body.length > 0 ? (
+        <div class="article-prose">
+          {/*
+            Spread copies the array without the non-enumerable EMDASH_EDIT
+            symbol that emdash attaches in edit mode. That symbol would
+            otherwise cause <PortableText> to swap the static render for a
+            client-only TipTap inline editor, which isn't the UX we want on
+            the public post page — admins can still edit via /_emdash/admin.
+          */}
+          <PortableText value={[...body]} />
+        </div>
+      ) : (
+        <p class="article-empty">This post has no body yet.</p>
+      )}
+    </div>
+  </article>
+
+  <!-- ═══════════ RELATED POSTS ═══════════ -->
+  {related.length > 0 && (
+    <section class="article-related">
+      <div class="container">
+        <div class="article-related-hd">
+          <h2>Keep reading</h2>
+          <a href="/blog" class="article-related-all">All posts →</a>
+        </div>
+        <ul class="article-related-grid" role="list">
+          {related.map((r) => (
+            <li>
+              <a href={r.href} class="related-card" aria-label={r.title}>
+                <div class="related-card-img" style={`background: ${r.gradient};`}>
+                  {r.cover && (
+                    <Image image={r.cover} alt="" class="related-card-cover" loading="lazy" />
+                  )}
+                </div>
+                <div class="related-card-body">
+                  <h3>{r.title}</h3>
+                  {r.excerpt && <p>{r.excerpt}</p>}
+                  <div class="related-card-meta">
+                    {r.date && <span>{r.date}</span>}
+                    {r.minutes > 0 && <span>{r.minutes} min read</span>}
+                  </div>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+</Shop>
+
+<style>
+  /* ═══════════ Hero ═══════════ */
+  .article-hero {
+    position: relative;
+    padding: 6rem 0 4rem;
+    border-bottom: 1px solid var(--border);
+    min-height: 360px;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+  .article-hero-media {
+    position: absolute; inset: 0;
+    z-index: 0;
+  }
+  .article-hero-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .article-hero-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(11,11,11,.55) 0%, rgba(11,11,11,.85) 100%);
+  }
+  .article-hero-inner {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 820px;
+  }
+  .article-breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .article-breadcrumb a { color: var(--text-muted); transition: color .2s; text-decoration: none; }
+  .article-breadcrumb a:hover { color: var(--gold); }
+
+  .article-kicker {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 1.25rem;
+  }
+  .article-kicker a {
+    color: var(--gold);
+    text-decoration: none;
+    transition: opacity .2s;
+  }
+  .article-kicker a:hover { opacity: .75; }
+
+  .article-title {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    color: var(--text);
+    margin: 0 0 1.25rem;
+  }
+  .article-excerpt {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin: 0 0 2rem;
+    max-width: 58ch;
+  }
+
+  .article-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    font-size: .85rem;
+    color: var(--text-subtle);
+    align-items: center;
+  }
+  .article-meta strong { color: var(--text); font-weight: 600; }
+  .article-author {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .article-author-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold) 0%, #8b6520 100%);
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .article-meta span + span:not(.article-author-dot)::before {
+    content: "";
+    display: inline-block;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--border-mid);
+    margin-right: 1.25rem;
+    vertical-align: middle;
+  }
+
+  /* ═══════════ Body ═══════════ */
+  .article-body {
+    padding: 4rem 0 5rem;
+    background: var(--bg);
+  }
+  .article-container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .article-empty {
+    color: var(--text-subtle);
+    text-align: center;
+    padding: 3rem 0;
+  }
+
+  /* Prose: targets rendered portable-text elements. Everything is scoped
+     via .article-prose so it only styles article bodies. */
+  .article-prose { font-size: 1.0625rem; line-height: 1.8; color: var(--text-mid); }
+  .article-prose :global(p) {
+    margin: 0 0 1.5rem;
+    color: var(--text-mid);
+  }
+  .article-prose :global(h2) {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    line-height: 1.25;
+    letter-spacing: -.015em;
+    color: var(--text);
+    margin: 3rem 0 1rem;
+    position: relative;
+  }
+  .article-prose :global(h2::before) {
+    content: "";
+    position: absolute;
+    left: -1.5rem;
+    top: .65em;
+    width: .75rem;
+    height: 2px;
+    background: var(--gold);
+  }
+  .article-prose :global(h3) {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    line-height: 1.3;
+    color: var(--text);
+    margin: 2.25rem 0 .75rem;
+  }
+  .article-prose :global(ul),
+  .article-prose :global(ol) {
+    margin: 0 0 1.75rem;
+    padding-left: 1.5rem;
+    color: var(--text-mid);
+  }
+  .article-prose :global(li) {
+    margin-bottom: .5rem;
+    padding-left: .25rem;
+  }
+  .article-prose :global(ul li::marker) { color: var(--gold); }
+  .article-prose :global(ol li::marker) { color: var(--gold); font-variant-numeric: tabular-nums; }
+
+  .article-prose :global(blockquote) {
+    margin: 2.5rem 0;
+    padding: 1.5rem 1.75rem;
+    border-left: 3px solid var(--gold);
+    background: var(--surface);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.2rem;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .article-prose :global(blockquote p) { margin: 0; color: inherit; }
+
+  .article-prose :global(a) {
+    color: var(--gold);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: opacity .2s;
+  }
+  .article-prose :global(a:hover) { opacity: .7; }
+
+  .article-prose :global(strong) { color: var(--text); font-weight: 600; }
+  .article-prose :global(em) { font-style: italic; }
+
+  .article-prose :global(img) {
+    max-width: 100%;
+    border-radius: var(--radius);
+    margin: 2rem 0;
+  }
+  .article-prose :global(code) {
+    font-family: var(--font-mono);
+    font-size: .92em;
+    background: var(--surface);
+    color: var(--gold);
+    padding: .15em .45em;
+    border-radius: 4px;
+  }
+  .article-prose :global(pre) {
+    background: var(--surface);
+    padding: 1.25rem 1.5rem;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 2rem 0;
+  }
+  .article-prose :global(pre code) {
+    background: transparent;
+    color: var(--text);
+    padding: 0;
+  }
+
+  /* ═══════════ Related ═══════════ */
+  .article-related {
+    padding: 4rem 0 6rem;
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+  }
+  .article-related-hd {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .article-related-hd h2 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    color: var(--text);
+    margin: 0;
+    letter-spacing: -.01em;
+  }
+  .article-related-all {
+    font-size: .85rem;
+    color: var(--gold);
+    text-decoration: none;
+    transition: opacity .2s;
+  }
+  .article-related-all:hover { opacity: .7; }
+
+  .article-related-grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem 1.5rem;
+  }
+  .related-card {
+    display: flex; flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .25s var(--ease);
+  }
+  .related-card:hover { transform: translateY(-3px); }
+  .related-card-img {
+    aspect-ratio: 4/3;
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+  .related-card-cover {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .related-card-body { display: flex; flex-direction: column; gap: .5rem; }
+  .related-card-body h3 {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    line-height: 1.3;
+    letter-spacing: -.005em;
+    color: var(--text);
+    margin: 0;
+    transition: color .2s;
+  }
+  .related-card:hover h3 { color: var(--gold); }
+  .related-card-body p {
+    font-size: .88rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .related-card-meta {
+    display: flex; gap: .75rem;
+    font-size: .72rem;
+    color: var(--text-subtle);
+  }
+  .related-card-meta span + span::before {
+    content: "·";
+    margin-right: .75rem;
+    color: var(--border-mid);
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .article-related-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .article-hero { padding: 4rem 0 2.5rem; min-height: 280px; }
+    .article-prose :global(h2::before) { display: none; }
+    .article-related-grid { grid-template-columns: 1fr; }
+  }
+</style>

@@ -1,0 +1,807 @@
+---
+import CartDrawer from "@dashcommerce/core/astro/components/CartDrawer.astro";
+import CurrencySwitcher from "@dashcommerce/core/astro/components/CurrencySwitcher.astro";
+import { getMenu } from "emdash";
+import AnnouncementBar from "./AnnouncementBar.astro";
+import SiteLogo from "./SiteLogo.astro";
+
+/**
+ * Primary storefront navigation.
+ *
+ * The menu structure is stored in emdash and editable at:
+ *   /_emdash/admin/menus/primary
+ *
+ * Design notes:
+ * - Account intentionally lives in `header-actions` (icon button next to the
+ *   cart), not in the nav — matches the ecommerce convention of keeping
+ *   identity + cart together.
+ * - Any top-level item with children renders as a mega menu on desktop.
+ * - On mobile the whole thing collapses into a slide-in drawer.
+ * - CSS class `grad-*` on a child turns on a coloured gradient tile.
+ * - CSS class `is-accent` on a top-level item turns it into a hot callout
+ *   (e.g. Sale, New Arrivals).
+ */
+const primary = await getMenu("primary");
+const items = primary?.items ?? [];
+
+// Normalise current path for active-state highlighting. Treat `/shop`,
+// `/shop/` and `/shop/thing` all as matching a nav item whose url is `/shop`.
+// Items with a query string (e.g. `/shop?sort=newest`) are treated as
+// distinct "virtual" pages: they're only active on an exact path+query hit.
+const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+const currentSearch = Astro.url.search;
+function isActive(href: string | undefined): boolean {
+  if (!href || href === "#") return false;
+  const [rawPath, rawQuery = ""] = href.split("?");
+  const target = rawPath.replace(/\/+$/, "") || "/";
+  if (rawQuery) {
+    return currentPath === target && currentSearch === `?${rawQuery}`;
+  }
+  if (target === "/") return currentPath === "/";
+  return currentPath === target || currentPath.startsWith(`${target}/`);
+}
+---
+
+<AnnouncementBar />
+
+<header class="site-header" id="site-header">
+  <div class="container header-row">
+    <!-- Mobile menu trigger (left) -->
+    <button
+      type="button"
+      class="nav-trigger"
+      aria-label="Open menu"
+      aria-expanded="false"
+      aria-controls="mobile-nav"
+      data-nav-trigger
+    >
+      <span></span><span></span><span></span>
+    </button>
+
+    <!-- Logo (reads site title / uploaded logo from Site Settings) -->
+    <SiteLogo variant="header" class="logo" />
+
+    <!-- Primary nav (desktop) -->
+    <nav class="main-nav" aria-label="Main navigation">
+      {items.map((link) => {
+        const hasChildren = link.children && link.children.length > 0;
+        const classes = link.cssClasses ?? "";
+        const active = isActive(link.url);
+        return (
+          <div class={`nav-item${hasChildren ? " has-mega" : ""}`}>
+            <a
+              href={link.url}
+              class={`nav-link${classes.includes("is-accent") ? " is-accent" : ""}${active ? " is-active" : ""}`}
+              aria-current={active ? "page" : undefined}
+            >
+              {link.label}
+              {hasChildren && (
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                  <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              )}
+            </a>
+
+            {hasChildren && (
+              <div class="mega-menu" role="region" aria-label={`${link.label} categories`}>
+                <div class="mega-inner">
+                  <div class="mega-header">
+                    <p class="mega-eyebrow">Browse {link.label.toLowerCase()}</p>
+                    <a href={link.url} class="mega-all">View all →</a>
+                  </div>
+                  {link.children?.some((c) => c.children && c.children.length > 0) ? (
+                    // Any direct child has grand-children → render every
+                    // child as a text column with a nested sub-list. This
+                    // keeps the whole dropdown visually consistent instead
+                    // of mixing gradient tiles with bullet lists.
+                    <div class="mega-cols">
+                      {link.children.map((cat) => (
+                        <div class={`mega-col ${cat.cssClasses ?? ""}`.trim()}>
+                          <a href={cat.url} class="mega-col-title">{cat.label}</a>
+                          {cat.titleAttr && <p class="mega-col-desc">{cat.titleAttr}</p>}
+                          {cat.children && cat.children.length > 0 && (
+                            <ul class="mega-sublist">
+                              {cat.children.map((sub) => (
+                                <li>
+                                  <a href={sub.url} class="mega-sublink">{sub.label}</a>
+                                  {sub.children && sub.children.length > 0 && (
+                                    <ul class="mega-sublist mega-sublist--deep">
+                                      {sub.children.map((leaf) => (
+                                        <li>
+                                          <a href={leaf.url} class="mega-sublink mega-sublink--deep">{leaf.label}</a>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div class="mega-cats">
+                      {link.children.map((cat) => (
+                        <a
+                          href={cat.url}
+                          class={`mega-cat ${cat.cssClasses ?? ""}`.trim()}
+                        >
+                          <div class="mega-cat-bg"></div>
+                          <div class="mega-cat-body">
+                            <strong>{cat.label}</strong>
+                            {cat.titleAttr && <span>{cat.titleAttr}</span>}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+
+    <!-- Actions -->
+    <div class="header-actions">
+      <CurrencySwitcher label="Currency" />
+      <a href="/account" class="icon-btn" aria-label="Your account">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+      <CartDrawer checkoutHref="/checkout" />
+    </div>
+  </div>
+</header>
+
+<!-- Mobile slide-in drawer -->
+<div class="mobile-nav" id="mobile-nav" data-mobile-nav hidden>
+  <div class="mobile-nav-backdrop" data-nav-close></div>
+  <aside class="mobile-nav-panel" aria-label="Main navigation" role="dialog" aria-modal="true">
+    <div class="mobile-nav-head">
+      <SiteLogo variant="header" class="logo" data-nav-close />
+      <button type="button" class="mobile-nav-close" aria-label="Close menu" data-nav-close>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <nav class="mobile-nav-list" aria-label="Main">
+      {items.map((link) => {
+        const hasChildren = link.children && link.children.length > 0;
+        return (
+          <div class="mobile-nav-group">
+            <a
+              href={link.url}
+              class={`mobile-nav-link${link.cssClasses?.includes("is-accent") ? " is-accent" : ""}`}
+              data-nav-close
+            >
+              {link.label}
+            </a>
+            {hasChildren && (
+              <div class="mobile-nav-children">
+                {link.children.map((cat) => (
+                  <Fragment>
+                    <a href={cat.url} class="mobile-nav-sublink" data-nav-close>
+                      <span class={`mobile-nav-dot ${cat.cssClasses ?? ""}`.trim()}></span>
+                      <span>
+                        <strong>{cat.label}</strong>
+                        {cat.titleAttr && <em>{cat.titleAttr}</em>}
+                      </span>
+                    </a>
+                    {cat.children && cat.children.length > 0 && (
+                      <div class="mobile-nav-deep">
+                        {cat.children.map((sub) => (
+                          <Fragment>
+                            <a href={sub.url} class="mobile-nav-deeplink" data-nav-close>
+                              {sub.label}
+                            </a>
+                            {sub.children && sub.children.length > 0 && (
+                              <div class="mobile-nav-deeper">
+                                {sub.children.map((leaf) => (
+                                  <a href={leaf.url} class="mobile-nav-deeplink mobile-nav-deeplink--deep" data-nav-close>
+                                    {leaf.label}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+
+    <div class="mobile-nav-footer">
+      <a href="/account" class="mobile-nav-util" data-nav-close>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="7" r="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Your account
+      </a>
+    </div>
+  </aside>
+</div>
+
+<style>
+  /* Category gradient definitions */
+  :global(:root) {
+    --grad-amber:  linear-gradient(135deg, #2d1800, #4a2c0a);
+    --grad-blue:   linear-gradient(135deg, #00122d, #0a1f4a);
+    --grad-green:  linear-gradient(135deg, #001a0a, #0a2d18);
+    --grad-purple: linear-gradient(135deg, #1a001f, #2d0a38);
+  }
+
+  .site-header {
+    position: sticky;
+    top: 0; z-index: 200;
+    background: #0b0b0b;
+    background: rgba(11, 11, 11, 0.82);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid var(--border);
+    transition: background .3s, border-color .3s;
+  }
+  .site-header.scrolled {
+    background: #0b0b0b;
+    background: rgba(11, 11, 11, 0.97);
+    border-color: rgba(255,255,255,0.12);
+    border-color: var(--border-mid);
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    height: 64px;
+  }
+
+  /* Mobile trigger (hamburger) */
+  .nav-trigger {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 36px; height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+  }
+  .nav-trigger:hover { background: var(--surface); border-color: var(--border-mid); }
+  .nav-trigger span {
+    display: block;
+    width: 16px; height: 1.5px;
+    margin: 0 auto;
+    background: var(--text);
+    border-radius: 2px;
+    transition: transform .25s var(--ease), opacity .2s;
+  }
+  .nav-trigger[aria-expanded="true"] span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+  .nav-trigger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .nav-trigger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+
+  /* Logo */
+  .logo {
+    display: flex; align-items: center; gap: .4rem;
+    text-decoration: none; flex-shrink: 0;
+  }
+  .logo-mark { color: var(--gold); font-size: 1rem; line-height: 1; }
+  .logo-text {
+    font-family: "Fraunces", Georgia, serif;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    color: #f0ece3;
+    color: var(--text);
+  }
+
+  /* Desktop nav */
+  .main-nav {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    flex: 1;
+  }
+
+  .nav-item { position: relative; }
+
+  .nav-link {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .5rem .875rem;
+    font-size: .88rem;
+    font-weight: 500;
+    color: #b5b0a7;
+    color: var(--text-mid);
+    border-radius: 6px;
+    border-radius: var(--radius);
+    transition: color .2s, background .2s;
+    text-decoration: none;
+    position: relative;
+  }
+  .nav-link:hover { color: var(--text); background: var(--surface); }
+  .nav-link.is-active { color: var(--text); }
+  .nav-link.is-active::after {
+    content: "";
+    position: absolute;
+    left: .875rem; right: .875rem; bottom: -2px;
+    height: 2px; border-radius: 2px;
+    background: var(--gold);
+  }
+  .nav-link.is-accent {
+    color: var(--gold);
+  }
+  .nav-link.is-accent:hover { color: var(--gold-light, var(--gold)); background: rgba(212, 175, 55, 0.08); }
+
+  .nav-link svg { transition: transform .2s; opacity: .6; }
+  .nav-item.has-mega:hover .nav-link svg,
+  .nav-item.has-mega:focus-within .nav-link svg { transform: rotate(180deg); }
+
+  /* Mega menu */
+  .mega-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    width: min(720px, 90vw);
+    /* Keep a visual gap to the header but make the gap a hoverable
+       bridge via ::before below, so the cursor can travel from the
+       nav link into the mega without triggering mouseleave. NOTE:
+       `.mega-menu` itself must stay `overflow: visible` or the
+       ::before bridge (which sits at top:-8px) gets clipped and the
+       hover closes mid-move. Scrolling lives on `.mega-inner`.*/
+    margin-top: 8px;
+    background: var(--bg-2);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: 0 24px 64px rgba(0,0,0,.7);
+    opacity: 0;
+    visibility: hidden;
+    /* `--mega-shift` is set per nav-item by the viewport-clamping
+       script below. It's a px offset applied on top of the -50%
+       centering transform, so panels near the viewport edges nudge
+       back into view instead of clipping. */
+    transform: translateX(calc(-50% + var(--mega-shift, 0px))) translateY(-6px);
+    transition: opacity .22s var(--ease), transform .22s var(--ease), visibility .22s;
+    pointer-events: none;
+  }
+  /* Invisible hover bridge: closes the 8px gap between the nav link
+     and the mega panel so moving the cursor down doesn't cross a
+     dead zone and cancel :hover. Only active while the menu is
+     actually visible (parent toggles pointer-events). */
+  .mega-menu::before {
+    content: "";
+    position: absolute;
+    top: -8px; left: 0; right: 0;
+    height: 8px;
+  }
+  .nav-item.has-mega:hover .mega-menu,
+  .nav-item.has-mega:focus-within .mega-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(calc(-50% + var(--mega-shift, 0px))) translateY(0);
+    pointer-events: auto;
+  }
+
+  .mega-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-height: min(70vh, 640px);
+    overflow-y: auto;
+  }
+
+  .mega-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .mega-eyebrow {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    margin: 0;
+    font-weight: 600;
+  }
+  .mega-all { font-size: .82rem; color: var(--gold); transition: color .2s; }
+  .mega-all:hover { color: var(--gold-light, var(--gold)); }
+
+  .mega-cats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: .75rem;
+  }
+  .mega-cat {
+    position: relative;
+    border-radius: var(--radius);
+    overflow: hidden;
+    padding: 1.25rem;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-height: 90px;
+    transition: transform .2s var(--ease);
+  }
+  .mega-cat:hover { transform: translateY(-2px); }
+  .mega-cat-bg {
+    position: absolute; inset: 0;
+    background: var(--grad-amber);
+    transition: opacity .2s;
+  }
+  .mega-cat.grad-amber  .mega-cat-bg { background: var(--grad-amber); }
+  .mega-cat.grad-blue   .mega-cat-bg { background: var(--grad-blue); }
+  .mega-cat.grad-green  .mega-cat-bg { background: var(--grad-green); }
+  .mega-cat.grad-purple .mega-cat-bg { background: var(--grad-purple); }
+  .mega-cat:hover .mega-cat-bg { opacity: .85; }
+  .mega-cat-body {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; gap: .2rem;
+  }
+  .mega-cat-body strong {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+    letter-spacing: -.01em;
+  }
+  .mega-cat-body span {
+    font-size: .78rem;
+    color: var(--text-muted);
+  }
+
+  /* Text-column layout — used when any direct child has grand-children */
+  .mega-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.25rem 1.5rem;
+  }
+  .mega-col { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+  .mega-col-title {
+    font-family: var(--font-sans);
+    font-size: .92rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    color: var(--text);
+    text-decoration: none;
+    padding-bottom: .25rem;
+    border-bottom: 1px solid var(--border);
+    transition: color .2s;
+  }
+  .mega-col-title:hover { color: var(--gold); }
+  .mega-col-desc {
+    margin: 0;
+    font-size: .76rem;
+    color: var(--text-muted);
+  }
+  .mega-sublist {
+    list-style: none;
+    padding: 0;
+    margin: .25rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+  }
+  .mega-sublist--deep {
+    margin-left: .75rem;
+    padding-left: .6rem;
+    border-left: 1px solid var(--border);
+  }
+  .mega-sublink {
+    display: block;
+    padding: .3rem .4rem;
+    font-size: .84rem;
+    color: var(--text-mid);
+    text-decoration: none;
+    border-radius: var(--radius);
+    transition: background .15s, color .15s;
+  }
+  .mega-sublink:hover { background: var(--surface); color: var(--text); }
+  .mega-sublink--deep { font-size: .78rem; color: var(--text-muted); }
+  .mega-sublink--deep:hover { color: var(--text-mid); }
+
+  /* Header actions */
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-left: auto;
+  }
+  .icon-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px;
+    border-radius: var(--radius);
+    color: var(--text-mid);
+    transition: color .2s, background .2s;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--surface); }
+
+  /* Mobile drawer */
+  .mobile-nav {
+    position: fixed; inset: 0;
+    z-index: 300;
+    display: none;
+  }
+  .mobile-nav[data-open="true"] { display: block; }
+
+  .mobile-nav-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0, 0, 0, .55);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity .25s var(--ease);
+  }
+  .mobile-nav[data-open="true"] .mobile-nav-backdrop { opacity: 1; }
+
+  .mobile-nav-panel {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: min(88vw, 360px);
+    background: var(--bg-2, #111);
+    border-right: 1px solid var(--border-mid);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform .28s var(--ease);
+    overflow-y: auto;
+  }
+  .mobile-nav[data-open="true"] .mobile-nav-panel { transform: translateX(0); }
+
+  .mobile-nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-nav-close {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-mid);
+    cursor: pointer;
+    transition: color .2s, background .2s, border-color .2s;
+  }
+  .mobile-nav-close:hover { color: var(--text); background: var(--surface); }
+
+  .mobile-nav-list {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem .5rem;
+    flex: 1;
+  }
+  .mobile-nav-group {
+    display: flex;
+    flex-direction: column;
+    padding: .25rem .5rem;
+  }
+  .mobile-nav-link {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--text);
+    padding: .6rem .25rem;
+    text-decoration: none;
+    letter-spacing: -.01em;
+  }
+  .mobile-nav-link.is-accent { color: var(--gold); }
+
+  .mobile-nav-children {
+    display: flex;
+    flex-direction: column;
+    padding: .25rem 0 .75rem;
+    gap: .15rem;
+  }
+  .mobile-nav-sublink {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .55rem .25rem;
+    text-decoration: none;
+    color: var(--text-mid);
+    border-radius: var(--radius);
+    transition: background .2s, color .2s;
+  }
+  .mobile-nav-sublink:hover { background: var(--surface); color: var(--text); }
+  .mobile-nav-sublink strong {
+    display: block;
+    font-size: .92rem;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--font-sans);
+  }
+  .mobile-nav-sublink em {
+    display: block;
+    font-size: .76rem;
+    font-style: normal;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .mobile-nav-dot {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    border-radius: var(--radius);
+    background: var(--grad-amber);
+  }
+  .mobile-nav-dot.grad-amber  { background: var(--grad-amber); }
+  .mobile-nav-dot.grad-blue   { background: var(--grad-blue); }
+  .mobile-nav-dot.grad-green  { background: var(--grad-green); }
+  .mobile-nav-dot.grad-purple { background: var(--grad-purple); }
+
+  /* Deeper mobile levels (3rd, 4th) — indented text links */
+  .mobile-nav-deep {
+    display: flex;
+    flex-direction: column;
+    padding: .1rem 0 .25rem 2.6rem;
+    gap: .1rem;
+  }
+  .mobile-nav-deeper {
+    display: flex;
+    flex-direction: column;
+    padding: .1rem 0 .25rem .75rem;
+    margin-left: .25rem;
+    border-left: 1px solid var(--border);
+    gap: .1rem;
+  }
+  .mobile-nav-deeplink {
+    display: block;
+    padding: .4rem .25rem;
+    font-size: .85rem;
+    color: var(--text-mid);
+    text-decoration: none;
+    border-radius: var(--radius);
+    transition: background .15s, color .15s;
+  }
+  .mobile-nav-deeplink:hover { background: var(--surface); color: var(--text); }
+  .mobile-nav-deeplink--deep { font-size: .78rem; color: var(--text-muted); }
+
+  .mobile-nav-footer {
+    border-top: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    display: flex;
+    gap: .5rem;
+  }
+  .mobile-nav-util {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .6rem .9rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: .88rem;
+    color: var(--text);
+    text-decoration: none;
+    transition: background .2s, border-color .2s;
+  }
+  .mobile-nav-util:hover { background: var(--surface-hover, var(--surface)); border-color: var(--border-mid); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .header-row { gap: 1rem; }
+    .main-nav { display: none; }
+    .nav-trigger { display: flex; }
+    .logo { margin-right: auto; }
+    .header-actions { margin-left: 0; }
+    /* Hide currency label on small screens, keep swatch */
+    .header-actions :global(.emdash-currency-label) { display: none; }
+  }
+
+  @media (min-width: 901px) {
+    .mobile-nav { display: none !important; }
+  }
+
+  /* Lock body scroll when drawer is open */
+  :global(body.nav-open) { overflow: hidden; }
+</style>
+
+<script>
+  // Scroll shadow
+  const header = document.getElementById("site-header");
+  if (header) {
+    const update = () => header.classList.toggle("scrolled", window.scrollY > 20);
+    window.addEventListener("scroll", update, { passive: true });
+    update();
+  }
+
+  // Keep mega menus inside the viewport.
+  //
+  // Default positioning is `left: 50%; translateX(-50%)` — i.e. the
+  // panel is centered on its nav-item. For nav-items close to the
+  // left/right edge that centers the panel off-screen. We compute
+  // a per-item px shift and expose it via a `--mega-shift` custom
+  // property; the CSS transform adds it on top of the -50% centering.
+  //
+  // Strategy: compute lazily on pointerenter/focusin (no work on pages
+  // where the buyer never opens the menu) and recompute for every
+  // open item on resize.
+  const EDGE_MARGIN = 12;
+  const megaItems = Array.from(
+    document.querySelectorAll<HTMLElement>(".nav-item.has-mega"),
+  );
+  function computeShift(item: HTMLElement) {
+    const panel = item.querySelector<HTMLElement>(".mega-menu");
+    if (!panel) return;
+    // Snapshot current inline shift so the measurement isn't biased by
+    // a previous clamp.
+    item.style.removeProperty("--mega-shift");
+    const itemRect = item.getBoundingClientRect();
+    const centerX = itemRect.left + itemRect.width / 2;
+    const menuWidth = panel.offsetWidth;
+    const vw = document.documentElement.clientWidth;
+    const naturalLeft = centerX - menuWidth / 2;
+    const naturalRight = centerX + menuWidth / 2;
+    let shift = 0;
+    if (naturalLeft < EDGE_MARGIN) {
+      shift = EDGE_MARGIN - naturalLeft;
+    } else if (naturalRight > vw - EDGE_MARGIN) {
+      shift = vw - EDGE_MARGIN - naturalRight;
+    }
+    if (shift !== 0) {
+      item.style.setProperty("--mega-shift", `${Math.round(shift)}px`);
+    }
+  }
+  for (const item of megaItems) {
+    const schedule = () => requestAnimationFrame(() => computeShift(item));
+    item.addEventListener("pointerenter", schedule);
+    item.addEventListener("focusin", schedule);
+  }
+  let resizeRaf = 0;
+  window.addEventListener(
+    "resize",
+    () => {
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        for (const item of megaItems) computeShift(item);
+      });
+    },
+    { passive: true },
+  );
+
+  // Mobile drawer: open / close / close on Escape / close on link click
+  const drawer = document.querySelector<HTMLElement>("[data-mobile-nav]");
+  const trigger = document.querySelector<HTMLButtonElement>("[data-nav-trigger]");
+  if (drawer && trigger) {
+    const open = () => {
+      drawer.hidden = false;
+      // Defer by a frame so the CSS transition can animate
+      requestAnimationFrame(() => {
+        drawer.dataset.open = "true";
+      });
+      trigger.setAttribute("aria-expanded", "true");
+      document.body.classList.add("nav-open");
+    };
+    const close = () => {
+      drawer.dataset.open = "false";
+      trigger.setAttribute("aria-expanded", "false");
+      document.body.classList.remove("nav-open");
+      // Hide after the transition finishes so screen readers ignore it.
+      window.setTimeout(() => { drawer.hidden = true; }, 300);
+    };
+
+    trigger.addEventListener("click", () => {
+      if (trigger.getAttribute("aria-expanded") === "true") close(); else open();
+    });
+    document.querySelectorAll<HTMLElement>("[data-nav-close]").forEach((el) => {
+      el.addEventListener("click", close);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && trigger.getAttribute("aria-expanded") === "true") close();
+    });
+  }
+</script>

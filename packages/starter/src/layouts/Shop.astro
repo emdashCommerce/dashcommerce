@@ -1,0 +1,116 @@
+---
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { getSiteMeta } from "../lib/site-meta";
+
+interface Props {
+  /**
+   * Page title. If omitted, the site title alone is used (homepage pattern).
+   * Otherwise the layout renders `<title> — <siteTitle>` using the
+   * separator from `settings.seo.titleSeparator`.
+   */
+  title?: string;
+  description?: string;
+  image?: string;
+  canonical?: string;
+  ogType?: "website" | "product";
+  jsonLd?: string;
+  noHeader?: boolean;
+  noFooter?: boolean;
+}
+
+const {
+  title,
+  description,
+  image,
+  canonical = Astro.url.toString(),
+  ogType = "website",
+  jsonLd,
+  noHeader = false,
+  noFooter = false,
+} = Astro.props;
+
+// Every piece of site-wide identity comes from the CMS via getSiteMeta().
+// The themes doc is explicit that we must not hard-code site title or
+// tagline — an editor installing the starter rebrands entirely through
+// /_emdash/admin/settings.
+const meta = await getSiteMeta();
+const siteName = meta.title;
+const separator = meta.seo.titleSeparator;
+
+// Page title:
+//   - no `title` prop         → just the site name (homepage)
+//   - title === site name     → just the site name (avoid "Shop — Shop")
+//   - otherwise               → "<page title><separator><site name>"
+const fullTitle =
+  !title || title === siteName
+    ? siteName
+    : `${title}${separator}${siteName}`;
+
+// Meta description cascade: page prop → site tagline → empty.
+// og:description falls back to the same chain.
+const metaDescription = description ?? meta.tagline ?? "";
+
+// og:image cascade: page prop → static public asset fallback.
+// We intentionally leave the admin SEO UI (seo.defaultOgImage) out of the
+// resolution here — SiteSettings exposes it but getSiteSettings() doesn't
+// resolve its URL. Plumbing that in is a future improvement.
+const ogImage = image ?? "/og-default.png";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={metaDescription} />
+    <link rel="canonical" href={canonical} />
+    {meta.favicon?.url && (
+      <link rel="icon" href={meta.favicon.url} />
+    )}
+
+    <!-- Fonts: Fraunces (display) · DM Sans (body) · DM Mono (prices) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- OG / Twitter -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={metaDescription} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:site_name" content={siteName} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={metaDescription} />
+    <meta name="twitter:image" content={ogImage} />
+
+    {jsonLd && <script type="application/ld+json" set:html={jsonLd} />}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {!noHeader && <Header />}
+    <main id="main">
+      <slot />
+    </main>
+    {!noFooter && <Footer />}
+  </body>
+</html>
+
+<style>
+  .skip-link {
+    position: absolute;
+    top: -40px; left: 0;
+    padding: 8px 14px;
+    background: var(--gold); color: #0b0b0b;
+    font-weight: 600; font-size: .875rem;
+    z-index: 9999;
+    transition: top .15s;
+  }
+  .skip-link:focus { top: 0; }
+</style>

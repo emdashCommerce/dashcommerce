@@ -1,0 +1,274 @@
+---
+import { getEntriesByTerm, getTaxonomyTerms, getTerm } from "emdash";
+import Shop from "../../layouts/Shop.astro";
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+if (!slug) return new Response("Category not found", { status: 404 });
+
+// Per-category hero background tint. Everything else — label, description,
+// which products belong — lives in the `product_category` taxonomy and can
+// be edited from the admin. Any category slug not mapped here falls back
+// to a neutral tint.
+const categoryBg: Record<string, string> = {
+  "physical-goods":    "radial-gradient(ellipse at 60% 50%, #2d1800 0%, #0b0b0b 70%)",
+  "digital-downloads": "radial-gradient(ellipse at 40% 50%, #001433 0%, #0b0b0b 70%)",
+  subscriptions:       "radial-gradient(ellipse at 60% 50%, #001a0a 0%, #0b0b0b 70%)",
+  bundles:             "radial-gradient(ellipse at 40% 50%, #1a001f 0%, #0b0b0b 70%)",
+};
+
+const term = await getTerm("product_category", slug);
+if (!term) return Astro.redirect("/shop", 302);
+
+const bg =
+  categoryBg[slug] ??
+  "radial-gradient(ellipse at 50% 50%, #1a1a1a 0%, #0b0b0b 70%)";
+
+const products = await getEntriesByTerm("products", "product_category", slug);
+
+type PriceMap = Record<string, { amount: number }>;
+const fmt = (priceMap?: PriceMap) => {
+  const p = priceMap?.USD;
+  if (!p) return null;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(p.amount / 100);
+};
+
+
+const typeGrad: Record<string, string> = {
+  simple:       "linear-gradient(135deg,#2d1800,#4a2c0a)",
+  variable:     "linear-gradient(135deg,#1a0f00,#3d2200)",
+  grouped:      "linear-gradient(135deg,#1f1400,#3a2800)",
+  subscription: "linear-gradient(135deg,#001a0a,#0a2d18)",
+  external:     "linear-gradient(135deg,#1a001f,#2d0a38)",
+};
+const getGrad = (type?: string) => (type && typeGrad[type]) ?? typeGrad.simple;
+
+// Pull every other category term so the secondary nav stays in sync with
+// whatever the admin has defined.
+const allTerms = await getTaxonomyTerms("product_category");
+const otherCategories = allTerms
+  .filter((t) => t.slug !== slug)
+  .map((t) => ({ slug: t.slug, label: t.label }));
+---
+
+<Shop
+  title={term.label}
+  description={term.description ?? `Shop our ${term.label} collection.`}
+>
+  <!-- Category hero -->
+  <div class="cat-hero" style={`background: ${bg};`}>
+    <div class="container cat-hero-inner">
+      <nav class="cat-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span>›</span>
+        <a href="/shop">Shop</a>
+        <span>›</span>
+        <span aria-current="page">{term.label}</span>
+      </nav>
+      <h1 class="cat-title">{term.label}</h1>
+      {term.description && <p class="cat-desc">{term.description}</p>}
+      <div class="cat-meta">
+        <span class="cat-count">
+          {products.length} {products.length === 1 ? "product" : "products"}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other categories nav -->
+  <div class="cat-nav-strip">
+    <div class="container cat-nav-inner">
+      <span class="cat-nav-label">Browse</span>
+      {otherCategories.map((c) => (
+        <a href={`/category/${c.slug}`} class="cat-nav-link">{c.label}</a>
+      ))}
+      <a href="/shop" class="cat-nav-link cat-nav-all">All products</a>
+    </div>
+  </div>
+
+  <!-- Product grid -->
+  <div class="container cat-body">
+    {products.length === 0 ? (
+      <div class="cat-empty">
+        <div class="cat-empty-icon" aria-hidden="true">◈</div>
+        <h2>No products yet</h2>
+        <p>
+          This category is empty for now.
+          <a href="/shop">Browse all products →</a>
+        </p>
+      </div>
+    ) : (
+      <ul class="cat-grid" role="list">
+        {products.map((p) => {
+          const price = fmt(p.data.prices as PriceMap);
+          const type  = String(p.data.type ?? "simple");
+          const grad  = getGrad(type);
+          const href  = `/shop/${p.data.slug ?? p.id}`;
+          const isOut = p.data.stock_status === "outofstock";
+          const isFeat = Boolean(p.data.featured);
+          return (
+            <li>
+              <a href={href} class="cat-card" aria-label={`${p.data.title}${price ? ` — ${price}` : ""}`}>
+                <div class="cat-card-img" style={`background: ${grad};`}>
+                  {isOut  && <span class="cat-badge cat-badge-out">Sold out</span>}
+                  {isFeat && <span class="cat-badge cat-badge-feat">Featured</span>}
+                  <div class="cat-card-view">View →</div>
+                </div>
+                <div class="cat-card-body">
+                  <h2 class="cat-card-title">{p.data.title}</h2>
+                  <span class={`cat-card-price${!price ? " cat-na" : ""}`}>
+                    {price ?? "—"}
+                  </span>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </div>
+
+</Shop>
+
+<style>
+  /* Hero */
+  .cat-hero {
+    padding: 5rem 0 3.5rem;
+    border-bottom: 1px solid var(--border);
+    min-height: 320px;
+    display: flex; align-items: flex-end;
+  }
+  .cat-hero-inner { width: 100%; }
+  .cat-breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; color: var(--text-muted);
+    margin-bottom: 1.25rem;
+  }
+  .cat-breadcrumb a { color: var(--text-muted); transition: color .2s; }
+  .cat-breadcrumb a:hover { color: var(--gold); }
+  .cat-breadcrumb [aria-current] { color: var(--text-mid); }
+  .cat-title {
+    font-size: clamp(2rem, 5vw, 4rem);
+    color: var(--text); margin: 0 0 1rem;
+  }
+  .cat-desc {
+    font-size: 1rem;
+    color: var(--text-muted);
+    max-width: 52ch;
+    line-height: 1.75;
+    margin: 0 0 1.5rem;
+  }
+  .cat-count {
+    display: inline-flex;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+    padding: .3rem .75rem;
+    border: 1px solid var(--border-mid);
+    border-radius: 100px;
+  }
+
+  /* Category nav strip */
+  .cat-nav-strip {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: .875rem 0;
+  }
+  .cat-nav-inner {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .cat-nav-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+    margin-right: .5rem;
+  }
+  .cat-nav-link {
+    font-size: .82rem;
+    color: var(--text-muted);
+    padding: .35rem .8rem;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    transition: color .2s, border-color .2s;
+  }
+  .cat-nav-link:hover { color: var(--text); border-color: var(--border-mid); }
+  .cat-nav-all { color: var(--gold); border-color: var(--gold); opacity: .7; }
+  .cat-nav-all:hover { opacity: 1; color: var(--gold); }
+
+  /* Body */
+  .cat-body { padding-top: 3rem; padding-bottom: 6rem; }
+
+  /* Grid */
+  .cat-grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+  .cat-card {
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: border-color .25s, transform .25s var(--ease), box-shadow .25s;
+  }
+  .cat-card:hover {
+    border-color: var(--border-mid);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(0,0,0,.4);
+  }
+  .cat-card-img {
+    aspect-ratio: 4/3;
+    position: relative; overflow: hidden;
+  }
+  .cat-card-view {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(11,11,11,.82);
+    font-size: .875rem; font-weight: 600;
+    color: var(--gold); letter-spacing: .04em;
+    opacity: 0; transition: opacity .25s;
+  }
+  .cat-card:hover .cat-card-view { opacity: 1; }
+  .cat-badge {
+    position: absolute; top: .875rem; left: .875rem;
+    font-size: .7rem; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: .25rem .625rem; border-radius: 3px; z-index: 2;
+  }
+  .cat-badge-out  { background: var(--ember); color: #fff; }
+  .cat-badge-feat { background: var(--gold); color: #0b0b0b; }
+  .cat-card-body {
+    padding: 1rem 1.125rem 1.25rem;
+    display: flex; flex-direction: column; gap: .35rem; flex: 1;
+  }
+  .cat-card-title {
+    font-family: var(--font-display);
+    font-size: 1rem; font-weight: 600;
+    color: var(--text); line-height: 1.25; margin: 0;
+  }
+  .cat-card-price { font-family: var(--font-mono); font-size: .875rem; color: var(--gold); margin-top: auto; }
+  .cat-na { color: var(--text-subtle); }
+
+  /* Empty */
+  .cat-empty { padding: 6rem 1rem; text-align: center; max-width: 400px; margin: 0 auto; }
+  .cat-empty-icon { font-size: 2rem; color: var(--gold); opacity: .35; margin-bottom: 1.25rem; }
+  .cat-empty h2 { margin-bottom: .75rem; }
+  .cat-empty p { color: var(--text-muted); }
+  .cat-empty a { color: var(--gold); }
+
+  /* Responsive */
+  @media (max-width: 1100px) { .cat-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px)  { .cat-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px)  { .cat-grid { grid-template-columns: 1fr; } }
+</style>

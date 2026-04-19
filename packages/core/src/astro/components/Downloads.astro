@@ -1,0 +1,73 @@
+---
+// Downloads — customer account downloads page.
+//
+// Host page should query download grants by customer email (admin-only
+// endpoint) or pass an array pre-fetched from /orders/by-draft then
+// map grant.externalUrl into ready-to-click links.
+
+interface Grant {
+  id: string;
+  fileName: string;
+  maxUses: number;
+  usesCount: number;
+  expiresAt: string;
+  /** Pre-signed download URL (/downloads/:token) — generate server-side. */
+  downloadUrl: string;
+}
+
+interface Props {
+  grants: Grant[];
+  locale?: string;
+}
+
+const { grants, locale } = Astro.props;
+const dtFmt = (iso: string) => new Date(iso).toLocaleString(locale ?? "en-US");
+---
+<section class="dc-downloads">
+  <h2>Your downloads</h2>
+  {grants.length === 0 ? (
+    <p>No digital items yet.</p>
+  ) : (
+    <ul>
+      {grants.map((g) => {
+        const exhausted = g.usesCount >= g.maxUses;
+        const expired = Date.parse(g.expiresAt) < Date.now();
+        const disabled = exhausted || expired;
+        return (
+          <li class={disabled ? 'dc-disabled' : ''}>
+            <strong>{g.fileName}</strong>
+            {disabled ? (
+              <span> · {exhausted ? `Downloaded ${g.usesCount}/${g.maxUses}` : 'Expired'}</span>
+            ) : (
+              <>
+                {' '}
+                <a href={g.downloadUrl} download>
+                  Download
+                </a>
+                <span class="dc-meta"> · {g.usesCount}/{g.maxUses} uses · expires {dtFmt(g.expiresAt)}</span>
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  )}
+</section>
+<style>
+  .dc-downloads { color: var(--text, #111); }
+  .dc-downloads ul {
+    list-style: none;
+    padding: 0;
+  }
+  .dc-downloads li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border, #eee);
+  }
+  .dc-downloads .dc-disabled {
+    color: var(--text-muted, #999);
+  }
+  .dc-meta {
+    color: var(--text-muted, #666);
+    font-size: 0.85em;
+  }
+</style>

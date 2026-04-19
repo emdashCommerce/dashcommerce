@@ -1,0 +1,14 @@
+---
+import Shop from "../../layouts/Shop.astro";
+import OrderSummary from "@dashcommerce/core/astro/components/OrderSummary.astro";
+
+export const prerender = false;
+
+const { draft } = Astro.params;
+---
+<Shop title="Thank you">
+	<OrderSummary orderDraftId={draft ?? ""} />
+	<p style="text-align: center; margin-top: 2rem;">
+		<a href="/shop">← Back to shop</a>
+	</p>
+</Shop>

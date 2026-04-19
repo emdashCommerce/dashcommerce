@@ -1,0 +1,15 @@
+---
+// CartDrawer — slide-in cart panel. Wraps CartDrawerIsland.
+//
+// Emits a `dashcommerce:cart-updated` custom event whenever AddToCart
+// runs, which the island listens for to refetch.
+
+import CartDrawerIsland from "../islands/CartDrawerIsland.tsx";
+
+interface Props {
+  checkoutHref?: string;
+}
+
+const { checkoutHref = "/checkout" } = Astro.props;
+---
+<CartDrawerIsland client:load checkoutHref={checkoutHref} />

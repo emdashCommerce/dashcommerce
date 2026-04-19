@@ -1,0 +1,12 @@
+---
+// ReviewForm — wraps ReviewFormIsland.
+
+import ReviewFormIsland from "../islands/ReviewFormIsland.tsx";
+
+interface Props {
+  productId: string;
+}
+
+const { productId } = Astro.props;
+---
+<ReviewFormIsland client:load productId={productId} />

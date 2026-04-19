@@ -1,0 +1,1412 @@
+---
+import { getEmDashCollection, getEntryTerms } from "emdash";
+import { Image } from "emdash/ui";
+import Banner from "../components/Banner.astro";
+import SectionHeader from "../components/SectionHeader.astro";
+import Shop from "../layouts/Shop.astro";
+import { getSiteMeta } from "../lib/site-meta";
+
+const meta = await getSiteMeta();
+const { entries: products } = await getEmDashCollection("products");
+
+// Homepage journal preview cap. The bento layout only has room for 3
+// cards, but we don't want to show more than the editor's configured
+// posts-per-page either, so cap at the smaller of the two.
+const journalCap = Math.min(3, meta.postsPerPage);
+
+// ── Journal posts (homepage preview) ──
+// We show the three most recent posts in the "From the journal" section.
+// If the posts collection hasn't been seeded yet (fresh install), this
+// quietly returns nothing and the section is skipped.
+let journalPosts: Array<{
+  href: string;
+  title: string;
+  excerpt: string;
+  cover: unknown;
+  gradient: string;
+  date: string;
+  minutes: number;
+  category: string;
+}> = [];
+try {
+  const { entries: posts } = await getEmDashCollection("posts", {
+    status: "published",
+  });
+  const jfmtDate = (raw: unknown) => {
+    if (!raw) return "";
+    const d = new Date(String(raw));
+    if (Number.isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(d);
+  };
+  const top = posts
+    .slice()
+    .sort((a, b) => {
+      const da = String(a.data.published_date ?? a.publishedAt ?? "");
+      const db = String(b.data.published_date ?? b.publishedAt ?? "");
+      return db.localeCompare(da);
+    })
+    .slice(0, journalCap);
+  journalPosts = await Promise.all(
+    top.map(async (p) => {
+      const dbId = String(
+        (p.data as Record<string, unknown>).id ?? p.id,
+      );
+      const terms = await getEntryTerms("posts", dbId, "post_category");
+      const categoryLabel = terms[0]?.label ?? "Journal";
+      return {
+        href: `/blog/${p.data.slug ?? p.id}`,
+        title: String(p.data.title ?? ""),
+        excerpt: String(p.data.excerpt ?? ""),
+        cover: p.data.cover_image ?? null,
+        gradient: String(
+          p.data.cover_gradient ??
+            "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+        ),
+        date: jfmtDate(p.data.published_date ?? p.publishedAt),
+        minutes: Number(p.data.reading_minutes ?? 0),
+        category: categoryLabel,
+      };
+    }),
+  );
+} catch {
+  journalPosts = [];
+}
+
+// ── Utilities ──
+type PriceMap = Record<string, { amount: number }>;
+const fmt = (priceMap?: PriceMap, currency = "USD") => {
+  const p = priceMap?.[currency];
+  if (!p) return null;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(p.amount / 100);
+};
+
+// Product type → gradient for placeholder images
+const typeGrad: Record<string, string> = {
+  simple:       "linear-gradient(135deg,#2d1800,#4a2c0a)",
+  variable:     "linear-gradient(135deg,#1a0f00,#3d2200)",
+  grouped:      "linear-gradient(135deg,#1f1400,#3a2800)",
+  subscription: "linear-gradient(135deg,#001a0a,#0a2d18)",
+  external:     "linear-gradient(135deg,#1a001f,#2d0a38)",
+};
+const getGrad = (type?: string) =>
+  (type && typeGrad[type]) ?? typeGrad.simple;
+
+// ── Product data ──
+const featured = products.find((p) => p.data.featured === true) ?? products[0];
+const recent   = products.slice(0, 8);
+
+// Pre-compute to avoid TS generics in JSX expressions
+const featuredPrice = featured ? fmt(featured.data.prices as PriceMap) : null;
+const featuredSlug  = featured ? `/shop/${featured.data.slug ?? featured.id}` : "/shop";
+const featuredType  = featured ? String(featured.data.type ?? "product") : "product";
+const featuredTitle = featured ? String(featured.data.title ?? "") : "";
+const featuredGrad  = featured ? getGrad(String(featured.data.type)) : "";
+
+const recentCards = recent.map((p) => ({
+  href:   `/shop/${p.data.slug ?? p.id}`,
+  title:  String(p.data.title ?? ""),
+  type:   String(p.data.type ?? "simple"),
+  price:  fmt(p.data.prices as PriceMap),
+  grad:   getGrad(String(p.data.type)),
+  isOut:  p.data.stock_status === "outofstock",
+  isFeat: Boolean(p.data.featured),
+}));
+
+// ── Hero slides ──
+// Managed in the admin under Content → Hero Slides. Each slide is a
+// published entry in the `hero_slides` content collection; drafts are
+// auto-hidden by `getEmDashCollection`. We fall back to a sensible
+// default set when the collection is empty (fresh install, no seed) so
+// the landing page never boots blank.
+type BgType = "gradient" | "image" | "video";
+type EmbedKind = "mp4" | "youtube" | "vimeo" | null;
+
+type HeroSlide = {
+  eyebrow: string;
+  headline: string;
+  sub: string;
+  cta: { label: string; href: string };
+  // Shared visual data
+  bgType: BgType;
+  bgCss: string;
+  bgImage: unknown; // emdash MediaValue (rendered via <Image>)
+  bgFocal: string;
+  bgOverlay: string;
+  videoUrl: string;
+  videoKind: EmbedKind;
+  videoPoster: unknown;
+  accent: string;
+};
+
+// Parse a pasted URL into a video embed descriptor.
+// Accepts:
+//  - Direct media URLs (.mp4/.webm/.mov) → rendered as <video>.
+//  - youtube.com/watch?v=ID, youtube.com/embed/ID, youtu.be/ID → iframe.
+//  - vimeo.com/ID, player.vimeo.com/video/ID → iframe.
+function parseVideo(raw: string): { kind: EmbedKind; src: string } {
+  const url = raw.trim();
+  if (!url) return { kind: null, src: "" };
+
+  // YouTube
+  const yt =
+    url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  if (yt) {
+    const id = yt[1];
+    // Background-video params: autoplay, loop (via playlist), mute, no UI.
+    const params = new URLSearchParams({
+      autoplay: "1",
+      mute: "1",
+      loop: "1",
+      playlist: id,
+      controls: "0",
+      showinfo: "0",
+      rel: "0",
+      modestbranding: "1",
+      playsinline: "1",
+      iv_load_policy: "3",
+    });
+    return { kind: "youtube", src: `https://www.youtube.com/embed/${id}?${params.toString()}` };
+  }
+
+  // Vimeo
+  const vm = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vm) {
+    const id = vm[1];
+    const params = new URLSearchParams({
+      autoplay: "1",
+      muted: "1",
+      loop: "1",
+      background: "1",
+      controls: "0",
+      playsinline: "1",
+    });
+    return { kind: "vimeo", src: `https://player.vimeo.com/video/${id}?${params.toString()}` };
+  }
+
+  // Treat anything else as a direct media URL (MP4/WebM/MOV). The
+  // storefront <video> element will silently fail if the MIME can't be
+  // decoded, and the poster image still shows — acceptable fallback.
+  return { kind: "mp4", src: url };
+}
+
+const DEFAULT_HERO_SLIDES: HeroSlide[] = [
+  {
+    eyebrow: "New arrivals",
+    headline: "Discover\nThe Collection",
+    sub: "Curated physical goods, digital downloads and monthly boxes — all in one place.",
+    cta: { label: "Shop now", href: "/shop" },
+    bgType: "gradient",
+    bgCss: "radial-gradient(ellipse at 70% 50%, #1a1000 0%, #0b0b0b 70%)",
+    bgImage: null,
+    bgFocal: "center",
+    bgOverlay: "linear-gradient(90deg, rgba(11,11,11,.78) 0%, rgba(11,11,11,.35) 100%)",
+    videoUrl: "",
+    videoKind: null,
+    videoPoster: null,
+    accent: "linear-gradient(90deg, #c8a46e, #8b6520)",
+  },
+];
+
+let heroSlides: HeroSlide[];
+try {
+  const { entries: slideEntries } = await getEmDashCollection("hero_slides");
+  const mapped = slideEntries
+    .slice()
+    .sort((a, b) => {
+      const oa = Number(a.data.sort_order ?? 0);
+      const ob = Number(b.data.sort_order ?? 0);
+      return oa - ob;
+    })
+    .map<HeroSlide>((e) => {
+      // Smart background-type resolution.
+      //
+      // We intentionally IGNORE the `bg_type` dropdown when a richer medium
+      // is actually populated — that way editors can just upload an image
+      // (or paste a video URL) and the slide "does the right thing" even
+      // if they forget to flip the selector. The explicit dropdown still
+      // wins when no media is present, so a pure-gradient slide stays a
+      // gradient.
+      //
+      // Priority: video URL → image → whatever the dropdown said (or
+      // gradient as last resort).
+      const videoUrl = String(e.data.bg_video_url ?? "").trim();
+      const hasImage = Boolean(e.data.bg_image);
+      const rawType = String(e.data.bg_type ?? "gradient");
+      const bgType: BgType = videoUrl
+        ? "video"
+        : hasImage
+          ? "image"
+          : rawType === "image" || rawType === "video"
+            ? "gradient" // user picked image/video but uploaded nothing → show gradient fallback
+            : "gradient";
+      const video = videoUrl
+        ? parseVideo(videoUrl)
+        : { kind: null as EmbedKind, src: "" };
+
+      return {
+        eyebrow: String(e.data.eyebrow ?? ""),
+        headline: String(e.data.headline ?? ""),
+        sub: String(e.data.subtitle ?? ""),
+        cta: {
+          label: String(e.data.cta_label ?? "Shop now"),
+          href: String(e.data.cta_href ?? "/shop"),
+        },
+        bgType,
+        bgCss: String(
+          e.data.bg_css ?? "radial-gradient(ellipse at 70% 50%, #1a1000 0%, #0b0b0b 70%)",
+        ),
+        bgImage: e.data.bg_image ?? null,
+        bgFocal: String(e.data.bg_focal_point ?? "center"),
+        bgOverlay: String(
+          e.data.bg_overlay ??
+            "linear-gradient(90deg, rgba(11,11,11,.78) 0%, rgba(11,11,11,.35) 100%)",
+        ),
+        videoUrl: video.src,
+        videoKind: video.kind,
+        videoPoster: e.data.bg_video_poster ?? null,
+        accent: String(
+          e.data.accent_css ?? "linear-gradient(90deg, #c8a46e, #8b6520)",
+        ),
+      };
+    })
+    .filter((s) => s.headline.length > 0);
+  heroSlides = mapped.length > 0 ? mapped : DEFAULT_HERO_SLIDES;
+} catch {
+  // Collection not yet seeded — the template renders the single
+  // DEFAULT_HERO_SLIDES entry and the admin can add more later.
+  heroSlides = DEFAULT_HERO_SLIDES;
+}
+
+// ── Bento categories (from `category_tiles` collection) ─────────────────────
+// Editors manage this from `/_emdash/admin/content/category_tiles`. Each
+// tile has: label + description + href + size + background + optional image.
+let categories: Array<{
+  label: string;
+  desc: string;
+  href: string;
+  bg: string;
+  size: "large" | "small";
+  image: unknown;
+}> = [];
+try {
+  const { entries } = await getEmDashCollection("category_tiles", {
+    status: "published",
+  });
+  categories = entries
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(a.data.sort_order ?? 999) - Number(b.data.sort_order ?? 999),
+    )
+    .map((e) => {
+      const d = e.data as Record<string, unknown>;
+      return {
+        label: String(d.label ?? ""),
+        desc: String(d.description ?? ""),
+        href: String(d.href ?? "#"),
+        bg: String(
+          d.bg_css ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+        ),
+        size: d.size === "small" ? "small" : "large",
+        image: d.image ?? null,
+      };
+    });
+} catch {
+  categories = [];
+}
+
+// ── Trust strip items (from `trust_items` collection) ───────────────────────
+let trustItems: Array<{ icon: string; title: string; desc: string }> = [];
+try {
+  const { entries } = await getEmDashCollection("trust_items", {
+    status: "published",
+  });
+  trustItems = entries
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(a.data.sort_order ?? 999) - Number(b.data.sort_order ?? 999),
+    )
+    .map((e) => ({
+      icon: String(e.data.icon ?? "✦"),
+      title: String(e.data.title ?? ""),
+      desc: String(e.data.description ?? ""),
+    }));
+} catch {
+  trustItems = [];
+}
+
+// ── Marquee strip (announcements where location = marquee or both) ─────────
+let marqueeItems: string[] = [];
+try {
+  const { entries } = await getEmDashCollection("announcements", {
+    status: "published",
+  });
+  marqueeItems = entries
+    .filter((e) => {
+      const loc = String(e.data.location ?? "top_bar");
+      const enabled = e.data.enabled !== false;
+      return enabled && (loc === "marquee" || loc === "both");
+    })
+    .sort(
+      (a, b) =>
+        Number(a.data.sort_order ?? 999) - Number(b.data.sort_order ?? 999),
+    )
+    .map((e) => String(e.data.message ?? ""))
+    .filter((m) => m.length > 0);
+} catch {
+  marqueeItems = [];
+}
+// Duplicate for a seamless marquee loop.
+const marqueeLoop = marqueeItems.length
+  ? [...marqueeItems, ...marqueeItems]
+  : [];
+
+// Homepage section headers (Bento, Products, Journal) are now driven by
+// the `section_headers` collection and rendered via the reusable
+// <SectionHeader/> component further down, so we don't need to pre-resolve
+// copy here any more. site_text.main has been slimmed down to just
+// footer/global copy (see Footer.astro).
+---
+
+<Shop>
+  {/* Homepage intentionally passes no `title` / `description` — Shop.astro
+     falls back to `settings.title` and `settings.tagline` from Site Settings.
+     This keeps the homepage in sync with whatever the editor has branded. */}
+
+  <!-- ═══════════ HERO SLIDER ═══════════ -->
+  <section class="hero-slider" aria-label="Featured collections">
+    {heroSlides.map((slide, i) => (
+      <div
+        class={`hero-slide hero-bg-${slide.bgType}${i === 0 ? " active" : ""}`}
+        aria-hidden={i !== 0}
+        style={slide.bgType === "gradient" ? `background: ${slide.bgCss};` : undefined}
+      >
+        <!-- Background media layer (image or video). Sits under the overlay + content. -->
+        {slide.bgType === "image" && slide.bgImage && (
+          <div class="hero-bg-media">
+            <Image
+              image={slide.bgImage}
+              alt=""
+              class="hero-bg-img"
+              loading={i === 0 ? "eager" : "lazy"}
+              decoding="async"
+              style={`object-position: ${slide.bgFocal};`}
+            />
+          </div>
+        )}
+        {slide.bgType === "video" && slide.videoKind === "mp4" && slide.videoUrl && (
+          <div class="hero-bg-media">
+            <video
+              class="hero-bg-video"
+              src={slide.videoUrl}
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              aria-hidden="true"
+            >
+              {slide.videoPoster && (
+                <Image image={slide.videoPoster} alt="" class="hero-bg-img" />
+              )}
+            </video>
+          </div>
+        )}
+        {slide.bgType === "video" && (slide.videoKind === "youtube" || slide.videoKind === "vimeo") && slide.videoUrl && (
+          <div class="hero-bg-media hero-bg-embed">
+            <iframe
+              class="hero-bg-iframe"
+              src={slide.videoUrl}
+              title=""
+              aria-hidden="true"
+              tabindex="-1"
+              allow="autoplay; fullscreen; picture-in-picture"
+              frameborder="0"
+              loading={i === 0 ? "eager" : "lazy"}
+            ></iframe>
+          </div>
+        )}
+
+        <!-- Legibility overlay (applied on top of image/video only) -->
+        {(slide.bgType === "image" || slide.bgType === "video") && (
+          <div class="hero-bg-overlay" style={`background: ${slide.bgOverlay};`}></div>
+        )}
+
+        <!-- Accent bar -->
+        <div class="hero-accent-bar" style={`background: ${slide.accent};`}></div>
+
+        <div class="container hero-slide-inner">
+          <div class="hero-copy">
+            <p class="hero-eyebrow">{slide.eyebrow}</p>
+            <h1 class="hero-headline">{slide.headline}</h1>
+            <p class="hero-sub">{slide.sub}</p>
+            <div class="hero-cta-row">
+              <a href={slide.cta.href} class="btn-primary">{slide.cta.label}</a>
+              <a href="/shop" class="btn-ghost">View all</a>
+            </div>
+          </div>
+
+          <div class="hero-visual" aria-hidden="true">
+            <div class="hero-visual-inner">
+              <div class="hero-geo hero-geo-1"></div>
+              <div class="hero-geo hero-geo-2"></div>
+              <div class="hero-geo hero-geo-3"></div>
+              {featured && (
+                <a href={featuredSlug} class="hero-product-card">
+                  <div class="hero-product-img" style={`background: ${featuredGrad};`}></div>
+                  <div class="hero-product-body">
+                    <span class="hero-product-type">{featuredType}</span>
+                    <strong class="hero-product-title">{featuredTitle}</strong>
+                    <span class="hero-product-price">{featuredPrice ?? "—"}</span>
+                  </div>
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    ))}
+
+    <!-- Slide controls -->
+    <div class="hero-controls" role="tablist" aria-label="Slide navigation">
+      {heroSlides.map((_, i) => (
+        <button
+          class={`hero-dot${i === 0 ? " active" : ""}`}
+          role="tab"
+          aria-selected={i === 0}
+          aria-label={`Slide ${i + 1}`}
+          data-slide={i}
+        ></button>
+      ))}
+    </div>
+
+    <!-- Progress bar -->
+    <div class="hero-progress" aria-hidden="true">
+      <div class="hero-progress-fill"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ MARQUEE ═══════════ -->
+  {marqueeLoop.length > 0 && (
+    <div class="marquee-strip" aria-hidden="true">
+      <div class="marquee-track">
+        {marqueeLoop.map((t, i, a) => (
+          <>
+            <span class="marquee-item">{t}</span>
+            {i < a.length - 1 && <span class="marquee-sep">✦</span>}
+          </>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- ═══════════ CATEGORIES BENTO ═══════════ -->
+  {categories.length > 0 && (
+    <>
+      <SectionHeader
+        slug="homepage-bento"
+        fallbackEyebrow="Browse by type"
+        fallbackTitle={`Everything you need,\nin one place`}
+      />
+      <section class="section container section-bento-grid">
+        <div class="bento-grid">
+          {categories.map((cat) => (
+            <a
+              href={cat.href}
+              class={`bento-tile bento-${cat.size}`}
+              style={`background: ${cat.bg};`}
+            >
+              {cat.image && (
+                <Image image={cat.image} alt="" class="bento-img" loading="lazy" />
+              )}
+              <div class="bento-overlay"></div>
+              <div class="bento-body">
+                <p class="bento-desc">{cat.desc}</p>
+                <strong class="bento-label">{cat.label}</strong>
+                <span class="bento-arrow">→</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+    </>
+  )}
+
+  <!-- ═══════════ PRODUCT GRID ═══════════ -->
+  {products.length > 0 ? (
+    <section class="section container">
+      <SectionHeader
+        slug="homepage-products"
+        fallbackEyebrow="The selection"
+        fallbackTitle={`New in\nthis season`}
+        ctaLabelOverride={`View all ${products.length} products`}
+        fallbackCtaHref="/shop"
+      />
+
+      <div class="product-grid">
+        {recentCards.map((c) => (
+          <a href={c.href} class="product-card" aria-label={`${c.title}${c.price ? ` — ${c.price}` : ""}`}>
+            <div class="product-card-img" style={`background: ${c.grad};`}>
+              {c.isOut  && <span class="product-badge-out">Sold out</span>}
+              {c.isFeat && <span class="product-badge-feat">Featured</span>}
+              <div class="product-card-img-overlay"></div>
+            </div>
+            <div class="product-card-body">
+              <span class="product-card-type">{c.type}</span>
+              <h3 class="product-card-title">{c.title}</h3>
+              {c.price
+                ? <span class="product-card-price">{c.price}</span>
+                : <span class="product-card-price product-card-na">—</span>
+              }
+            </div>
+            <div class="product-card-hover">
+              <span>View product →</span>
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  ) : (
+    <section class="section container">
+      <div class="empty-state">
+        <div class="empty-icon" aria-hidden="true">✦</div>
+        <h2>Your shop is empty</h2>
+        <p>Run <code>bun run seed</code> to load the demo catalog, or create your first product in the admin.</p>
+        <a href="/_emdash/admin/content/products/new" class="btn-primary">Create a product</a>
+      </div>
+    </section>
+  )}
+
+  <!-- ═══════════ MID BANNER (managed via Banners collection) ═══════════ -->
+  <Banner slug="home-promise" />
+
+  <!-- ═══════════ FROM THE JOURNAL ═══════════ -->
+  {journalPosts.length > 0 && (
+    <section class="journal-strip">
+      <div class="container">
+        <SectionHeader
+          slug="homepage-journal"
+          fallbackEyebrow="The Journal"
+          fallbackTitle="From the editors"
+          fallbackSubtitle="Product stories, buying guides, and notes from the workshop."
+          fallbackCtaLabel="View all posts"
+          fallbackCtaHref="/blog"
+        />
+
+        <ul class="journal-grid" role="list">
+          {journalPosts.map((p) => (
+            <li>
+              <a href={p.href} class="journal-card" aria-label={p.title}>
+                <div class="journal-card-img" style={`background: ${p.gradient};`}>
+                  {p.cover && (
+                    <Image image={p.cover} alt="" class="journal-card-cover" loading="lazy" />
+                  )}
+                </div>
+                <div class="journal-card-body">
+                  <p class="journal-card-kicker">{p.category}</p>
+                  <h3 class="journal-card-title">{p.title}</h3>
+                  {p.excerpt && <p class="journal-card-excerpt">{p.excerpt}</p>}
+                  <div class="journal-card-meta">
+                    {p.date && <span>{p.date}</span>}
+                    {p.minutes > 0 && <span>{p.minutes} min read</span>}
+                  </div>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
+  <!-- ═══════════ TRUST STRIP ═══════════ -->
+  {trustItems.length > 0 && (
+    <section class="trust-strip">
+      <div class="container trust-inner">
+        {trustItems.map((ti) => (
+          <div class="trust-item">
+            <span class="trust-icon" aria-hidden="true">{ti.icon}</span>
+            <div>
+              <strong class="trust-title">{ti.title}</strong>
+              <p class="trust-desc">{ti.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )}
+
+</Shop>
+
+<style>
+  /* ── Hero Slider ── */
+  .hero-slider {
+    position: relative;
+    height: 92vh;
+    min-height: 600px;
+    max-height: 900px;
+    overflow: hidden;
+  }
+
+  .hero-slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center;
+    opacity: 0;
+    transition: opacity .8s var(--ease);
+    pointer-events: none;
+    overflow: hidden;
+    background-color: #0b0b0b;
+  }
+  .hero-slide.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Background media layer: image or video sits beneath content. */
+  .hero-bg-media {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .hero-bg-img,
+  .hero-bg-video,
+  .hero-bg-iframe {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  /* YouTube/Vimeo iframes can't be `object-fit`'d — we blow them up past
+     the viewport so the video fills the container without letterboxing,
+     and clip the overflow on the parent. 177.77vh keeps a 16:9 video
+     filling the width of any viewport; max() does the same for tall
+     screens. */
+  .hero-bg-embed { pointer-events: none; }
+  .hero-bg-iframe {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: max(100vw, 177.77vh);
+    height: max(100vh, 56.25vw);
+    transform: translate(-50%, -50%);
+    border: 0;
+  }
+
+  /* Dim layer over image/video for text legibility. */
+  .hero-bg-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* Accent + content sit above media + overlay. */
+  .hero-accent-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    opacity: .6;
+    z-index: 2;
+  }
+
+  .hero-slide-inner { position: relative; z-index: 2; }
+
+  /* Hide the rotating geometric hero-product card when the slide has an
+     image or video background — they'd visually fight with the media. */
+  .hero-bg-image .hero-visual,
+  .hero-bg-video .hero-visual { display: none; }
+  .hero-bg-image .hero-slide-inner,
+  .hero-bg-video .hero-slide-inner { grid-template-columns: 1fr; }
+
+  .hero-slide-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+    width: 100%;
+    padding-top: 2rem;
+  }
+
+  .hero-copy { max-width: 520px; }
+  .hero-eyebrow {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 1.25rem;
+  }
+  .hero-headline {
+    font-family: var(--font-display);
+    font-size: clamp(2.8rem, 6vw, 5.5rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -.035em;
+    color: var(--text);
+    white-space: pre-line;
+    margin: 0 0 1.5rem;
+  }
+  .hero-sub {
+    font-size: 1rem;
+    color: var(--text-muted);
+    line-height: 1.75;
+    max-width: 42ch;
+    margin: 0 0 2.5rem;
+  }
+  .hero-cta-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+  /* Hero visual */
+  .hero-visual {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+  }
+  .hero-visual-inner {
+    position: relative;
+    width: 340px; height: 400px;
+  }
+  .hero-geo {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--border-mid);
+  }
+  .hero-geo-1 {
+    width: 280px; height: 280px;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    animation: spin-slow 20s linear infinite;
+  }
+  .hero-geo-2 {
+    width: 180px; height: 180px;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    border-color: var(--border-strong);
+    animation: spin-slow 14s linear infinite reverse;
+  }
+  .hero-geo-3 {
+    width: 80px; height: 80px;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    background: var(--gold-dim);
+    border-color: var(--gold);
+    animation: spin-slow 8s linear infinite;
+  }
+  @keyframes spin-slow {
+    to { transform: translate(-50%,-50%) rotate(360deg); }
+  }
+
+  .hero-product-card {
+    position: absolute;
+    bottom: 0; right: -20px;
+    width: 180px;
+    background: var(--surface);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: transform .3s var(--ease);
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .hero-product-card:hover { transform: translateY(-4px); }
+  .hero-product-img { height: 120px; }
+  .hero-product-body {
+    padding: .875rem;
+    display: flex; flex-direction: column; gap: .2rem;
+  }
+  .hero-product-type {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-subtle);
+    font-weight: 600;
+  }
+  .hero-product-title {
+    font-size: .85rem;
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .hero-product-price {
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    color: var(--gold);
+    margin-top: .25rem;
+  }
+
+  /* Hero controls */
+  .hero-controls {
+    position: absolute;
+    bottom: 2.5rem; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: .625rem;
+    z-index: 10;
+  }
+  .hero-dot {
+    width: 28px; height: 3px;
+    border: none; border-radius: 2px;
+    background: var(--border-strong);
+    cursor: pointer; padding: 0;
+    transition: background .3s, width .3s var(--ease);
+  }
+  .hero-dot.active { background: var(--gold); width: 48px; }
+
+  /* Hero progress */
+  .hero-progress {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--border);
+  }
+  .hero-progress-fill {
+    height: 100%;
+    background: var(--gold);
+    width: 0%;
+    transition: width linear;
+    opacity: .5;
+  }
+
+  /* ── Marquee ── */
+  .marquee-strip {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-2);
+    height: 48px; overflow: hidden;
+  }
+  .marquee-track {
+    display: inline-flex;
+    align-items: center;
+    gap: 2rem;
+    height: 100%;
+    white-space: nowrap;
+    animation: marquee 35s linear infinite;
+  }
+  .marquee-item {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 500;
+  }
+  .marquee-sep {
+    color: var(--gold);
+    font-size: .55rem;
+    opacity: .6;
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  /* ── Section common ── */
+  .section { padding: 6rem 0; }
+  .section-hd { margin-bottom: 3rem; }
+  .section-eyebrow {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 .75rem;
+  }
+  .section-title {
+    font-size: clamp(1.75rem, 3vw, 2.75rem);
+    color: var(--text);
+    margin: 0 0 .5rem;
+  }
+  .section-title em { color: var(--gold); font-style: italic; }
+  .section-link {
+    font-size: .875rem;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    margin-top: .5rem;
+    transition: color .2s;
+  }
+  .section-link:hover { color: var(--gold); }
+
+  /* ── Bento grid ── */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 2fr;
+    grid-template-rows: 260px 260px;
+    gap: .875rem;
+  }
+  .bento-tile {
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+    text-decoration: none;
+    transition: transform .3s var(--ease);
+  }
+  .bento-tile:hover { transform: scale(1.015); }
+  .bento-large {
+    grid-row: 1 / 3;
+  }
+  .bento-small { }
+  .bento-img {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    z-index: 0;
+  }
+  /* Grid placement */
+  .bento-tile:nth-child(1) { grid-column: 1; grid-row: 1 / 3; }
+  .bento-tile:nth-child(2) { grid-column: 2; grid-row: 1; }
+  .bento-tile:nth-child(3) { grid-column: 2; grid-row: 2; }
+  .bento-tile:nth-child(4) { grid-column: 3 / 5; grid-row: 1 / 3; }
+
+  .bento-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.7) 0%, transparent 60%);
+    transition: opacity .3s;
+  }
+  .bento-tile:hover .bento-overlay { opacity: .8; }
+
+  .bento-body {
+    position: relative; z-index: 1;
+    padding: 1.5rem;
+    display: flex; flex-direction: column; gap: .2rem;
+  }
+  .bento-desc {
+    font-size: .78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin: 0;
+    font-weight: 500;
+  }
+  .bento-label {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.1;
+  }
+  .bento-large .bento-label { font-size: 1.75rem; }
+  .bento-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border: 1px solid var(--border-mid);
+    border-radius: 50%;
+    font-size: .875rem;
+    color: var(--gold);
+    margin-top: .5rem;
+    transition: background .2s, border-color .2s;
+  }
+  .bento-tile:hover .bento-arrow { background: var(--gold); color: #0b0b0b; border-color: var(--gold); }
+
+  /* ── Product grid ── */
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+
+  .product-card {
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: border-color .25s, transform .25s var(--ease), box-shadow .25s;
+    position: relative;
+  }
+  .product-card:hover {
+    border-color: var(--border-mid);
+    transform: translateY(-4px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+
+  .product-card-img {
+    aspect-ratio: 4/3;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .product-card-img-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, transparent 60%, rgba(0,0,0,.3));
+  }
+
+  .product-badge-out,
+  .product-badge-feat {
+    position: absolute;
+    top: .875rem; left: .875rem;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: .25rem .625rem;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .product-badge-out { background: var(--ember); color: #fff; }
+  .product-badge-feat { background: var(--gold); color: #0b0b0b; }
+
+  .product-card-body {
+    padding: 1rem 1.125rem 1.25rem;
+    display: flex; flex-direction: column; gap: .25rem;
+    flex: 1;
+  }
+  .product-card-type {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+  }
+  .product-card-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.25;
+    margin: 0;
+  }
+  .product-card-price {
+    font-family: var(--font-mono);
+    font-size: .875rem;
+    color: var(--gold);
+    margin-top: auto;
+    padding-top: .5rem;
+  }
+  .product-card-na { color: var(--text-subtle); }
+
+  /* Hover reveal */
+  .product-card-hover {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(11, 11, 11, .85);
+    opacity: 0;
+    transition: opacity .25s;
+    border-radius: var(--radius-lg);
+  }
+  .product-card:hover .product-card-hover { opacity: 1; }
+  .product-card-hover span {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: .04em;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 5rem 1rem;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  .empty-icon {
+    font-size: 2.5rem;
+    color: var(--gold);
+    margin-bottom: 1.5rem;
+    opacity: .5;
+  }
+  .empty-state h2 { margin-bottom: .75rem; }
+  .empty-state p { color: var(--text-muted); margin-bottom: 1.5rem; }
+  .empty-state code {
+    background: var(--bg-3); padding: 2px 6px;
+    border-radius: 4px; font-family: var(--font-mono);
+    font-size: .85em;
+  }
+
+  /* ── Mid banner ── */
+  .mid-banner {
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 6rem 0;
+    overflow: hidden;
+  }
+  .mid-banner-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+  }
+  .mid-banner-eyebrow {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 1rem;
+  }
+  .mid-banner-title {
+    font-size: clamp(2rem, 3.5vw, 3.5rem);
+    margin: 0 0 1.5rem;
+    color: var(--text);
+  }
+  .mid-banner-title em { color: var(--gold); font-style: italic; }
+  .mid-banner-body { color: var(--text-muted); line-height: 1.8; margin-bottom: 2rem; }
+
+  /* Banner art */
+  .mid-banner-art {
+    position: relative;
+    height: 320px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mid-art-circle {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--border-mid);
+  }
+  .mid-art-1 { width: 280px; height: 280px; border-color: var(--gold); opacity: .2; }
+  .mid-art-2 { width: 160px; height: 160px; background: var(--gold-dim); border-color: var(--gold); opacity: .5; }
+  .mid-art-line {
+    position: absolute;
+    background: var(--border-mid);
+  }
+  .mid-art-l1 { width: 1px; height: 200px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+  .mid-art-l2 { width: 200px; height: 1px; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+
+  /* ── From the journal (homepage preview) ── */
+  .journal-strip {
+    padding: 6rem 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+  }
+  .journal-hd {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 2rem;
+    margin-bottom: 3rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .journal-eyebrow {
+    font-size: .74rem;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 .75rem;
+  }
+  .journal-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    color: var(--text);
+    margin: 0 0 .5rem;
+  }
+  .journal-sub {
+    font-size: .95rem;
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 42ch;
+  }
+  .journal-all {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--gold);
+    text-decoration: none;
+    padding: .7rem 1.1rem;
+    border: 1px solid var(--gold);
+    border-radius: 100px;
+    transition: background .2s, color .2s, transform .2s var(--ease);
+    white-space: nowrap;
+  }
+  .journal-all:hover {
+    background: var(--gold);
+    color: #0b0b0b;
+    transform: translateY(-1px);
+  }
+  .journal-all span { transition: transform .2s var(--ease); }
+  .journal-all:hover span { transform: translateX(3px); }
+
+  .journal-grid {
+    list-style: none;
+    margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem 1.75rem;
+  }
+  .journal-card {
+    display: flex; flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .25s var(--ease);
+  }
+  .journal-card:hover { transform: translateY(-3px); }
+  .journal-card-img {
+    position: relative;
+    aspect-ratio: 16/10;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+  }
+  .journal-card-cover {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform .5s var(--ease);
+  }
+  .journal-card:hover .journal-card-cover { transform: scale(1.04); }
+  .journal-card-body { display: flex; flex-direction: column; gap: .6rem; }
+  .journal-card-kicker {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0;
+  }
+  .journal-card-title {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    line-height: 1.25;
+    letter-spacing: -.01em;
+    color: var(--text);
+    margin: 0;
+    transition: color .2s;
+  }
+  .journal-card:hover .journal-card-title { color: var(--gold); }
+  .journal-card-excerpt {
+    font-size: .9rem;
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .journal-card-meta {
+    display: flex;
+    gap: .75rem;
+    font-size: .74rem;
+    color: var(--text-subtle);
+    margin-top: .25rem;
+  }
+  .journal-card-meta span + span::before {
+    content: "·";
+    margin-right: .75rem;
+    color: var(--border-mid);
+  }
+
+  /* ── Trust strip ── */
+  .trust-strip {
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+    padding: 3rem 0;
+  }
+  .trust-inner {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2rem;
+  }
+  .trust-item {
+    display: flex; align-items: flex-start; gap: 1rem;
+  }
+  .trust-icon {
+    color: var(--gold);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    margin-top: .1rem;
+    opacity: .8;
+  }
+  .trust-title { display: block; font-size: .9rem; font-weight: 600; margin-bottom: .2rem; }
+  .trust-desc { font-size: .825rem; color: var(--text-muted); margin: 0; }
+
+  /* ── Responsive ── */
+  @media (max-width: 1100px) {
+    .bento-grid {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto;
+    }
+    .bento-tile:nth-child(1) { grid-column: 1; grid-row: 1; }
+    .bento-tile:nth-child(2) { grid-column: 2; grid-row: 1; }
+    .bento-tile:nth-child(3) { grid-column: 1; grid-row: 2; }
+    .bento-tile:nth-child(4) { grid-column: 2; grid-row: 2; }
+    .bento-tile { min-height: 200px; }
+    .product-grid { grid-template-columns: repeat(3, 1fr); }
+    .trust-inner { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .hero-slider { height: auto; min-height: 0; }
+    .hero-slide-inner { grid-template-columns: 1fr; gap: 2rem; padding: 5rem 0 8rem; }
+    .hero-visual { display: none; }
+    .hero-headline { font-size: clamp(2.5rem, 8vw, 4rem); }
+    .mid-banner-inner { grid-template-columns: 1fr; }
+    .mid-banner-art { display: none; }
+  }
+  @media (max-width: 900px) {
+    .journal-grid { grid-template-columns: repeat(2, 1fr); }
+    .journal-hd { flex-direction: column; align-items: flex-start; }
+  }
+  @media (max-width: 700px) {
+    .product-grid { grid-template-columns: repeat(2, 1fr); }
+    .bento-grid { grid-template-columns: 1fr; }
+    .bento-tile:nth-child(n) { grid-column: 1; grid-row: auto; }
+    .journal-grid { grid-template-columns: 1fr; gap: 2rem; }
+  }
+  @media (max-width: 480px) {
+    .product-grid { grid-template-columns: 1fr; }
+    .trust-inner { grid-template-columns: 1fr; }
+    .hero-controls { bottom: 1.5rem; }
+  }
+</style>
+
+<script>
+  // Hero slider
+  const slides  = Array.from(document.querySelectorAll<HTMLElement>(".hero-slide"));
+  const dots    = Array.from(document.querySelectorAll<HTMLButtonElement>(".hero-dot"));
+  const fill    = document.querySelector<HTMLElement>(".hero-progress-fill");
+  const INTERVAL = 6000;
+  let current = 0;
+  let timer: ReturnType<typeof setInterval>;
+
+  function goTo(n: number) {
+    slides[current].classList.remove("active");
+    slides[current].setAttribute("aria-hidden", "true");
+    dots[current].classList.remove("active");
+    dots[current].setAttribute("aria-selected", "false");
+    current = ((n % slides.length) + slides.length) % slides.length;
+    slides[current].classList.add("active");
+    slides[current].setAttribute("aria-hidden", "false");
+    dots[current].classList.add("active");
+    dots[current].setAttribute("aria-selected", "true");
+    if (fill) { fill.style.transition = "none"; fill.style.width = "0%"; requestAnimationFrame(() => { fill.style.transition = `width ${INTERVAL}ms linear`; fill.style.width = "100%"; }); }
+  }
+
+  function start() {
+    if (slides.length <= 1) return;
+    timer = setInterval(() => goTo(current + 1), INTERVAL);
+    if (fill) { fill.style.transition = `width ${INTERVAL}ms linear`; fill.style.width = "100%"; }
+  }
+  function stop() { clearInterval(timer); if (fill) { fill.style.transition = "none"; fill.style.width = "0%"; } }
+
+  dots.forEach((dot, i) => dot.addEventListener("click", () => { stop(); goTo(i); start(); }));
+
+  const hero = document.querySelector<HTMLElement>(".hero-slider");
+  hero?.addEventListener("mouseenter", stop);
+  hero?.addEventListener("mouseleave", start);
+
+  // Keyboard nav
+  hero?.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft")  { stop(); goTo(current - 1); start(); }
+    if (e.key === "ArrowRight") { stop(); goTo(current + 1); start(); }
+  });
+
+  goTo(0);
+  start();
+</script>

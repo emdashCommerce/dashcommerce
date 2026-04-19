@@ -1,0 +1,457 @@
+---
+import {
+  getEmDashCollection,
+  getEntriesByTerm,
+  getEntryTerms,
+  getTaxonomyTerms,
+} from "emdash";
+import { Image } from "emdash/ui";
+import Shop from "../../layouts/Shop.astro";
+import { getSiteMeta } from "../../lib/site-meta";
+
+export const prerender = false;
+
+const meta = await getSiteMeta();
+const { entries: posts } = await getEmDashCollection("posts");
+
+// Sort newest first. `published_date` is an override, fall back to Astro's
+// built-in `publishedAt` if the editor hasn't set one.
+const allSorted = posts
+  .slice()
+  .filter((p) => p.data.title)
+  .sort((a, b) => {
+    const da =
+      String(a.data.published_date ?? a.publishedAt ?? a.data.created_at ?? "");
+    const db =
+      String(b.data.published_date ?? b.publishedAt ?? b.data.created_at ?? "");
+    return db.localeCompare(da);
+  });
+
+// Respect the editor's postsPerPage setting. One of those slots is taken
+// by the featured card, so we cap the remaining grid to postsPerPage - 1.
+// Pagination itself isn't built yet, so anything above the cap is simply
+// not shown — good candidate for a follow-up `/blog/page/[n]` route.
+const sorted = allSorted.slice(0, meta.postsPerPage);
+
+const [featured, ...rest] = sorted;
+
+// Category chips — sourced from the taxonomy so they stay in sync with
+// whatever the admin has set up. `getEmDashCollection` doesn't hydrate
+// taxonomy links on entries, so we query count per term separately.
+const allTerms = await getTaxonomyTerms("post_category");
+const categories = await Promise.all(
+  allTerms.map(async (t) => {
+    const inTerm = await getEntriesByTerm("posts", "post_category", t.slug);
+    return { slug: t.slug, label: t.label, count: inTerm.length };
+  }),
+);
+
+// Build a post → [category labels] lookup for per-card kickers.
+// Keyed by DB id (data.id falls back to entry.id) because that's the value
+// emdash stores in `content_taxonomies.entry_id`. One taxonomy query per
+// post, but the set is small and this page is SSR.
+const postTerms = new Map<string, string[]>();
+const dbIdFor = (p: typeof sorted[number]) =>
+  String((p.data as Record<string, unknown>).id ?? p.id);
+await Promise.all(
+  sorted.map(async (p) => {
+    const rows = await getEntryTerms("posts", dbIdFor(p), "post_category");
+    postTerms.set(
+      dbIdFor(p),
+      rows.map((r) => r.label),
+    );
+  }),
+);
+
+const fmtDate = (raw: unknown) => {
+  if (!raw) return "";
+  const d = new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(d);
+};
+
+type PostCard = {
+  href: string;
+  title: string;
+  excerpt: string;
+  cover: unknown;
+  gradient: string;
+  author: string;
+  date: string;
+  minutes: number;
+  categories: string[];
+};
+
+const toCard = (p: typeof sorted[number]): PostCard => {
+  const cats = postTerms.get(dbIdFor(p)) ?? [];
+  return {
+    href: `/blog/${p.data.slug ?? p.id}`,
+    title: String(p.data.title ?? ""),
+    excerpt: String(p.data.excerpt ?? ""),
+    cover: p.data.cover_image ?? null,
+    gradient: String(
+      p.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+    ),
+    author: String(p.data.author_name ?? ""),
+    date: fmtDate(p.data.published_date ?? p.publishedAt),
+    minutes: Number(p.data.reading_minutes ?? 0),
+    categories: cats,
+  };
+};
+
+const featuredCard = featured ? toCard(featured) : null;
+const restCards = rest.map(toCard);
+---
+
+<Shop
+  title="Journal"
+  description="Product stories, buying guides and behind-the-scenes."
+>
+  <!-- ═══════════ BLOG HERO ═══════════ -->
+  <section class="blog-hero">
+    <div class="container blog-hero-inner">
+      <p class="blog-eyebrow">The Journal</p>
+      <h1 class="blog-title">Notes &amp; stories</h1>
+      <p class="blog-sub">
+        Product stories, buying guides, and the occasional peek inside the
+        workshop. New writing roughly every other week.
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════════ CATEGORY CHIPS ═══════════ -->
+  {categories.length > 0 && (
+    <div class="blog-nav-strip">
+      <div class="container blog-nav-inner">
+        <span class="blog-nav-label">Filter</span>
+        <a href="/blog" class="blog-chip is-active">All <em>{allSorted.length}</em></a>
+        {categories.filter((c) => c.count > 0).map((c) => (
+          <a href={`/blog/category/${c.slug}`} class="blog-chip">
+            {c.label} <em>{c.count}</em>
+          </a>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <!-- ═══════════ FEATURED POST ═══════════ -->
+  <div class="container blog-body">
+    {sorted.length === 0 ? (
+      <div class="blog-empty">
+        <div class="blog-empty-icon" aria-hidden="true">✦</div>
+        <h2>No posts yet</h2>
+        <p>
+          Write your first post in the admin and it'll appear here.
+          <a href="/_emdash/admin/content/posts/new">Create a post →</a>
+        </p>
+      </div>
+    ) : (
+      <>
+        {featuredCard && (
+          <a href={featuredCard.href} class="blog-featured" aria-label={featuredCard.title}>
+            <div class="blog-featured-img" style={`background: ${featuredCard.gradient};`}>
+              {featuredCard.cover && (
+                <Image image={featuredCard.cover} alt="" class="blog-featured-cover" loading="eager" />
+              )}
+              <div class="blog-featured-overlay"></div>
+              <span class="blog-pill">Latest</span>
+            </div>
+            <div class="blog-featured-body">
+              {featuredCard.categories.length > 0 && (
+                <p class="blog-card-kicker">
+                  {featuredCard.categories.join(" · ")}
+                </p>
+              )}
+              <h2 class="blog-featured-title">{featuredCard.title}</h2>
+              {featuredCard.excerpt && (
+                <p class="blog-featured-excerpt">{featuredCard.excerpt}</p>
+              )}
+              <div class="blog-card-meta">
+                {featuredCard.author && <span>{featuredCard.author}</span>}
+                {featuredCard.date && <span>{featuredCard.date}</span>}
+                {featuredCard.minutes > 0 && <span>{featuredCard.minutes} min read</span>}
+              </div>
+            </div>
+          </a>
+        )}
+
+        {restCards.length > 0 && (
+          <div class="blog-grid-hd">
+            <h3>More from the journal</h3>
+          </div>
+        )}
+
+        <ul class="blog-grid" role="list">
+          {restCards.map((c) => (
+            <li>
+              <a href={c.href} class="blog-card" aria-label={c.title}>
+                <div class="blog-card-img" style={`background: ${c.gradient};`}>
+                  {c.cover && (
+                    <Image image={c.cover} alt="" class="blog-card-cover" loading="lazy" />
+                  )}
+                  <div class="blog-card-view">Read →</div>
+                </div>
+                <div class="blog-card-body">
+                  {c.categories.length > 0 && (
+                    <p class="blog-card-kicker">{c.categories[0]}</p>
+                  )}
+                  <h3 class="blog-card-title">{c.title}</h3>
+                  {c.excerpt && <p class="blog-card-excerpt">{c.excerpt}</p>}
+                  <div class="blog-card-meta">
+                    {c.date && <span>{c.date}</span>}
+                    {c.minutes > 0 && <span>{c.minutes} min read</span>}
+                  </div>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+  </div>
+</Shop>
+
+<style>
+  /* Hero */
+  .blog-hero {
+    padding: 5rem 0 3.5rem;
+    background: radial-gradient(ellipse at 30% 50%, #1a1000 0%, #0b0b0b 70%);
+    border-bottom: 1px solid var(--border);
+  }
+  .blog-eyebrow {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 1.25rem;
+  }
+  .blog-title {
+    font-family: var(--font-display);
+    font-size: clamp(2.5rem, 5.5vw, 4.5rem);
+    line-height: 1;
+    letter-spacing: -.035em;
+    color: var(--text);
+    margin: 0 0 1.25rem;
+    max-width: 14ch;
+  }
+  .blog-title em { color: var(--gold); font-style: italic; }
+  .blog-sub {
+    font-size: 1rem;
+    color: var(--text-muted);
+    line-height: 1.75;
+    max-width: 52ch;
+    margin: 0;
+  }
+
+  /* Chips strip */
+  .blog-nav-strip {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: .875rem 0;
+  }
+  .blog-nav-inner {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .blog-nav-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--text-subtle);
+    font-weight: 600;
+    margin-right: .5rem;
+  }
+  .blog-chip {
+    font-size: .82rem;
+    color: var(--text-muted);
+    padding: .35rem .8rem;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    transition: color .2s, border-color .2s, background .2s;
+    display: inline-flex; align-items: center; gap: .4rem;
+    text-decoration: none;
+  }
+  .blog-chip em {
+    font-style: normal;
+    font-size: .7rem;
+    color: var(--text-subtle);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1px 6px;
+  }
+  .blog-chip:hover { color: var(--text); border-color: var(--border-mid); }
+  .blog-chip.is-active { color: var(--text); background: var(--surface); border-color: var(--border-mid); }
+  .blog-chip.is-active em { background: var(--gold); color: #0b0b0b; }
+
+  /* Body */
+  .blog-body { padding-top: 3rem; padding-bottom: 6rem; }
+
+  /* Featured (hero card) */
+  .blog-featured {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 2.5rem;
+    align-items: center;
+    margin-bottom: 5rem;
+    text-decoration: none;
+    color: inherit;
+    border-radius: var(--radius-lg);
+    transition: transform .25s var(--ease);
+  }
+  .blog-featured:hover { transform: translateY(-2px); }
+  .blog-featured-img {
+    position: relative;
+    aspect-ratio: 5/4;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .blog-featured-cover,
+  .blog-card-cover {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .blog-featured-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom right, transparent 50%, rgba(0,0,0,.35));
+  }
+  .blog-pill {
+    position: absolute;
+    top: 1rem; left: 1rem;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: .3rem .7rem;
+    border-radius: 100px;
+    background: var(--gold);
+    color: #0b0b0b;
+    z-index: 2;
+  }
+  .blog-featured-body { display: flex; flex-direction: column; gap: 1rem; }
+  .blog-featured-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    line-height: 1.15;
+    letter-spacing: -.02em;
+    color: var(--text);
+    margin: 0;
+  }
+  .blog-featured:hover .blog-featured-title { color: var(--gold); }
+  .blog-featured-excerpt {
+    font-size: 1rem;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin: 0;
+    max-width: 48ch;
+  }
+
+  /* Grid header */
+  .blog-grid-hd {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .blog-grid-hd h3 {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--text);
+    margin: 0;
+    letter-spacing: -.01em;
+  }
+
+  /* Post grid */
+  .blog-grid {
+    list-style: none;
+    margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2.5rem 1.75rem;
+  }
+  .blog-card {
+    display: flex; flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .25s var(--ease);
+  }
+  .blog-card:hover { transform: translateY(-3px); }
+  .blog-card-img {
+    position: relative;
+    aspect-ratio: 4/3;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+  }
+  .blog-card-view {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(11,11,11,.7);
+    font-size: .875rem; font-weight: 600;
+    color: var(--gold); letter-spacing: .04em;
+    opacity: 0;
+    transition: opacity .25s;
+  }
+  .blog-card:hover .blog-card-view { opacity: 1; }
+
+  .blog-card-body { display: flex; flex-direction: column; gap: .6rem; }
+  .blog-card-kicker {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0;
+  }
+  .blog-card-title {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    line-height: 1.25;
+    letter-spacing: -.01em;
+    color: var(--text);
+    margin: 0;
+    transition: color .2s;
+  }
+  .blog-card:hover .blog-card-title { color: var(--gold); }
+  .blog-card-excerpt {
+    font-size: .92rem;
+    color: var(--text-muted);
+    line-height: 1.65;
+    margin: 0;
+  }
+  .blog-card-meta {
+    display: flex;
+    gap: .75rem;
+    font-size: .76rem;
+    color: var(--text-subtle);
+    margin-top: .25rem;
+  }
+  .blog-card-meta span + span::before {
+    content: "·";
+    margin-right: .75rem;
+    color: var(--border-mid);
+  }
+
+  /* Empty */
+  .blog-empty { padding: 5rem 1rem; text-align: center; max-width: 420px; margin: 0 auto; }
+  .blog-empty-icon { font-size: 2.25rem; color: var(--gold); opacity: .4; margin-bottom: 1.25rem; }
+  .blog-empty h2 { margin-bottom: .75rem; }
+  .blog-empty p { color: var(--text-muted); }
+  .blog-empty a { color: var(--gold); margin-left: .25rem; }
+
+  /* Responsive */
+  @media (max-width: 1000px) {
+    .blog-featured { grid-template-columns: 1fr; gap: 1.5rem; }
+    .blog-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .blog-grid { grid-template-columns: 1fr; gap: 2rem; }
+    .blog-hero { padding: 3.5rem 0 2.5rem; }
+  }
+</style>

@@ -1,0 +1,107 @@
+---
+import Shop from "../../layouts/Shop.astro";
+---
+<Shop title="Look up an order" description="Find a past order by its ID.">
+	<div class="container-narrow" style="padding: 3rem 0;">
+		<h1>Look up an order</h1>
+		<p class="lead">
+			Your confirmation email contains a link to your receipt —
+			<code>/thank-you/&lt;orderId&gt;</code>. Paste the ID (or the whole link)
+			below.
+		</p>
+
+		<form id="lookup" class="lookup-form" novalidate>
+			<label class="lk-label">
+				<span>Order ID or receipt link</span>
+				<input
+					id="orderId"
+					required
+					autocomplete="off"
+					placeholder="01K…  or  https://…/thank-you/01K…"
+				/>
+			</label>
+			<p id="lk-error" role="alert" class="lk-error"></p>
+			<button type="submit" class="btn-primary">Find my order →</button>
+		</form>
+
+		<p class="fineprint">
+			Can't find the email? Check spam, or
+			<a href="mailto:support">contact support</a> with the email address and
+			approximate date you placed the order.
+		</p>
+	</div>
+</Shop>
+
+<style>
+	.lead { color: var(--text-muted); max-width: 42rem; }
+	.lead code {
+		background: var(--bg-3, var(--bg-2));
+		padding: 1px 6px;
+		border-radius: 3px;
+		font-family: var(--font-mono);
+		font-size: .85em;
+		color: var(--text);
+	}
+	.lookup-form {
+		display: grid; gap: 1rem;
+		max-width: 30rem;
+		margin-top: 2rem;
+		padding: 1.5rem;
+		background: var(--bg-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg, var(--radius));
+	}
+	.lk-label {
+		display: flex; flex-direction: column; gap: .4rem;
+		font-size: .82rem; font-weight: 500; color: var(--text-muted);
+	}
+	.lk-label input {
+		padding: .7rem .9rem;
+		background: var(--bg-3, #fff);
+		color: var(--text);
+		border: 1px solid var(--border-mid, var(--border));
+		border-radius: var(--radius);
+		font-family: var(--font-sans);
+		font-size: .9rem;
+	}
+	.lk-label input:focus {
+		outline: none;
+		border-color: var(--gold);
+		box-shadow: 0 0 0 3px var(--gold-dim);
+	}
+	.lk-error {
+		color: var(--ember, #a00);
+		font-size: .875rem;
+		margin: 0;
+		min-height: 1.2em;
+	}
+	.fineprint { margin-top: 2rem; color: var(--text-muted); font-size: .85rem; }
+	.fineprint a { color: var(--gold); }
+</style>
+
+<script>
+	const form  = document.getElementById("lookup") as HTMLFormElement | null;
+	const input = document.getElementById("orderId") as HTMLInputElement | null;
+	const err   = document.getElementById("lk-error");
+	const setErr = (m: string | null) => { if (err) err.textContent = m ?? ""; };
+
+	// Accept either a bare ID or a full /thank-you/<id> URL.
+	function extractId(raw: string): string | null {
+		const trimmed = raw.trim();
+		if (!trimmed) return null;
+		const urlMatch = trimmed.match(/\/thank-you\/([^/?#]+)/i);
+		const id = urlMatch ? urlMatch[1] : trimmed;
+		return /^[A-Za-z0-9_-]{8,}$/.test(id) ? id : null;
+	}
+
+	form?.addEventListener("submit", (e) => {
+		e.preventDefault();
+		setErr(null);
+		const id = extractId(input?.value ?? "");
+		if (!id) {
+			setErr("That doesn't look like an order ID. Check your receipt email.");
+			return;
+		}
+		window.location.href = `/thank-you/${encodeURIComponent(id)}`;
+	});
+</script>

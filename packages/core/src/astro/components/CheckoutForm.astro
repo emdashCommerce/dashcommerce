@@ -1,0 +1,41 @@
+---
+// CheckoutForm — Stripe Elements wrapper.
+//
+// The Stripe publishable key must be read server-side (it's in plugin
+// settings, not a public env var). Passed into the island as a prop so
+// the client doesn't fetch it separately.
+
+import CheckoutFormIsland from "../islands/CheckoutFormIsland.tsx";
+
+interface Props {
+  publishableKey: string;
+  returnUrl: string; // e.g. "/thank-you/{orderDraftId}"
+}
+
+const { publishableKey, returnUrl } = Astro.props;
+---
+{publishableKey ? (
+  <CheckoutFormIsland
+    client:load
+    publishableKey={publishableKey}
+    returnUrl={returnUrl}
+  />
+) : (
+  <div class="dc-checkout-unconfigured">
+    <h3>Checkout is not configured</h3>
+    <p>Ask the site admin to add a Stripe publishable key in plugin settings.</p>
+  </div>
+)}
+<style>
+  .dc-checkout-unconfigured {
+    padding: 2rem;
+    background: var(--gold-dim, #fff7e0);
+    border: 1px solid var(--gold, #d9b800);
+    border-radius: var(--radius-lg, 8px);
+    color: var(--text, #5a4600);
+  }
+  .dc-checkout-unconfigured h3 {
+    color: var(--text, #5a4600);
+    margin-top: 0;
+  }
+</style>

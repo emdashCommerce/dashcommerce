@@ -1,0 +1,334 @@
+---
+/**
+ * Reusable promotional banner.
+ *
+ * Looks up a banner by slug from the `banners` collection and renders it
+ * with the full range of options (gradient / image / video background,
+ * primary + secondary CTAs, dark/light theme, left/center/right alignment,
+ * portable-text body).
+ *
+ * Usage:
+ *   <Banner slug="home-promise" />
+ *
+ * If the slug doesn't exist or the entry is in draft, the component renders
+ * nothing — so it's safe to drop <Banner/> calls into any page without
+ * breaking the layout if an admin deletes the entry.
+ */
+import { getEmDashEntry } from "emdash";
+import { Image, PortableText } from "emdash/ui";
+
+interface Props {
+	/** Slug of the banner entry in the `banners` collection. */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+
+const { entry } = await getEmDashEntry("banners", slug);
+const d = (entry?.data ?? {}) as Record<string, unknown>;
+
+// Short-circuit render: if no entry, the component emits nothing.
+const hasBanner = Boolean(entry);
+
+const headline = String(d.headline ?? "");
+const eyebrow = String(d.eyebrow ?? "");
+const body = Array.isArray(d.body) ? d.body : [];
+
+const primaryLabel = String(d.primary_cta_label ?? "");
+const primaryHref = String(d.primary_cta_href ?? "");
+const secondaryLabel = String(d.secondary_cta_label ?? "");
+const secondaryHref = String(d.secondary_cta_href ?? "");
+
+const theme: "dark" | "light" =
+	d.theme === "light" ? "light" : "dark";
+const alignment: "left" | "center" | "right" =
+	d.alignment === "center" ? "center" : d.alignment === "right" ? "right" : "left";
+
+// Same smart resolution as the hero slider: video URL > image > dropdown.
+// This means editors can upload media and it "just works" even if they
+// forget to switch the bg_type dropdown away from gradient.
+const bgVideoUrl = String(d.bg_video_url ?? "").trim();
+const bgImage = d.bg_image ?? null;
+const hasImage = Boolean(bgImage);
+const bgType: "gradient" | "image" | "video" = bgVideoUrl
+	? "video"
+	: hasImage
+		? "image"
+		: "gradient";
+const bgCss = String(
+	d.bg_css ?? "linear-gradient(135deg, #1a1000 0%, #0b0b0b 100%)",
+);
+const bgFocal = String(d.bg_focal_point ?? "center");
+const bgOverlay = String(
+	d.bg_overlay ??
+		"linear-gradient(180deg, rgba(11,11,11,.55) 0%, rgba(11,11,11,.8) 100%)",
+);
+const bgVideoPoster = d.bg_video_poster ?? null;
+
+// Detect embed kind for the video background (mirrors hero logic).
+type EmbedKind = "mp4" | "youtube" | "vimeo" | null;
+function parseVideo(raw: string): { kind: EmbedKind; src: string } {
+	if (!raw) return { kind: null, src: "" };
+	const yt = raw.match(
+		/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/,
+	);
+	if (yt) {
+		const id = yt[1];
+		const params = new URLSearchParams({
+			autoplay: "1", mute: "1", loop: "1", playlist: id, controls: "0",
+			showinfo: "0", rel: "0", modestbranding: "1", playsinline: "1", iv_load_policy: "3",
+		});
+		return { kind: "youtube", src: `https://www.youtube.com/embed/${id}?${params}` };
+	}
+	const vm = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+	if (vm) {
+		const id = vm[1];
+		const params = new URLSearchParams({
+			autoplay: "1", muted: "1", loop: "1", background: "1", controls: "0", playsinline: "1",
+		});
+		return { kind: "vimeo", src: `https://player.vimeo.com/video/${id}?${params}` };
+	}
+	return { kind: "mp4", src: raw };
+}
+const video = bgType === "video" ? parseVideo(bgVideoUrl) : { kind: null, src: "" };
+---
+
+{hasBanner && (
+	<section
+		class={`cc-banner cc-banner-${theme} cc-banner-align-${alignment} cc-banner-bg-${bgType}`}
+		style={bgType === "gradient" ? `background: ${bgCss};` : undefined}
+	>
+		{/* Background media layer (image or video) */}
+		{bgType === "image" && bgImage && (
+			<div class="cc-banner-media">
+				<Image
+					image={bgImage}
+					alt=""
+					class="cc-banner-img"
+					loading="lazy"
+					decoding="async"
+					style={`object-position: ${bgFocal};`}
+				/>
+			</div>
+		)}
+		{bgType === "video" && video.kind === "mp4" && video.src && (
+			<div class="cc-banner-media">
+				<video
+					class="cc-banner-video"
+					src={video.src}
+					autoplay
+					muted
+					loop
+					playsinline
+					preload="metadata"
+					aria-hidden="true"
+				>
+					{bgVideoPoster && (
+						<Image image={bgVideoPoster} alt="" class="cc-banner-img" />
+					)}
+				</video>
+			</div>
+		)}
+		{bgType === "video" && (video.kind === "youtube" || video.kind === "vimeo") && video.src && (
+			<div class="cc-banner-media cc-banner-embed">
+				<iframe
+					class="cc-banner-iframe"
+					src={video.src}
+					title=""
+					aria-hidden="true"
+					tabindex="-1"
+					allow="autoplay; fullscreen; picture-in-picture"
+					frameborder="0"
+					loading="lazy"
+				></iframe>
+			</div>
+		)}
+
+		{/* Legibility overlay for image / video backgrounds */}
+		{(bgType === "image" || bgType === "video") && (
+			<div class="cc-banner-overlay" style={`background: ${bgOverlay};`}></div>
+		)}
+
+		<div class="container cc-banner-inner">
+			{eyebrow && <p class="cc-banner-eyebrow">{eyebrow}</p>}
+			<h2 class="cc-banner-title" set:html={headline.replace(/\n/g, "<br/>")}></h2>
+
+			{body.length > 0 && (
+				<div class="cc-banner-body">
+					{/*
+						Spread strips the non-enumerable EMDASH_EDIT symbol that
+						emdash attaches in edit mode. Without this, admins with
+						edit mode on would see a client-only TipTap editor here
+						instead of the static rendered body — see blog/[slug].astro
+						for the same workaround.
+					*/}
+					<PortableText value={[...body]} />
+				</div>
+			)}
+
+			{(primaryLabel || secondaryLabel) && (
+				<div class="cc-banner-ctas">
+					{primaryLabel && primaryHref && (
+						<a href={primaryHref} class="cc-banner-cta cc-banner-cta-primary">
+							{primaryLabel}
+						</a>
+					)}
+					{secondaryLabel && secondaryHref && (
+						<a href={secondaryHref} class="cc-banner-cta cc-banner-cta-secondary">
+							{secondaryLabel}
+						</a>
+					)}
+				</div>
+			)}
+		</div>
+	</section>
+)}
+
+<style>
+	.cc-banner {
+		position: relative;
+		padding: 6rem 0;
+		overflow: hidden;
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+	}
+	.cc-banner-bg-gradient { background: var(--bg-2); }
+
+	.cc-banner-media {
+		position: absolute; inset: 0;
+		z-index: 0;
+	}
+	.cc-banner-img {
+		width: 100%; height: 100%;
+		object-fit: cover;
+	}
+	.cc-banner-video {
+		width: 100%; height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.cc-banner-embed { pointer-events: none; }
+	.cc-banner-iframe {
+		position: absolute;
+		top: 50%; left: 50%;
+		width: 177.77vh;
+		height: 100%;
+		min-width: 100%;
+		min-height: 56.25vw;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+	.cc-banner-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+
+	.cc-banner-inner {
+		position: relative;
+		z-index: 2;
+		max-width: 780px;
+	}
+
+	/* Alignment */
+	.cc-banner-align-left .cc-banner-inner { margin-right: auto; text-align: left; }
+	.cc-banner-align-left .cc-banner-ctas { justify-content: flex-start; }
+	.cc-banner-align-center .cc-banner-inner { margin: 0 auto; text-align: center; }
+	.cc-banner-align-center .cc-banner-ctas { justify-content: center; }
+	.cc-banner-align-right .cc-banner-inner { margin-left: auto; text-align: right; }
+	.cc-banner-align-right .cc-banner-ctas { justify-content: flex-end; }
+
+	.cc-banner-eyebrow {
+		font-size: .78rem;
+		text-transform: uppercase;
+		letter-spacing: .14em;
+		color: var(--gold);
+		font-weight: 600;
+		margin: 0 0 1.25rem;
+	}
+	.cc-banner-title {
+		font-family: var(--font-display);
+		font-size: clamp(2rem, 4.5vw, 3.25rem);
+		line-height: 1.05;
+		letter-spacing: -.02em;
+		margin: 0 0 1.5rem;
+	}
+	/* The second visual line gets an italic treatment via `em` wrapping in the
+	   data, but since we use set:html with simple <br/> splits, we approximate
+	   the original design by italicising the last line. Editors can still
+	   write plain headlines too. */
+
+	.cc-banner-body {
+		font-size: 1rem;
+		line-height: 1.75;
+		margin: 0 0 2rem;
+		max-width: 52ch;
+	}
+	.cc-banner-align-center .cc-banner-body { margin-left: auto; margin-right: auto; }
+	.cc-banner-align-right .cc-banner-body { margin-left: auto; }
+	.cc-banner-body :global(p) { margin: 0 0 .9em; }
+	.cc-banner-body :global(p:last-child) { margin-bottom: 0; }
+	.cc-banner-body :global(a) { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+	.cc-banner-body :global(strong) { font-weight: 600; }
+	.cc-banner-body :global(ul),
+	.cc-banner-body :global(ol) { padding-left: 1.25rem; margin: 0 0 1rem; }
+
+	.cc-banner-ctas {
+		display: flex;
+		gap: .75rem;
+		flex-wrap: wrap;
+	}
+
+	.cc-banner-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: .4rem;
+		padding: .85rem 1.5rem;
+		border-radius: 100px;
+		font-size: .9rem;
+		font-weight: 600;
+		letter-spacing: .02em;
+		text-decoration: none;
+		transition: background .2s, color .2s, border-color .2s, transform .2s var(--ease);
+		border: 1px solid transparent;
+	}
+	.cc-banner-cta:hover { transform: translateY(-1px); }
+	.cc-banner-cta-primary {
+		background: var(--gold);
+		color: #0b0b0b;
+	}
+	.cc-banner-cta-primary:hover { background: var(--gold-light, var(--gold)); }
+	.cc-banner-cta-secondary {
+		background: transparent;
+		color: var(--text);
+		border-color: var(--border-mid);
+	}
+	.cc-banner-cta-secondary:hover {
+		border-color: var(--gold);
+		color: var(--gold);
+	}
+
+	/* Dark theme (default): lighter text on dark bg */
+	.cc-banner-dark .cc-banner-title { color: var(--text); }
+	.cc-banner-dark .cc-banner-body { color: var(--text-muted); }
+	.cc-banner-dark .cc-banner-cta-secondary { color: var(--text); }
+
+	/* Light theme: dark text on light bg */
+	.cc-banner-light { color: #0b0b0b; }
+	.cc-banner-light .cc-banner-eyebrow { color: #8b6520; }
+	.cc-banner-light .cc-banner-title { color: #0b0b0b; }
+	.cc-banner-light .cc-banner-body { color: #3c3a36; }
+	.cc-banner-light .cc-banner-body :global(a) { color: #8b6520; }
+	.cc-banner-light .cc-banner-cta-primary { background: #0b0b0b; color: var(--gold); }
+	.cc-banner-light .cc-banner-cta-secondary {
+		color: #0b0b0b;
+		border-color: rgba(0,0,0,.15);
+	}
+	.cc-banner-light .cc-banner-cta-secondary:hover {
+		border-color: #0b0b0b;
+		color: #0b0b0b;
+	}
+
+	@media (max-width: 700px) {
+		.cc-banner { padding: 4rem 0; }
+		.cc-banner-ctas { flex-direction: column; align-items: stretch; }
+		.cc-banner-align-center .cc-banner-ctas { align-items: center; }
+		.cc-banner-cta { justify-content: center; }
+	}
+</style>

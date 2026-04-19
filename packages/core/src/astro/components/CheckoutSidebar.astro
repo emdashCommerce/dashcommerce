@@ -1,0 +1,12 @@
+---
+// Order-summary sidebar for the checkout page. Wraps CheckoutSidebarIsland.
+
+import CheckoutSidebarIsland from "../islands/CheckoutSidebarIsland.tsx";
+
+interface Props {
+	locale?: string;
+}
+
+const { locale } = Astro.props;
+---
+<CheckoutSidebarIsland client:load locale={locale} />

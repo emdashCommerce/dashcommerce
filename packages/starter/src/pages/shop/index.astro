@@ -1,0 +1,291 @@
+---
+import { getEmDashCollection } from "emdash";
+import { Image } from "emdash/ui";
+import Shop from "../../layouts/Shop.astro";
+
+export const prerender = false;
+
+const { entries: allProducts, cacheHint } = await getEmDashCollection("products");
+if (cacheHint) Astro.cache.set(cacheHint);
+
+const filterParam = Astro.url.searchParams.get("type") ?? "all";
+
+const typeLabels: Record<string, string> = {
+  all: "All",
+  simple: "Physical",
+  variable: "Variable",
+  subscription: "Subscriptions",
+  grouped: "Bundles",
+  external: "External",
+};
+
+const products = filterParam === "all"
+  ? allProducts
+  : allProducts.filter((p) => (p.data.type as string) === filterParam);
+
+type PriceMap = Record<string, { amount: number }>;
+
+const fmt = (priceMap?: PriceMap) => {
+  const p = priceMap?.USD;
+  if (!p) return null;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(p.amount / 100);
+};
+
+const typeGrad: Record<string, string> = {
+  simple:       "linear-gradient(135deg,#2d1800,#4a2c0a)",
+  variable:     "linear-gradient(135deg,#1a0f00,#3d2200)",
+  grouped:      "linear-gradient(135deg,#1f1400,#3a2800)",
+  subscription: "linear-gradient(135deg,#001a0a,#0a2d18)",
+  external:     "linear-gradient(135deg,#1a001f,#2d0a38)",
+};
+const getGrad = (type?: string) => (type && typeGrad[type]) ?? typeGrad.simple;
+
+// Pre-compute card data in frontmatter to avoid TS generics in JSX
+const productCards = products.map((p) => {
+  const img = p.data.featured_image ?? p.data.gallery_2 ?? null;
+  return {
+    href:    `/shop/${p.data.slug ?? p.id}`,
+    title:   p.data.title as string,
+    type:    (p.data.type as string) ?? "simple",
+    price:   fmt(p.data.prices as PriceMap),
+    grad:    getGrad(p.data.type as string),
+    image:   img && img !== "" ? img : null,
+    isOut:   p.data.stock_status === "outofstock",
+    isFeat:  Boolean(p.data.featured),
+    label:   typeLabels[(p.data.type as string) ?? ""] ?? (p.data.type as string) ?? "product",
+  };
+});
+
+const availableTypes = Array.from(new Set(allProducts.map((p) => p.data.type as string))).filter(Boolean);
+const tabs = ["all", ...availableTypes];
+---
+
+<Shop
+  title="Shop"
+  description={`Browse ${allProducts.length} products — physical goods, digital downloads, subscriptions and more.`}
+>
+
+  <!-- Page header -->
+  <div class="shop-hero">
+    <div class="container">
+      <p class="shop-eyebrow">The full catalog</p>
+      <h1 class="shop-title">Everything,<br /><em>in one place</em></h1>
+    </div>
+  </div>
+
+  <div class="container shop-layout">
+    <!-- Filter tabs -->
+    <nav class="filter-tabs" aria-label="Filter by product type">
+      {tabs.map((type) => (
+        <a
+          href={type === "all" ? "/shop" : `/shop?type=${type}`}
+          class={`filter-tab${filterParam === type ? " active" : ""}`}
+          aria-current={filterParam === type ? "page" : undefined}
+        >
+          {typeLabels[type] ?? type}
+          <span class="filter-count">
+            {type === "all" ? allProducts.length : allProducts.filter((p) => p.data.type === type).length}
+          </span>
+        </a>
+      ))}
+    </nav>
+
+    <!-- Result count -->
+    <p class="result-count" aria-live="polite">
+      {products.length} {products.length === 1 ? "product" : "products"}
+      {filterParam !== "all" && <span> · <a href="/shop">Clear filter ×</a></span>}
+    </p>
+
+    <!-- Grid -->
+    {products.length === 0 ? (
+      <div class="shop-empty">
+        <div class="shop-empty-icon" aria-hidden="true">◈</div>
+        <h2>No products found</h2>
+        <p>
+          {filterParam === "all"
+            ? <>Run <code>bun run seed</code> to load demo products.</>
+            : <>No products of this type yet. <a href="/shop">Browse all →</a></>}
+        </p>
+      </div>
+    ) : (
+      <ul class="product-grid" role="list">
+        {productCards.map((c) => (
+          <li>
+            <a href={c.href} class="pcard" aria-label={`${c.title}${c.price ? ` — ${c.price}` : ""}`}>
+              <div class="pcard-img" style={`background: ${c.grad};`}>
+                {c.image && <Image image={c.image} alt={c.title} />}
+                {c.isOut  && <span class="pcard-badge pcard-badge-out">Sold out</span>}
+                {c.isFeat && <span class="pcard-badge pcard-badge-feat">Featured</span>}
+                <div class="pcard-view">View →</div>
+              </div>
+              <div class="pcard-body">
+                <span class="pcard-type">{c.label}</span>
+                <h2 class="pcard-title">{c.title}</h2>
+                <span class={`pcard-price${!c.price ? " pcard-na" : ""}`}>
+                  {c.price ?? "—"}
+                </span>
+              </div>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+
+</Shop>
+
+<style>
+  /* Shop hero */
+  .shop-hero {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: 5rem 0 3rem;
+  }
+  .shop-eyebrow {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 0 0 .75rem;
+  }
+  .shop-title {
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    color: var(--text);
+    margin: 0;
+  }
+  .shop-title em { color: var(--gold); font-style: italic; }
+
+  /* Layout */
+  .shop-layout { padding-top: 2.5rem; padding-bottom: 6rem; }
+
+  /* Filter tabs */
+  .filter-tabs {
+    display: flex;
+    gap: .375rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.75rem;
+  }
+  .filter-tab {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .45rem .9rem;
+    font-size: .82rem; font-weight: 500;
+    border-radius: 100px;
+    border: 1px solid var(--border-mid);
+    color: var(--text-muted);
+    transition: color .2s, border-color .2s, background .2s;
+    text-decoration: none;
+  }
+  .filter-tab:hover { color: var(--text); border-color: var(--border-strong); }
+  .filter-tab.active {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: #0b0b0b;
+  }
+  .filter-count {
+    font-size: .72rem;
+    font-family: var(--font-mono);
+    opacity: .7;
+  }
+  .filter-tab.active .filter-count { opacity: .8; }
+
+  /* Result count */
+  .result-count {
+    font-size: .85rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+  }
+  .result-count a { color: var(--gold); }
+  .result-count a:hover { text-decoration: underline; }
+
+  /* Product grid */
+  .product-grid {
+    list-style: none;
+    margin: 0; padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+
+  .pcard {
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: border-color .25s, transform .25s var(--ease), box-shadow .25s;
+  }
+  .pcard:hover {
+    border-color: var(--border-mid);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(0,0,0,.4);
+  }
+  .pcard-img {
+    aspect-ratio: 4 / 3;
+    position: relative;
+    overflow: hidden;
+  }
+  .pcard-img :global(img) {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transition: transform .5s var(--ease);
+  }
+  .pcard:hover .pcard-img :global(img) { transform: scale(1.04); }
+  .pcard-view {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(11,11,11,.82);
+    font-size: .875rem; font-weight: 600;
+    color: var(--gold); letter-spacing: .04em;
+    opacity: 0;
+    transition: opacity .25s;
+  }
+  .pcard:hover .pcard-view { opacity: 1; }
+
+  .pcard-badge {
+    position: absolute; top: .875rem; left: .875rem;
+    font-size: .7rem; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: .25rem .625rem;
+    border-radius: 3px; z-index: 2;
+  }
+  .pcard-badge-out  { background: var(--ember);  color: #fff; }
+  .pcard-badge-feat { background: var(--gold); color: #0b0b0b; }
+
+  .pcard-body {
+    padding: 1rem 1.125rem 1.25rem;
+    display: flex; flex-direction: column; gap: .25rem;
+    flex: 1;
+  }
+  .pcard-type {
+    font-size: .7rem; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--text-subtle); font-weight: 600;
+  }
+  .pcard-title {
+    font-family: var(--font-display);
+    font-size: 1rem; font-weight: 600;
+    color: var(--text); line-height: 1.25; margin: 0;
+  }
+  .pcard-price {
+    font-family: var(--font-mono);
+    font-size: .875rem; color: var(--gold);
+    margin-top: auto; padding-top: .5rem;
+  }
+  .pcard-na { color: var(--text-subtle); }
+
+  /* Empty */
+  .shop-empty {
+    padding: 6rem 1rem; text-align: center; max-width: 400px; margin: 0 auto;
+  }
+  .shop-empty-icon { font-size: 2rem; color: var(--gold); opacity: .4; margin-bottom: 1.25rem; }
+  .shop-empty h2 { margin-bottom: .75rem; }
+  .shop-empty p { color: var(--text-muted); }
+  .shop-empty code { background: var(--bg-3); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: .85em; }
+  .shop-empty a { color: var(--gold); }
+
+  /* Responsive */
+  @media (max-width: 1100px) { .product-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px)  { .product-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px)  { .product-grid { grid-template-columns: 1fr; } }
+</style>

@@ -1,0 +1,49 @@
+---
+// ProductGrid — grid layout around ProductCard.
+//
+// Props: { products, currency?, columns? }
+// Host pages pass a pre-queried products array. We don't query here —
+// keeping the component pure so server caching and host conventions
+// for content loading (Astro content collections, `getCollection`, etc.)
+// stay in the host's control.
+
+import ProductCard from "./ProductCard.astro";
+
+interface Props {
+  products: Array<{
+    id: string;
+    slug?: string | null;
+    data: Record<string, unknown>;
+  }>;
+  currency?: string;
+  locale?: string;
+  columns?: number;
+}
+
+const { products, currency, locale, columns = 3 } = Astro.props;
+---
+<ul class="dc-product-grid" style={`grid-template-columns: repeat(${columns}, minmax(0, 1fr));`}>
+  {products.map((product) => (
+    <li>
+      <ProductCard
+        product={product as Parameters<typeof ProductCard>[0]['product']}
+        currency={currency}
+        locale={locale}
+      />
+    </li>
+  ))}
+</ul>
+<style>
+  .dc-product-grid {
+    display: grid;
+    gap: 1.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  @media (max-width: 640px) {
+    .dc-product-grid {
+      grid-template-columns: 1fr 1fr !important;
+    }
+  }
+</style>

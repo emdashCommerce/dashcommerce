@@ -1,0 +1,64 @@
+---
+import Shop from "../layouts/Shop.astro";
+import CartPage from "@dashcommerce/core/astro/components/CartPage.astro";
+---
+
+<Shop title="Your Cart" description="Review your cart before checkout.">
+  <!-- Cart hero -->
+  <div class="cart-hero">
+    <div class="container">
+      <nav class="cart-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span aria-hidden="true">›</span>
+        <span aria-current="page">Cart</span>
+      </nav>
+      <h1 class="cart-title">Your Cart</h1>
+    </div>
+  </div>
+
+  <div class="container cart-body">
+    <CartPage checkoutHref="/checkout" shopHref="/shop" />
+    <div class="cart-footer-note">
+      <span class="cart-secure-icon" aria-hidden="true">🔒</span>
+      Secure checkout powered by Stripe. Your payment information is never stored on our servers.
+    </div>
+  </div>
+</Shop>
+
+<style>
+  .cart-hero {
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: 3.5rem 0 2.5rem;
+  }
+  .cart-breadcrumb {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+  .cart-breadcrumb a { color: var(--text-muted); transition: color .2s; }
+  .cart-breadcrumb a:hover { color: var(--gold); }
+  .cart-breadcrumb [aria-current] { color: var(--text-mid); }
+
+  .cart-title {
+    font-size: clamp(1.75rem, 3vw, 2.75rem);
+    color: var(--text); margin: 0;
+  }
+
+  .cart-body {
+    padding-top: 3rem;
+    padding-bottom: 6rem;
+  }
+
+  .cart-footer-note {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: .8rem;
+    color: var(--text-subtle);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .cart-secure-icon { font-size: 1rem; }
+</style>

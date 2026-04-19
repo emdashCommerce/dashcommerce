@@ -1,0 +1,13 @@
+---
+// Legacy alias: we moved the product detail route to /shop/{slug} to match
+// the rest of the starter navigation. This page 301-redirects any stray
+// `/products/{slug}` traffic (old bookmarks, cached admin preview links,
+// email campaigns, etc.) to the canonical URL. Safe to delete once you're
+// sure no external links point at /products/{slug}.
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+const target = slug ? `/shop/${slug}` : "/shop";
+return Astro.redirect(target, 301);
+---

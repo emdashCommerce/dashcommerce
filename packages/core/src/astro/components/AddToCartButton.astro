@@ -1,0 +1,20 @@
+---
+// Thin Astro wrapper for an AddToCart island. Use for simple inline
+// buttons where you don't need the full ProductDetails variant UX.
+
+import AddToCartIsland from "../islands/AddToCartIsland.tsx";
+
+interface Props {
+  productId: string;
+  variantId?: string;
+  label?: string;
+}
+
+const { productId, variantId, label } = Astro.props;
+---
+<AddToCartIsland
+  client:load
+  productId={productId}
+  variantId={variantId}
+  label={label ?? "Add to cart"}
+/>

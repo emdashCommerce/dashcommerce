@@ -1,0 +1,88 @@
+---
+// Portable Text block — product grid by category or tag.
+//
+// Block node shape: `{ _type: "product-grid", value: { category_slug, limit } }`
+// Renders a grid of up to `limit` products from the named category.
+
+import ProductCard from "./ProductCard.astro";
+
+interface Node {
+  _type: "product-grid";
+  value?: {
+    category_slug?: string;
+    limit?: number | string;
+  };
+}
+
+interface Props {
+  node: Node;
+  currency?: string;
+  locale?: string;
+}
+
+const { node, currency, locale } = Astro.props;
+const categorySlug = node.value?.category_slug?.trim();
+const limit = Math.max(
+  1,
+  Math.min(24, Number.parseInt(String(node.value?.limit ?? 6), 10) || 6),
+);
+
+async function loadProducts(slug: string | undefined, lim: number) {
+  if (!slug) return [];
+  try {
+    const mod = await import("emdash") as {
+      getEntriesByTerm?: (
+        collection: string,
+        taxonomyName: string,
+        termSlug: string,
+      ) => Promise<Array<unknown>>;
+    };
+    if (mod.getEntriesByTerm) {
+      const entries = await mod.getEntriesByTerm("products", "product_category", slug);
+      return (entries ?? []).slice(0, lim);
+    }
+  } catch {}
+  return [];
+}
+
+const products = await loadProducts(categorySlug, limit);
+---
+{products.length === 0 ? (
+  <div class="dc-grid-missing">
+    <em>No products found{categorySlug ? ` in ${categorySlug}` : ""}.</em>
+  </div>
+) : (
+  <ul class="dc-pt-grid">
+    {products.map((p) => (
+      <li>
+        <ProductCard
+          product={p as Parameters<typeof ProductCard>[0]["product"]}
+          currency={currency}
+          locale={locale}
+        />
+      </li>
+    ))}
+  </ul>
+)}
+<style>
+  .dc-pt-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem 0;
+  }
+  @media (max-width: 640px) {
+    .dc-pt-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .dc-grid-missing {
+    padding: 0.5rem 1rem;
+    color: var(--text-muted, #888);
+    border-left: 3px solid var(--border-mid, #ccc);
+    background: var(--bg-2, #fafafa);
+    margin: 1rem 0;
+  }
+</style>

@@ -1,0 +1,107 @@
+---
+// ProductCard — storefront grid tile.
+//
+// Accepts an emdash content entry directly. The `data` object carries
+// snake_case field slugs as declared in `defineProductsCollection()`.
+// We read those slugs verbatim; callers don't need to normalize.
+
+interface RawPrice {
+	amount: number;
+	compareAtAmount?: number;
+}
+
+export interface ProductCardProduct {
+	/** emdash envelope id */
+	id: string;
+	/** optional pre-picked slug for the href; falls back to data.slug, then id */
+	slug?: string | null;
+	data: {
+		title: string;
+		prices: Record<string, RawPrice>;
+		stock_status?: string;
+		featured?: boolean;
+		slug?: string | null;
+	};
+}
+
+interface Props {
+	product: ProductCardProduct;
+	href?: string;
+	currency?: string;
+	locale?: string;
+}
+
+const { product, href, currency, locale } = Astro.props;
+const d = product.data;
+const prices = d.prices ?? {};
+const cc = (currency ?? Object.keys(prices)[0] ?? "USD").toUpperCase();
+const price = prices[cc];
+
+const formatMoney = (amountMinor: number) => {
+	try {
+		return new Intl.NumberFormat(locale ?? "en-US", {
+			style: "currency",
+			currency: cc,
+		}).format(amountMinor / 100);
+	} catch {
+		return `${cc} ${amountMinor / 100}`;
+	}
+};
+
+const detailHref = href ?? `/shop/${product.slug ?? d.slug ?? product.id}`;
+const outOfStock = d.stock_status === "outofstock";
+---
+<a class="dc-product-card" href={detailHref}>
+	<div class="dc-product-card-body">
+		<h3 class="dc-product-card-title">{d.title}</h3>
+		{price ? (
+			<p class="dc-product-card-price">
+				{price.compareAtAmount && price.compareAtAmount > price.amount ? (
+					<>
+						<s>{formatMoney(price.compareAtAmount)}</s>{' '}
+						<strong>{formatMoney(price.amount)}</strong>
+					</>
+				) : (
+					<strong>{formatMoney(price.amount)}</strong>
+				)}
+			</p>
+		) : (
+			<p class="dc-product-card-price dc-unavailable">Not available in {cc}</p>
+		)}
+		{outOfStock && <p class="dc-product-card-badge">Out of stock</p>}
+	</div>
+</a>
+<style>
+	.dc-product-card {
+		display: block;
+		text-decoration: none;
+		color: inherit;
+		border: 1px solid var(--border, #eee);
+		border-radius: var(--radius-lg, 8px);
+		background: var(--bg-2, transparent);
+		overflow: hidden;
+		transition: box-shadow 0.15s, border-color 0.15s;
+	}
+	.dc-product-card:hover {
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+		border-color: var(--border-mid, #ddd);
+	}
+	.dc-product-card-body { padding: 1rem; }
+	.dc-product-card-title {
+		margin: 0 0 0.5rem;
+		font-size: 1rem;
+		line-height: 1.3;
+		color: var(--text, #111);
+	}
+	.dc-product-card-price { margin: 0; font-size: 0.95rem; color: var(--text, #222); }
+	.dc-unavailable { color: var(--text-muted, #888); font-style: italic; }
+	.dc-product-card-badge {
+		display: inline-block;
+		margin-top: 0.5rem;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: var(--surface, #eee);
+		font-size: 0.75rem;
+		color: var(--text-mid, #555);
+	}
+</style>

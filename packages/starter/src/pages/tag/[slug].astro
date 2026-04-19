@@ -1,0 +1,385 @@
+---
+/**
+ * Product tag archive.
+ *
+ * Tags are the flat, cross-cutting labels merchants attach to products
+ * (e.g. "new arrival", "sale", "bestseller"). They're managed under the
+ * `product_tag` taxonomy in the admin and every storefront link to them
+ * uses `/tag/{slug}`.
+ *
+ * This page mirrors `/category/{slug}` in shape but is intentionally
+ * lighter — tags don't have per-term hero art, they share a neutral
+ * accent, and the copy makes clear this is a merchandising filter
+ * rather than a permanent section of the store.
+ */
+import { Image } from "emdash/ui";
+import {
+	getEntriesByTerm,
+	getTaxonomyTerms,
+	getTerm,
+} from "emdash";
+import Shop from "../../layouts/Shop.astro";
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+if (!slug) return new Response("Tag not found", { status: 404 });
+
+const term = await getTerm("product_tag", slug);
+if (!term) return Astro.redirect("/shop", 302);
+
+const products = await getEntriesByTerm("products", "product_tag", slug);
+
+type PriceMap = Record<string, { amount: number }>;
+const fmt = (priceMap?: PriceMap) => {
+	const p = priceMap?.USD;
+	if (!p) return null;
+	return new Intl.NumberFormat("en-US", {
+		style: "currency",
+		currency: "USD",
+	}).format(p.amount / 100);
+};
+
+const typeGrad: Record<string, string> = {
+	simple:       "linear-gradient(135deg,#2d1800,#4a2c0a)",
+	variable:     "linear-gradient(135deg,#1a0f00,#3d2200)",
+	grouped:      "linear-gradient(135deg,#1f1400,#3a2800)",
+	subscription: "linear-gradient(135deg,#001a0a,#0a2d18)",
+	external:     "linear-gradient(135deg,#1a001f,#2d0a38)",
+};
+const getGrad = (type?: string) =>
+	(type && typeGrad[type]) ?? typeGrad.simple;
+
+// Sibling tags for lateral browsing. We filter to only tags that actually
+// have products attached — empty tags at the top of a tag page look
+// broken and don't help shoppers.
+const allTerms = await getTaxonomyTerms("product_tag");
+const otherTagCounts = await Promise.all(
+	allTerms
+		.filter((t) => t.slug !== slug)
+		.map(async (t) => {
+			const entries = await getEntriesByTerm(
+				"products",
+				"product_tag",
+				t.slug,
+			);
+			return { slug: t.slug, label: t.label, count: entries.length };
+		}),
+);
+const otherTags = otherTagCounts.filter((t) => t.count > 0);
+
+// First gallery-ish image we can find on a product entry, for product cards.
+function pickImage(d: unknown): unknown | null {
+	const row = (d ?? {}) as { featured_image?: unknown; gallery_2?: unknown };
+	return row.featured_image ?? row.gallery_2 ?? null;
+}
+---
+
+<Shop
+	title={term.label}
+	description={term.description ?? `Products tagged ${term.label}.`}
+>
+	<!-- Tag hero (deliberately simpler than the category hero) -->
+	<div class="tag-hero">
+		<div class="container tag-hero-inner">
+			<nav class="tag-breadcrumb" aria-label="Breadcrumb">
+				<a href="/">Home</a>
+				<span>›</span>
+				<a href="/shop">Shop</a>
+				<span>›</span>
+				<span class="tag-breadcrumb-label">Tags</span>
+				<span>›</span>
+				<span aria-current="page">{term.label}</span>
+			</nav>
+
+			<div class="tag-hero-title-row">
+				<span class="tag-pill">#</span>
+				<h1 class="tag-title">{term.label}</h1>
+			</div>
+			{term.description && <p class="tag-desc">{term.description}</p>}
+
+			<div class="tag-meta">
+				<span class="tag-count">
+					{products.length}{" "}
+					{products.length === 1 ? "product" : "products"}
+				</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- Related tags strip. Hidden entirely when nothing else has content -->
+	{otherTags.length > 0 && (
+		<div class="tag-nav-strip">
+			<div class="container tag-nav-inner">
+				<span class="tag-nav-label">Also tagged</span>
+				{otherTags.slice(0, 12).map((t) => (
+					<a href={`/tag/${t.slug}`} class="tag-nav-link">
+						<span class="tag-nav-hash">#</span>
+						{t.label}
+						<span class="tag-nav-count">{t.count}</span>
+					</a>
+				))}
+				<a href="/shop" class="tag-nav-link tag-nav-all">
+					All products
+				</a>
+			</div>
+		</div>
+	)}
+
+	<div class="container tag-body">
+		{products.length === 0 ? (
+			<div class="tag-empty">
+				<div class="tag-empty-icon" aria-hidden="true">#</div>
+				<h2>Nothing here yet</h2>
+				<p>
+					No products are tagged <strong>{term.label}</strong> right now.{" "}
+					<a href="/shop">Browse all products →</a>
+				</p>
+			</div>
+		) : (
+			<ul class="tag-grid" role="list">
+				{products.map((p) => {
+					const d = p.data;
+					const price = fmt(d.prices as PriceMap);
+					const type  = String(d.type ?? "simple");
+					const grad  = getGrad(type);
+					const href  = `/shop/${d.slug ?? p.id}`;
+					const isOut = d.stock_status === "outofstock";
+					const isFeat = Boolean(d.featured);
+					const img = pickImage(d);
+					return (
+						<li>
+							<a
+								href={href}
+								class="tag-card"
+								aria-label={`${d.title}${price ? ` — ${price}` : ""}`}
+							>
+								<div class="tag-card-img" style={`background: ${grad};`}>
+									{img && (
+										<Image
+											image={img}
+											alt=""
+											class="tag-card-photo"
+											loading="lazy"
+											decoding="async"
+										/>
+									)}
+									{isOut  && <span class="tag-badge tag-badge-out">Sold out</span>}
+									{isFeat && <span class="tag-badge tag-badge-feat">Featured</span>}
+									<div class="tag-card-view">View →</div>
+								</div>
+								<div class="tag-card-body">
+									<h2 class="tag-card-title">{String(d.title ?? "")}</h2>
+									<span class={`tag-card-price${!price ? " tag-na" : ""}`}>
+										{price ?? "—"}
+									</span>
+								</div>
+							</a>
+						</li>
+					);
+				})}
+			</ul>
+		)}
+	</div>
+</Shop>
+
+<style>
+	/* Tag hero. Neutral on purpose — tags are meta, categories are sections. */
+	.tag-hero {
+		padding: 4rem 0 2.5rem;
+		border-bottom: 1px solid var(--border);
+		background:
+			radial-gradient(ellipse at 80% 20%, rgba(200, 164, 110, .08) 0%, transparent 55%),
+			var(--bg-2);
+	}
+	.tag-hero-inner { width: 100%; }
+	.tag-breadcrumb {
+		display: flex; align-items: center; gap: .5rem;
+		font-size: .8rem; color: var(--text-muted);
+		margin-bottom: 1.25rem; flex-wrap: wrap;
+	}
+	.tag-breadcrumb a { color: var(--text-muted); transition: color .2s; }
+	.tag-breadcrumb a:hover { color: var(--gold); }
+	.tag-breadcrumb [aria-current] { color: var(--text-mid); }
+	.tag-breadcrumb-label { color: var(--text-subtle); }
+
+	.tag-hero-title-row {
+		display: flex; align-items: center; gap: .75rem;
+		margin-bottom: .75rem;
+	}
+	.tag-pill {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 2.75rem; height: 2.75rem;
+		border-radius: 100px;
+		border: 1px solid var(--gold);
+		color: var(--gold);
+		font-family: var(--font-mono);
+		font-size: 1.25rem;
+		opacity: .8;
+	}
+	.tag-title {
+		font-size: clamp(1.75rem, 4vw, 3rem);
+		color: var(--text); margin: 0;
+	}
+	.tag-desc {
+		font-size: 1rem;
+		color: var(--text-muted);
+		max-width: 52ch;
+		line-height: 1.7;
+		margin: 0 0 1.25rem;
+	}
+	.tag-count {
+		display: inline-flex;
+		font-size: .78rem;
+		text-transform: uppercase;
+		letter-spacing: .1em;
+		color: var(--text-subtle);
+		font-weight: 600;
+		padding: .3rem .75rem;
+		border: 1px solid var(--border-mid);
+		border-radius: 100px;
+	}
+
+	/* Related tags strip */
+	.tag-nav-strip {
+		background: var(--bg);
+		border-bottom: 1px solid var(--border);
+		padding: .875rem 0;
+	}
+	.tag-nav-inner {
+		display: flex;
+		align-items: center;
+		gap: .5rem;
+		flex-wrap: wrap;
+	}
+	.tag-nav-label {
+		font-size: .72rem;
+		text-transform: uppercase;
+		letter-spacing: .1em;
+		color: var(--text-subtle);
+		font-weight: 600;
+		margin-right: .5rem;
+	}
+	.tag-nav-link {
+		display: inline-flex;
+		align-items: center;
+		gap: .35rem;
+		font-size: .82rem;
+		color: var(--text-muted);
+		padding: .35rem .75rem;
+		border-radius: 100px;
+		border: 1px solid var(--border);
+		transition: color .2s, border-color .2s, background .2s;
+	}
+	.tag-nav-hash {
+		color: var(--gold);
+		font-family: var(--font-mono);
+		opacity: .7;
+	}
+	.tag-nav-count {
+		font-size: .7rem;
+		color: var(--text-subtle);
+		font-family: var(--font-mono);
+	}
+	.tag-nav-link:hover {
+		color: var(--text);
+		border-color: var(--border-mid);
+		background: var(--surface);
+	}
+	.tag-nav-all {
+		color: var(--gold);
+		border-color: var(--gold);
+		opacity: .7;
+	}
+	.tag-nav-all:hover { opacity: 1; color: var(--gold); }
+
+	/* Body + grid (same visual language as category page) */
+	.tag-body { padding-top: 3rem; padding-bottom: 6rem; }
+	.tag-grid {
+		list-style: none; margin: 0; padding: 0;
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 1.25rem;
+	}
+	.tag-card {
+		display: flex; flex-direction: column;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+		text-decoration: none;
+		transition: border-color .25s, transform .25s var(--ease), box-shadow .25s;
+	}
+	.tag-card:hover {
+		border-color: var(--border-mid);
+		transform: translateY(-4px);
+		box-shadow: 0 16px 48px rgba(0,0,0,.4);
+	}
+	.tag-card-img {
+		aspect-ratio: 4/3;
+		position: relative; overflow: hidden;
+	}
+	.tag-card-photo {
+		position: absolute; inset: 0;
+		width: 100%; height: 100%;
+		object-fit: cover;
+		transition: transform .4s var(--ease);
+	}
+	.tag-card:hover .tag-card-photo { transform: scale(1.04); }
+	.tag-card-view {
+		position: absolute; inset: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(11,11,11,.82);
+		font-size: .875rem; font-weight: 600;
+		color: var(--gold); letter-spacing: .04em;
+		opacity: 0; transition: opacity .25s;
+		z-index: 1;
+	}
+	.tag-card:hover .tag-card-view { opacity: 1; }
+	.tag-badge {
+		position: absolute; top: .875rem; left: .875rem;
+		font-size: .7rem; font-weight: 600;
+		letter-spacing: .06em; text-transform: uppercase;
+		padding: .25rem .625rem; border-radius: 3px; z-index: 2;
+	}
+	.tag-badge-out  { background: var(--ember); color: #fff; }
+	.tag-badge-feat { background: var(--gold); color: #0b0b0b; }
+	.tag-card-body {
+		padding: 1rem 1.125rem 1.25rem;
+		display: flex; flex-direction: column; gap: .35rem; flex: 1;
+	}
+	.tag-card-title {
+		font-family: var(--font-display);
+		font-size: 1rem; font-weight: 600;
+		color: var(--text); line-height: 1.25; margin: 0;
+	}
+	.tag-card-price {
+		font-family: var(--font-mono);
+		font-size: .875rem;
+		color: var(--gold);
+		margin-top: auto;
+	}
+	.tag-na { color: var(--text-subtle); }
+
+	/* Empty state */
+	.tag-empty {
+		padding: 6rem 1rem;
+		text-align: center;
+		max-width: 440px;
+		margin: 0 auto;
+	}
+	.tag-empty-icon {
+		font-size: 2rem;
+		color: var(--gold);
+		opacity: .35;
+		margin-bottom: 1rem;
+		font-family: var(--font-mono);
+	}
+	.tag-empty h2 { margin-bottom: .75rem; }
+	.tag-empty p { color: var(--text-muted); line-height: 1.6; }
+	.tag-empty a { color: var(--gold); }
+
+	@media (max-width: 1100px) { .tag-grid { grid-template-columns: repeat(3, 1fr); } }
+	@media (max-width: 768px)  { .tag-grid { grid-template-columns: repeat(2, 1fr); } }
+	@media (max-width: 480px)  { .tag-grid { grid-template-columns: 1fr; } }
+</style>

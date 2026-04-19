@@ -1,0 +1,20 @@
+---
+// Full-page cart: qty/remove, coupon, totals, checkout CTA.
+// Wraps CartPageIsland.
+
+import CartPageIsland from "../islands/CartPageIsland.tsx";
+
+interface Props {
+	checkoutHref?: string;
+	shopHref?: string;
+	locale?: string;
+}
+
+const { checkoutHref = "/checkout", shopHref = "/shop", locale } = Astro.props;
+---
+<CartPageIsland
+	client:load
+	checkoutHref={checkoutHref}
+	shopHref={shopHref}
+	locale={locale}
+/>

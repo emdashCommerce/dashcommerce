@@ -1,0 +1,106 @@
+---
+// ReviewsList — approved reviews for a product.
+//
+// Props: { reviews, summary? }. Host page fetches via /reviews/:productId.
+
+interface Review {
+  id: string;
+  rating: number;
+  title?: string;
+  body: string;
+  customerName: string;
+  verifiedPurchase: boolean;
+  createdAt: string;
+}
+
+interface Props {
+  reviews: Review[];
+  summary?: {
+    averageRating: number;
+    count: number;
+    distribution?: Record<string, number>;
+  } | null;
+  locale?: string;
+}
+
+const { reviews, summary, locale } = Astro.props;
+const dtFmt = (iso: string) => new Date(iso).toLocaleDateString(locale ?? "en-US");
+---
+<section class="dc-reviews">
+  {summary && summary.count > 0 && (
+    <header class="dc-reviews-summary">
+      <p class="dc-reviews-avg" aria-label={`${summary.averageRating} out of 5 stars`}>
+        {'★'.repeat(Math.round(summary.averageRating))}
+        {'☆'.repeat(5 - Math.round(summary.averageRating))}
+        <span> {summary.averageRating.toFixed(1)} ({summary.count} review{summary.count === 1 ? '' : 's'})</span>
+      </p>
+    </header>
+  )}
+
+  {reviews.length === 0 ? (
+    <p class="dc-no-reviews">No reviews yet. Be the first to review.</p>
+  ) : (
+    <ul class="dc-review-list">
+      {reviews.map((r) => (
+        <li class="dc-review">
+          <p class="dc-review-stars" aria-label={`${r.rating} out of 5 stars`}>
+            {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+          </p>
+          {r.title && <h4>{r.title}</h4>}
+          <p>{r.body}</p>
+          <footer>
+            <span>{r.customerName}</span>
+            {r.verifiedPurchase && <span class="dc-verified"> · Verified purchase</span>}
+            <span class="dc-when"> · {dtFmt(r.createdAt)}</span>
+          </footer>
+        </li>
+      ))}
+    </ul>
+  )}
+</section>
+<style>
+  .dc-reviews {
+    margin: 2rem 0;
+    color: var(--text, #111);
+  }
+  .dc-reviews-summary {
+    padding: 1rem;
+    background: var(--bg-2, #fafafa);
+    border: 1px solid var(--border, transparent);
+    border-radius: var(--radius-lg, 8px);
+    margin-bottom: 1rem;
+  }
+  .dc-reviews-avg {
+    color: var(--gold, #c08a00);
+    margin: 0;
+  }
+  .dc-review-list {
+    list-style: none;
+    padding: 0;
+  }
+  .dc-review {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border, #eee);
+    color: var(--text, #111);
+  }
+  .dc-review-stars {
+    color: var(--gold, #c08a00);
+    margin: 0 0 0.25rem;
+  }
+  .dc-review h4 {
+    margin: 0 0 0.25rem;
+    color: var(--text, #111);
+  }
+  .dc-review footer {
+    margin-top: 0.5rem;
+    color: var(--text-muted, #666);
+    font-size: 0.9rem;
+  }
+  .dc-verified {
+    color: var(--success, #2d7a3a);
+  }
+  .dc-no-reviews {
+    color: var(--text-muted, #888);
+    font-style: italic;
+  }
+</style>

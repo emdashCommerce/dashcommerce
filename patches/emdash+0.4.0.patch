@@ -1,0 +1,69 @@
+diff --git a/node_modules/emdash/dist/astro/middleware.mjs b/node_modules/emdash/dist/astro/middleware.mjs
+index eb32f80..304ee78 100644
+--- a/node_modules/emdash/dist/astro/middleware.mjs
++++ b/node_modules/emdash/dist/astro/middleware.mjs
+@@ -1254,7 +1254,7 @@ var EmDashRuntime = class EmDashRuntime {
+ 			const routeKey = path.replace(LEADING_SLASH_PATTERN, "");
+ 			let body = void 0;
+ 			try {
+-				body = await request.json();
++				body = await request.clone().json();
+ 			} catch {}
+ 			return routeRegistry.invoke(pluginId, routeKey, {
+ 				request,
+@@ -1387,7 +1387,7 @@ var EmDashRuntime = class EmDashRuntime {
+ 		const routeName = path.replace(LEADING_SLASH_PATTERN, "");
+ 		let body = void 0;
+ 		try {
+-			body = await request.json();
++			body = await request.clone().json();
+ 		} catch {}
+ 		try {
+ 			const headers = sanitizeHeadersForSandbox(request.headers);
+diff --git a/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts b/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
+index b295a64..2855390 100644
+--- a/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
++++ b/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
+@@ -81,6 +81,13 @@ const handleRequest: APIRoute = async ({ params, request, locals }) => {
+ 		return apiError(code, message, status);
+ 	}
+ 
++	// Handlers may return a raw Response (status, headers, JSON body). The
++	// default success path uses apiSuccess(), which would serialize a Response
++	// as {} and drop Set-Cookie. Pass through so plugin routes control the wire.
++	if (result.data instanceof Response) {
++		return result.data;
++	}
++
+ 	return apiSuccess(result.data);
+ };
+ 
+diff --git a/node_modules/emdash/src/emdash-runtime.ts b/node_modules/emdash/src/emdash-runtime.ts
+index be83a7d..3d650ba 100644
+--- a/node_modules/emdash/src/emdash-runtime.ts
++++ b/node_modules/emdash/src/emdash-runtime.ts
+@@ -1869,7 +1869,11 @@ export class EmDashRuntime {
+ 
+ 			let body: unknown = undefined;
+ 			try {
+-				body = await request.json();
++				// Clone the request before reading so the handler can still
++				// access the raw body (e.g. for webhook signature verification
++				// on Stripe / GitHub / Slack endpoints where the signed payload
++				// is the exact raw bytes and not the re-serialised JSON).
++				body = await request.clone().json();
+ 			} catch {
+ 				// No body or not JSON
+ 			}
+@@ -2096,7 +2100,10 @@ export class EmDashRuntime {
+ 
+ 		let body: unknown = undefined;
+ 		try {
+-			body = await request.json();
++			// Clone before reading so the sandboxed plugin handler can still
++			// read the raw body if it needs to (see the trusted-plugin branch
++			// above for the same rationale).
++			body = await request.clone().json();
+ 		} catch {
+ 			// No body or not JSON
+ 		}

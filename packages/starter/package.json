@@ -1,0 +1,49 @@
+{
+	"name": "@dashcommerce/starter",
+	"version": "0.1.0",
+	"private": true,
+	"description": "DashCommerce starter — a full Astro commerce site. Clone, configure Stripe keys, go.",
+	"type": "module",
+	"scripts": {
+		"dev": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"seed": "emdash seed --on-conflict=update",
+		"seed:skip": "emdash seed --on-conflict=skip",
+		"bootstrap": "emdash init && emdash seed --on-conflict=update",
+		"typecheck": "astro check"
+	},
+	"emdash": {
+		"label": "DashCommerce Starter",
+		"description": "A Stripe-powered storefront with 6 demo products covering every product type, a journal, and a fully CMS-driven homepage.",
+		"seed": ".emdash/seed.json",
+		"preview": "https://demo.dashcommerce.dev"
+	},
+	"dependencies": {
+		"@astrojs/node": "^10.0.0",
+		"@astrojs/react": "^5.0.0",
+		"@astrojs/sitemap": "^3.4.0",
+		"@dashcommerce/core": "workspace:*",
+		"@stripe/react-stripe-js": "^6.0.0",
+		"@stripe/stripe-js": "^9.0.0",
+		"astro": "^6.0.0",
+		"emdash": "^0.4.0",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0"
+	},
+	"devDependencies": {
+		"@astrojs/check": "^0.9.0",
+		"@types/node": "^22.0.0",
+		"@types/react": "^19.0.0",
+		"@types/react-dom": "^19.0.0",
+		"typescript": "^5.9.0"
+	},
+	"keywords": [
+		"emdash",
+		"astro",
+		"dashcommerce",
+		"ecommerce",
+		"starter"
+	],
+	"license": "MIT"
+}
