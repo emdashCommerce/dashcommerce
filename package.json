@@ -1,6 +1,6 @@
 {
   "name": "dashcommerce-monorepo",
-  "private": true,
+  "private": false,
   "version": "0.0.0",
   "description": "DashCommerce — the WooCommerce-equivalent commerce plugin for the EmDash ecosystem",
   "type": "module",
