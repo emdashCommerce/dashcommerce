@@ -1,0 +1,107 @@
+name: Sync starter to flat repo
+
+# Mirrors `packages/starter/` into `emdashCommerce/starter` as a flat, cloneable
+# template. Content-mirror approach (not `git subtree split`) — gives us a
+# clean history in the target and room for the `workspace:*` → `^x.y.z`
+# rewrite without fighting rebases.
+#
+# Fires on pushes to main that touch the starter or core's version. Also
+# triggerable manually via the Actions UI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/starter/**"
+      - "packages/core/package.json"
+      - ".github/workflows/sync-starter.yml"
+  workflow_dispatch:
+
+concurrency: sync-starter
+
+permissions:
+  contents: read
+
+env:
+  TARGET_REPO: emdashCommerce/starter
+  TARGET_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          token: ${{ secrets.STARTER_REPO_TOKEN }}
+          path: target
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Mirror starter contents into target
+        run: |
+          # Keep target's .git, wipe everything else, copy starter/ in.
+          find target -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+          cp -R packages/starter/. target/
+          # Strip local-dev artifacts that shouldn't ship to the flat repo
+          rm -rf target/node_modules target/dist target/.astro target/.wrangler \
+                 target/data.db target/data.db-shm target/data.db-wal target/uploads
+          mkdir -p target/uploads && touch target/uploads/.gitkeep
+
+      - name: Rewrite workspace:* → actual core version
+        run: |
+          CORE_VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "Pinning @dashcommerce/core to ^${CORE_VERSION}"
+          node - "$CORE_VERSION" <<'NODE'
+          const fs = require('fs');
+          const [, , version] = process.argv;
+          const path = 'target/package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
+            if (!pkg[field]) continue;
+            for (const dep of Object.keys(pkg[field])) {
+              if (pkg[field][dep] === 'workspace:*') {
+                pkg[field][dep] = `^${version}`;
+              }
+            }
+          }
+          fs.writeFileSync(path, JSON.stringify(pkg, null, '\t') + '\n');
+          NODE
+
+      - name: Regenerate standalone lockfile
+        working-directory: target
+        run: |
+          rm -f bun.lockb
+          bun install --ignore-scripts
+
+      - name: Commit + push to target
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::No starter changes to sync"
+            exit 0
+          fi
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          git commit -m "sync: ${GITHUB_REPOSITORY}@${SHORT_SHA}" \
+                     -m "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          git push origin "${{ env.TARGET_BRANCH }}"
+          echo "::notice::Synced ${GITHUB_REPOSITORY}@${SHORT_SHA} → ${TARGET_REPO}"
