@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# Only one release flow runs at a time — prevents racing Version Packages PRs.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write         # create tags + Releases, push Version Packages PR
+  pull-requests: write    # open/update the Version Packages PR
+  id-token: write         # npm provenance (signed publish)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      # changesets/action detects:
+      #   - pending `.changeset/*.md` in the repo → opens/updates a Version Packages PR
+      #   - no pending changesets + package versions differ from npm → runs `publish`
+      - name: Create Release PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: bun run release
+          createGithubReleases: true
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
