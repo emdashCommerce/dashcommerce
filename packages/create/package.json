@@ -1,0 +1,63 @@
+{
+	"name": "@dashcommerce/create",
+	"version": "0.1.0",
+	"description": "Scaffold a new DashCommerce project. Invoke with `npm create @dashcommerce@latest`.",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"bin": {
+		"create-dashcommerce": "./dist/index.mjs"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run build"
+	},
+	"dependencies": {
+		"giget": "^3.2.0",
+		"picocolors": "^1.1.1",
+		"prompts": "^2.4.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"@types/prompts": "^2.4.9",
+		"tsdown": "^0.20.0",
+		"typescript": "^5.9.0"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"dashcommerce",
+		"emdash",
+		"starter",
+		"cli",
+		"scaffold",
+		"ecommerce",
+		"commerce"
+	],
+	"author": "DashCommerce contributors",
+	"license": "MIT",
+	"homepage": "https://dashcommerce.dev",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/emdashCommerce/dashcommerce.git",
+		"directory": "packages/create"
+	},
+	"bugs": {
+		"url": "https://github.com/emdashCommerce/dashcommerce/issues"
+	}
+}
