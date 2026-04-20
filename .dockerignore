@@ -1,0 +1,35 @@
+# Dependencies and build output — installed/rebuilt in the image
+node_modules
+**/node_modules
+dist
+**/dist
+.astro
+**/.astro
+
+# Local dev data — must not leak into the image
+**/data.db
+**/data.db-shm
+**/data.db-wal
+packages/starter/uploads/*
+!packages/starter/uploads/.gitkeep
+
+# Version control + CI noise
+.git
+.github
+.gitignore
+
+# Env + secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Editor / OS
+.DS_Store
+.vscode
+.idea
+*.log
+
+# Ephemeral
+*.tsbuildinfo
+.claude

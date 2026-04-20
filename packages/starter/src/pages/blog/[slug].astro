@@ -1,4 +1,5 @@
 ---
+import type { MediaValue } from "emdash";
 import {
   getEmDashEntry,
   getEntryTerms,
@@ -17,21 +18,21 @@ const { entry: post, error } = await getEmDashEntry("posts", slug);
 if (error) return new Response("Failed to load post", { status: 500 });
 if (!post) return Astro.redirect("/blog", 302);
 
-const title = String(post.data.title ?? "");
-const excerpt = String(post.data.excerpt ?? "");
+const title = post.data.title ?? "";
+const excerpt = post.data.excerpt ?? "";
 const coverImage = post.data.cover_image ?? null;
-const coverGradient = String(
-  post.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-);
-const author = String(post.data.author_name ?? "");
-const minutes = Number(post.data.reading_minutes ?? 0);
+const coverGradient =
+  post.data.cover_gradient ??
+  "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)";
+const author = post.data.author_name ?? "";
+const minutes = post.data.reading_minutes ?? 0;
 // `body` is a portable-text array, but depending on how the entry was saved
 // (seeded vs edited via admin vs draft revisions), emdash may return it as
 // either a parsed array, a stringified JSON array, or null. Normalise all
 // three shapes so the rendered page always has real PT blocks when content
 // exists — otherwise the portable-text component silently renders nothing
 // and the page looks bodyless.
-const rawBody = (post.data as Record<string, unknown>).body;
+const rawBody: unknown = post.data.body;
 let body: unknown[] = [];
 if (Array.isArray(rawBody)) {
   body = rawBody;
@@ -44,9 +45,9 @@ if (Array.isArray(rawBody)) {
   }
 }
 
-const fmtDate = (raw: unknown) => {
+const fmtDate = (raw: string | Date | undefined | null) => {
   if (!raw) return "";
-  const d = new Date(String(raw));
+  const d = raw instanceof Date ? raw : new Date(raw);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -54,7 +55,7 @@ const fmtDate = (raw: unknown) => {
     year: "numeric",
   }).format(d);
 };
-const dateLabel = fmtDate(post.data.published_date ?? post.publishedAt);
+const dateLabel = fmtDate(post.data.published_date ?? post.data.publishedAt);
 
 // Resolve this post's categories via the taxonomy. `getEntryTerms` returns
 // term rows (with slug + label). We use the first category as the primary
@@ -62,7 +63,7 @@ const dateLabel = fmtDate(post.data.published_date ?? post.publishedAt);
 //
 // emdash stores taxonomy links by the canonical DB id, which is exposed as
 // `data.id` on fetched entries (falling back to `entry.id` if absent).
-const postDbId = String((post.data as Record<string, unknown>).id ?? post.id);
+const postDbId = post.data.id ?? post.id;
 const termRows = await getEntryTerms("posts", postDbId, "post_category");
 const categories = termRows.map((t) => ({
   slug: t.slug,
@@ -77,7 +78,7 @@ const related: Array<{
   title: string;
   excerpt: string;
   gradient: string;
-  cover: unknown;
+  cover: string | MediaValue | null;
   date: string;
   minutes: number;
 }> = [];
@@ -87,20 +88,31 @@ for (const c of categories) {
   const peers = await getEntriesByTerm("posts", "post_category", c.slug);
   for (const p of peers) {
     if (related.length >= 3) break;
-    const peerDbId = String((p.data as Record<string, unknown>).id ?? p.id);
+    const peerData = p.data as Record<string, unknown> & {
+      id?: string;
+      slug?: string | null;
+      title?: string;
+      excerpt?: string;
+      cover_gradient?: string;
+      cover_image?: string | MediaValue;
+      published_date?: string;
+      publishedAt?: Date | null;
+      reading_minutes?: number;
+    };
+    const peerDbId = peerData.id ?? p.id;
     if (seen.has(peerDbId)) continue;
     seen.add(peerDbId);
     related.push({
       id: peerDbId,
-      href: `/blog/${p.data.slug ?? p.id}`,
-      title: String(p.data.title ?? ""),
-      excerpt: String(p.data.excerpt ?? ""),
-      gradient: String(
-        p.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-      ),
-      cover: p.data.cover_image ?? null,
-      date: fmtDate(p.data.published_date ?? p.publishedAt),
-      minutes: Number(p.data.reading_minutes ?? 0),
+      href: `/blog/${peerData.slug ?? p.id}`,
+      title: peerData.title ?? "",
+      excerpt: peerData.excerpt ?? "",
+      gradient:
+        peerData.cover_gradient ??
+        "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+      cover: peerData.cover_image ?? null,
+      date: fmtDate(peerData.published_date ?? peerData.publishedAt),
+      minutes: peerData.reading_minutes ?? 0,
     });
   }
 }

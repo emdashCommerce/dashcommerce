@@ -49,7 +49,7 @@ const productCards = products.map((p) => {
     type:    (p.data.type as string) ?? "simple",
     price:   fmt(p.data.prices as PriceMap),
     grad:    getGrad(p.data.type as string),
-    image:   img && img !== "" ? img : null,
+    image:   img ?? null,
     isOut:   p.data.stock_status === "outofstock",
     isFeat:  Boolean(p.data.featured),
     label:   typeLabels[(p.data.type as string) ?? ""] ?? (p.data.type as string) ?? "product",

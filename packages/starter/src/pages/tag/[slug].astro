@@ -69,8 +69,12 @@ const otherTagCounts = await Promise.all(
 const otherTags = otherTagCounts.filter((t) => t.count > 0);
 
 // First gallery-ish image we can find on a product entry, for product cards.
-function pickImage(d: unknown): unknown | null {
-	const row = (d ?? {}) as { featured_image?: unknown; gallery_2?: unknown };
+type ProductImage = string | import("emdash").MediaValue;
+function pickImage(d: unknown): ProductImage | null {
+	const row = (d ?? {}) as {
+		featured_image?: ProductImage;
+		gallery_2?: ProductImage;
+	};
 	return row.featured_image ?? row.gallery_2 ?? null;
 }
 ---

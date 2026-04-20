@@ -1,4 +1,5 @@
 ---
+import type { MediaValue } from "emdash";
 import { getEmDashCollection, getEntryTerms } from "emdash";
 import { Image } from "emdash/ui";
 import Banner from "../components/Banner.astro";
@@ -22,7 +23,7 @@ let journalPosts: Array<{
   href: string;
   title: string;
   excerpt: string;
-  cover: unknown;
+  cover: string | MediaValue | null;
   gradient: string;
   date: string;
   minutes: number;
@@ -32,9 +33,9 @@ try {
   const { entries: posts } = await getEmDashCollection("posts", {
     status: "published",
   });
-  const jfmtDate = (raw: unknown) => {
+  const jfmtDate = (raw: string | Date | undefined | null) => {
     if (!raw) return "";
-    const d = new Date(String(raw));
+    const d = raw instanceof Date ? raw : new Date(raw);
     if (Number.isNaN(d.getTime())) return "";
     return new Intl.DateTimeFormat("en-GB", {
       day: "numeric",
@@ -42,32 +43,27 @@ try {
       year: "numeric",
     }).format(d);
   };
+  const sortKey = (p: (typeof posts)[number]) =>
+    p.data.published_date ?? p.data.publishedAt?.toISOString() ?? "";
   const top = posts
     .slice()
-    .sort((a, b) => {
-      const da = String(a.data.published_date ?? a.publishedAt ?? "");
-      const db = String(b.data.published_date ?? b.publishedAt ?? "");
-      return db.localeCompare(da);
-    })
+    .sort((a, b) => sortKey(b).localeCompare(sortKey(a)))
     .slice(0, journalCap);
   journalPosts = await Promise.all(
     top.map(async (p) => {
-      const dbId = String(
-        (p.data as Record<string, unknown>).id ?? p.id,
-      );
+      const dbId = p.data.id ?? p.id;
       const terms = await getEntryTerms("posts", dbId, "post_category");
       const categoryLabel = terms[0]?.label ?? "Journal";
       return {
         href: `/blog/${p.data.slug ?? p.id}`,
-        title: String(p.data.title ?? ""),
-        excerpt: String(p.data.excerpt ?? ""),
+        title: p.data.title ?? "",
+        excerpt: p.data.excerpt ?? "",
         cover: p.data.cover_image ?? null,
-        gradient: String(
+        gradient:
           p.data.cover_gradient ??
-            "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-        ),
-        date: jfmtDate(p.data.published_date ?? p.publishedAt),
-        minutes: Number(p.data.reading_minutes ?? 0),
+          "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+        date: jfmtDate(p.data.published_date ?? p.data.publishedAt),
+        minutes: p.data.reading_minutes ?? 0,
         category: categoryLabel,
       };
     }),
@@ -130,15 +126,14 @@ type HeroSlide = {
   headline: string;
   sub: string;
   cta: { label: string; href: string };
-  // Shared visual data
   bgType: BgType;
   bgCss: string;
-  bgImage: unknown; // emdash MediaValue (rendered via <Image>)
+  bgImage: string | MediaValue | null;
   bgFocal: string;
   bgOverlay: string;
   videoUrl: string;
   videoKind: EmbedKind;
-  videoPoster: unknown;
+  videoPoster: string | MediaValue | null;
   accent: string;
 };
 
@@ -290,7 +285,7 @@ let categories: Array<{
   href: string;
   bg: string;
   size: "large" | "small";
-  image: unknown;
+  image: string | MediaValue | null;
 }> = [];
 try {
   const { entries } = await getEmDashCollection("category_tiles", {
@@ -302,19 +297,15 @@ try {
       (a, b) =>
         Number(a.data.sort_order ?? 999) - Number(b.data.sort_order ?? 999),
     )
-    .map((e) => {
-      const d = e.data as Record<string, unknown>;
-      return {
-        label: String(d.label ?? ""),
-        desc: String(d.description ?? ""),
-        href: String(d.href ?? "#"),
-        bg: String(
-          d.bg_css ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-        ),
-        size: d.size === "small" ? "small" : "large",
-        image: d.image ?? null,
-      };
-    });
+    .map((e) => ({
+      label: e.data.label ?? "",
+      desc: e.data.description ?? "",
+      href: e.data.href ?? "#",
+      bg:
+        e.data.bg_css ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+      size: (e.data.size === "small" ? "small" : "large") as "small" | "large",
+      image: (e.data.image ?? null) as string | MediaValue | null,
+    }));
 } catch {
   categories = [];
 }

@@ -1,4 +1,6 @@
 ---
+import type { ContentEntry, MediaValue } from "emdash";
+import type { Post } from "../../../../emdash-env";
 import {
   getEntriesByTerm,
   getTaxonomyTerms,
@@ -15,14 +17,20 @@ if (!slug) return new Response("Category not found", { status: 404 });
 const term = await getTerm("post_category", slug);
 if (!term) return Astro.redirect("/blog", 302);
 
-const posts = await getEntriesByTerm("posts", "post_category", slug);
+// getEntriesByTerm returns untyped entries; narrow to the Post shape
+// declared in emdash-env.d.ts so field access stays type-safe.
+const posts = (await getEntriesByTerm(
+  "posts",
+  "post_category",
+  slug,
+)) as unknown as ContentEntry<Post>[];
 
 // Other categories for the chip row (keep current one labelled but not linked).
 const allTerms = await getTaxonomyTerms("post_category");
 
-const fmtDate = (raw: unknown) => {
+const fmtDate = (raw: string | Date | undefined | null) => {
   if (!raw) return "";
-  const d = new Date(String(raw));
+  const d = raw instanceof Date ? raw : new Date(raw);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -43,32 +51,30 @@ type Card = {
   href: string;
   title: string;
   excerpt: string;
-  cover: unknown;
+  cover: string | MediaValue | null;
   gradient: string;
   date: string;
   minutes: number;
   author: string;
 };
 
+const sortKey = (p: ContentEntry<Post>) =>
+  p.data.published_date ?? p.data.publishedAt?.toISOString() ?? "";
 const sorted = posts
   .slice()
-  .sort((a, b) => {
-    const da = String(a.data.published_date ?? a.publishedAt ?? "");
-    const db = String(b.data.published_date ?? b.publishedAt ?? "");
-    return db.localeCompare(da);
-  });
+  .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
 
 const cards: Card[] = sorted.map((p) => ({
   href: `/blog/${p.data.slug ?? p.id}`,
-  title: String(p.data.title ?? ""),
-  excerpt: String(p.data.excerpt ?? ""),
+  title: p.data.title ?? "",
+  excerpt: p.data.excerpt ?? "",
   cover: p.data.cover_image ?? null,
-  gradient: String(
-    p.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-  ),
-  date: fmtDate(p.data.published_date ?? p.publishedAt),
-  minutes: Number(p.data.reading_minutes ?? 0),
-  author: String(p.data.author_name ?? ""),
+  gradient:
+    p.data.cover_gradient ??
+    "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+  date: fmtDate(p.data.published_date ?? p.data.publishedAt),
+  minutes: p.data.reading_minutes ?? 0,
+  author: p.data.author_name ?? "",
 }));
 ---
 

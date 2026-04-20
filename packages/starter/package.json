@@ -7,11 +7,16 @@
 	"scripts": {
 		"dev": "astro dev",
 		"build": "astro build",
+		"build:cf": "DEPLOY_TARGET=cloudflare astro build",
 		"preview": "astro preview",
 		"start": "node ./dist/server/entry.mjs",
 		"seed": "emdash seed --on-conflict=update",
 		"seed:skip": "emdash seed --on-conflict=skip",
 		"bootstrap": "emdash init && dashcommerce-merge-seed && emdash seed --on-conflict=update",
+		"cf:deploy": "bun run build:cf && wrangler deploy",
+		"cf:dev": "bun run build:cf && wrangler dev",
+		"cf:d1:create": "wrangler d1 create dashcommerce-demo",
+		"cf:d1:seed": "bun run bootstrap && sqlite3 data.db .dump | grep -v -E '^(PRAGMA|BEGIN|COMMIT|CREATE TABLE sqlite_)' > .emdash/d1-seed.sql && wrangler d1 execute dashcommerce-demo --remote --file=.emdash/d1-seed.sql",
 		"typecheck": "astro check"
 	},
 	"emdash": {
@@ -21,23 +26,27 @@
 		"preview": "https://demo.dashcommerce.dev"
 	},
 	"dependencies": {
+		"@astrojs/cloudflare": "^13.1.10",
 		"@astrojs/node": "^10.0.0",
 		"@astrojs/react": "^5.0.0",
 		"@astrojs/sitemap": "^3.4.0",
 		"@dashcommerce/core": "workspace:*",
+		"@emdash-cms/cloudflare": "^0.5.0",
 		"@stripe/react-stripe-js": "^6.0.0",
 		"@stripe/stripe-js": "^9.0.0",
 		"astro": "^6.0.0",
-		"emdash": "^0.4.0",
+		"emdash": "^0.5.0",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0"
 	},
 	"devDependencies": {
 		"@astrojs/check": "^0.9.0",
+		"@cloudflare/workers-types": "^4.20260305.1",
 		"@types/node": "^22.0.0",
 		"@types/react": "^19.0.0",
 		"@types/react-dom": "^19.0.0",
-		"typescript": "^5.9.0"
+		"typescript": "^5.9.0",
+		"wrangler": "^4.83.0"
 	},
 	"keywords": [
 		"emdash",

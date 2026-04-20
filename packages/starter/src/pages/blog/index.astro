@@ -1,4 +1,5 @@
 ---
+import type { MediaValue } from "emdash";
 import {
   getEmDashCollection,
   getEntriesByTerm,
@@ -14,18 +15,17 @@ export const prerender = false;
 const meta = await getSiteMeta();
 const { entries: posts } = await getEmDashCollection("posts");
 
-// Sort newest first. `published_date` is an override, fall back to Astro's
-// built-in `publishedAt` if the editor hasn't set one.
+// Sort newest first. `published_date` is an editor override; fall back to the
+// system `publishedAt` (Date), then to `createdAt`.
+const sortKey = (p: (typeof posts)[number]) =>
+  p.data.published_date ??
+  p.data.publishedAt?.toISOString() ??
+  p.data.createdAt?.toISOString() ??
+  "";
 const allSorted = posts
   .slice()
   .filter((p) => p.data.title)
-  .sort((a, b) => {
-    const da =
-      String(a.data.published_date ?? a.publishedAt ?? a.data.created_at ?? "");
-    const db =
-      String(b.data.published_date ?? b.publishedAt ?? b.data.created_at ?? "");
-    return db.localeCompare(da);
-  });
+  .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
 
 // Respect the editor's postsPerPage setting. One of those slots is taken
 // by the featured card, so we cap the remaining grid to postsPerPage - 1.
@@ -51,8 +51,7 @@ const categories = await Promise.all(
 // emdash stores in `content_taxonomies.entry_id`. One taxonomy query per
 // post, but the set is small and this page is SSR.
 const postTerms = new Map<string, string[]>();
-const dbIdFor = (p: typeof sorted[number]) =>
-  String((p.data as Record<string, unknown>).id ?? p.id);
+const dbIdFor = (p: (typeof sorted)[number]) => p.data.id ?? p.id;
 await Promise.all(
   sorted.map(async (p) => {
     const rows = await getEntryTerms("posts", dbIdFor(p), "post_category");
@@ -63,9 +62,9 @@ await Promise.all(
   }),
 );
 
-const fmtDate = (raw: unknown) => {
+const fmtDate = (raw: string | Date | undefined | null) => {
   if (!raw) return "";
-  const d = new Date(String(raw));
+  const d = raw instanceof Date ? raw : new Date(raw);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -78,7 +77,7 @@ type PostCard = {
   href: string;
   title: string;
   excerpt: string;
-  cover: unknown;
+  cover: string | MediaValue | null;
   gradient: string;
   author: string;
   date: string;
@@ -86,19 +85,19 @@ type PostCard = {
   categories: string[];
 };
 
-const toCard = (p: typeof sorted[number]): PostCard => {
+const toCard = (p: (typeof sorted)[number]): PostCard => {
   const cats = postTerms.get(dbIdFor(p)) ?? [];
   return {
     href: `/blog/${p.data.slug ?? p.id}`,
-    title: String(p.data.title ?? ""),
-    excerpt: String(p.data.excerpt ?? ""),
+    title: p.data.title ?? "",
+    excerpt: p.data.excerpt ?? "",
     cover: p.data.cover_image ?? null,
-    gradient: String(
-      p.data.cover_gradient ?? "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
-    ),
-    author: String(p.data.author_name ?? ""),
-    date: fmtDate(p.data.published_date ?? p.publishedAt),
-    minutes: Number(p.data.reading_minutes ?? 0),
+    gradient:
+      p.data.cover_gradient ??
+      "linear-gradient(135deg, #2d1800 0%, #0b0b0b 100%)",
+    author: p.data.author_name ?? "",
+    date: fmtDate(p.data.published_date ?? p.data.publishedAt),
+    minutes: p.data.reading_minutes ?? 0,
     categories: cats,
   };
 };

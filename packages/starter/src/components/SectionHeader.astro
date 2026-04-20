@@ -29,6 +29,7 @@
  *                  fallbackEyebrow="The selection"
  *                  fallbackTitle={`New in\nthis season`} />
  */
+import type { MediaValue } from "emdash";
 import { getEmDashEntry } from "emdash";
 import { Image } from "emdash/ui";
 
@@ -83,7 +84,7 @@ const alignment: "left" | "center" | "right" =
 // Background resolution — identical to Banner.astro so behaviour is
 // predictable across components.
 const bgVideoUrl = String(d.bg_video_url ?? "").trim();
-const bgImage = d.bg_image ?? null;
+const bgImage = (d.bg_image ?? null) as string | MediaValue | null;
 const hasImage = Boolean(bgImage);
 const bgType: "gradient" | "image" | "video" = bgVideoUrl
 	? "video"
@@ -98,7 +99,7 @@ const bgOverlay = String(
 	d.bg_overlay ??
 		"linear-gradient(180deg, rgba(11,11,11,.55) 0%, rgba(11,11,11,.8) 100%)",
 );
-const bgVideoPoster = d.bg_video_poster ?? null;
+const bgVideoPoster = (d.bg_video_poster ?? null) as string | MediaValue | null;
 
 type EmbedKind = "mp4" | "youtube" | "vimeo" | null;
 function parseVideo(raw: string): { kind: EmbedKind; src: string } {
