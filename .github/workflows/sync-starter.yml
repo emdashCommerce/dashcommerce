@@ -76,15 +76,25 @@ jobs:
                  target/data.db target/data.db-shm target/data.db-wal target/uploads
           mkdir -p target/uploads && touch target/uploads/.gitkeep
 
-      - name: Rewrite workspace:* → actual core version
+          # emdash bun-patches live at the monorepo root; propagate to flat repo
+          # root so patchedDependencies in target/package.json can find them.
+          if [ -d patches ]; then
+            cp -R patches target/patches
+          fi
+
+      - name: Rewrite workspace deps + CF-first scripts + wrangler.jsonc
         run: |
           CORE_VERSION=$(node -p "require('./packages/core/package.json').version")
           echo "Pinning @dashcommerce/core to ^${CORE_VERSION}"
           node - "$CORE_VERSION" <<'NODE'
           const fs = require('fs');
           const [, , version] = process.argv;
-          const path = 'target/package.json';
-          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+          // ── package.json ──
+          const pkgPath = 'target/package.json';
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+          // Pin workspace deps to the real published version of core.
           for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
             if (!pkg[field]) continue;
             for (const dep of Object.keys(pkg[field])) {
@@ -93,7 +103,47 @@ jobs:
               }
             }
           }
-          fs.writeFileSync(path, JSON.stringify(pkg, null, '\t') + '\n');
+
+          // Flat repo's primary deploy target is Cloudflare (via the Deploy
+          // button), so swap scripts so `build` IS the CF build — CF dashboard
+          // auto-detect will land on `bun run build` and do the right thing.
+          // `build:node` stays available for contributors who want Node.
+          if (pkg.scripts?.build && pkg.scripts['build:cf']) {
+            pkg.scripts['build:node'] = pkg.scripts.build;
+            pkg.scripts.build = pkg.scripts['build:cf'];
+            delete pkg.scripts['build:cf'];
+          }
+
+          // Propagate the emdash bun-patch reference from the monorepo root
+          // so the flat repo applies it on `bun install` too.
+          const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (rootPkg.patchedDependencies) {
+            pkg.patchedDependencies = rootPkg.patchedDependencies;
+          }
+
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
+
+          // ── wrangler.jsonc ──
+          // Root wrangler.jsonc in the monorepo omits main/assets because
+          // the Astro adapter writes dist/server/wrangler.json at build time.
+          // On the flat repo we want `npx wrangler deploy` (CF dashboard
+          // default) to just work without the --config flag, so inject the
+          // adapter's expected output paths directly. Both files co-exist at
+          // deploy time; whichever wrangler reads has enough.
+          const wranglerPath = 'target/wrangler.jsonc';
+          if (fs.existsSync(wranglerPath)) {
+            let content = fs.readFileSync(wranglerPath, 'utf8');
+            if (!/"main"\s*:/.test(content)) {
+              content = content.replace(
+                /("compatibility_flags"\s*:\s*\[[^\]]*\]\s*,?)/,
+                '$1\n\n\t"main": "./dist/server/entry.mjs",\n\t"assets": {\n\t\t"directory": "./dist/client",\n\t\t"binding": "ASSETS"\n\t},'
+              );
+              fs.writeFileSync(wranglerPath, content);
+              console.log('Injected main + assets into wrangler.jsonc');
+            } else {
+              console.log('wrangler.jsonc already has main; skipping injection');
+            }
+          }
           NODE
 
       - name: Regenerate standalone lockfile
