@@ -4,8 +4,14 @@
 	"compatibility_date": "2026-04-01",
 	"compatibility_flags": ["nodejs_compat"],
 
-	// @astrojs/cloudflare (v13+) handles `main` and `assets` automatically via
-	// the Cloudflare Vite plugin — do not set them here.
+	// `main` and `assets` are intentionally omitted here. @astrojs/cloudflare
+	// v13+ emits a fully-resolved `dist/server/wrangler.json` at build time
+	// that merges these fields with the bindings + vars below. Always deploy
+	// against that generated file:
+	//
+	//   wrangler deploy --config dist/server/wrangler.json
+	//
+	// Use `bun run cf:deploy` which handles this automatically.
 
 	"vars": {
 		"SITE_URL": "https://cf-demo.dashcommerce.dev"
