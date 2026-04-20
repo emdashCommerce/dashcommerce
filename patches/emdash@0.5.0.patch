@@ -1,7 +1,7 @@
-diff --git a/node_modules/emdash/dist/astro/middleware.mjs b/node_modules/emdash/dist/astro/middleware.mjs
-index eb32f80..304ee78 100644
---- a/node_modules/emdash/dist/astro/middleware.mjs
-+++ b/node_modules/emdash/dist/astro/middleware.mjs
+diff --git a/dist/astro/middleware.mjs b/dist/astro/middleware.mjs
+index f7a3dcb930371a4338c3418fdb767baf4144b42c..3ea00669a085a0fbeba55d948c8fead648a77cff 100644
+--- a/dist/astro/middleware.mjs
++++ b/dist/astro/middleware.mjs
 @@ -1254,7 +1254,7 @@ var EmDashRuntime = class EmDashRuntime {
  			const routeKey = path.replace(LEADING_SLASH_PATTERN, "");
  			let body = void 0;
@@ -20,10 +20,10 @@ index eb32f80..304ee78 100644
  		} catch {}
  		try {
  			const headers = sanitizeHeadersForSandbox(request.headers);
-diff --git a/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts b/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
-index b295a64..2855390 100644
---- a/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
-+++ b/node_modules/emdash/src/astro/routes/api/plugins/[pluginId]/[...path].ts
+diff --git a/src/astro/routes/api/plugins/[pluginId]/[...path].ts b/src/astro/routes/api/plugins/[pluginId]/[...path].ts
+index b295a642565f495ae12215c3c7be7494bc4ba43b..285539036ba344c43726b12fdf8f757c5247558d 100644
+--- a/src/astro/routes/api/plugins/[pluginId]/[...path].ts
++++ b/src/astro/routes/api/plugins/[pluginId]/[...path].ts
 @@ -81,6 +81,13 @@ const handleRequest: APIRoute = async ({ params, request, locals }) => {
  		return apiError(code, message, status);
  	}
@@ -38,31 +38,24 @@ index b295a64..2855390 100644
  	return apiSuccess(result.data);
  };
  
-diff --git a/node_modules/emdash/src/emdash-runtime.ts b/node_modules/emdash/src/emdash-runtime.ts
-index be83a7d..3d650ba 100644
---- a/node_modules/emdash/src/emdash-runtime.ts
-+++ b/node_modules/emdash/src/emdash-runtime.ts
-@@ -1869,7 +1869,11 @@ export class EmDashRuntime {
+diff --git a/src/emdash-runtime.ts b/src/emdash-runtime.ts
+index be83a7d5aee97cce76ff5dd775bd978e9e2fdd22..7630ab6809ad2470638de1a459f21897857d4a41 100644
+--- a/src/emdash-runtime.ts
++++ b/src/emdash-runtime.ts
+@@ -1869,7 +1869,7 @@ export class EmDashRuntime {
  
  			let body: unknown = undefined;
  			try {
 -				body = await request.json();
-+				// Clone the request before reading so the handler can still
-+				// access the raw body (e.g. for webhook signature verification
-+				// on Stripe / GitHub / Slack endpoints where the signed payload
-+				// is the exact raw bytes and not the re-serialised JSON).
 +				body = await request.clone().json();
  			} catch {
  				// No body or not JSON
  			}
-@@ -2096,7 +2100,10 @@ export class EmDashRuntime {
+@@ -2096,7 +2096,7 @@ export class EmDashRuntime {
  
  		let body: unknown = undefined;
  		try {
 -			body = await request.json();
-+			// Clone before reading so the sandboxed plugin handler can still
-+			// read the raw body if it needs to (see the trusted-plugin branch
-+			// above for the same rationale).
 +			body = await request.clone().json();
  		} catch {
  			// No body or not JSON

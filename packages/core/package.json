@@ -78,11 +78,12 @@
     }
   },
   "devDependencies": {
+    "@emdash-cms/admin": "0.5.0",
     "@stripe/react-stripe-js": "^3.0.0",
     "@stripe/stripe-js": "^5.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "emdash": "^0.4.0",
+    "emdash": "^0.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsdown": "^0.20.0",
