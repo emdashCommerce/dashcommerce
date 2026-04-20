@@ -8,6 +8,7 @@
 		"dev": "astro dev",
 		"build": "astro build",
 		"preview": "astro preview",
+		"start": "node ./dist/server/entry.mjs",
 		"seed": "emdash seed --on-conflict=update",
 		"seed:skip": "emdash seed --on-conflict=skip",
 		"bootstrap": "emdash init && dashcommerce-merge-seed && emdash seed --on-conflict=update",

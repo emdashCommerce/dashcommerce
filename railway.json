@@ -1,0 +1,14 @@
+{
+	"$schema": "https://railway.com/railway.schema.json",
+	"build": {
+		"builder": "NIXPACKS",
+		"buildCommand": "bun install --frozen-lockfile && bun run --filter '@dashcommerce/starter' build"
+	},
+	"deploy": {
+		"startCommand": "bun run --filter '@dashcommerce/starter' start",
+		"healthcheckPath": "/",
+		"healthcheckTimeout": 60,
+		"restartPolicyType": "ON_FAILURE",
+		"restartPolicyMaxRetries": 3
+	}
+}
