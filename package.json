@@ -14,7 +14,7 @@
     "test": "bun run --filter '*' test",
     "format": "biome format --write .",
     "lint": "biome lint .",
-    "postinstall": "patch-package && bun run --cwd packages/core build",
+    "postinstall": "bun run --cwd packages/core build",
     "changeset": "changeset",
     "release": "bun run --filter '*' build && changeset publish"
   },
@@ -22,10 +22,12 @@
     "@biomejs/biome": "^1.9.4",
     "@changesets/changelog-github": "^0.6.0",
     "@changesets/cli": "^2.31.0",
-    "patch-package": "^8.0.1",
     "typescript": "^5.9.3"
   },
   "engines": {
     "bun": ">=1.1.0"
+  },
+  "patchedDependencies": {
+    "emdash@0.5.0": "patches/emdash@0.5.0.patch"
   }
 }
