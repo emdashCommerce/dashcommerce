@@ -6,8 +6,8 @@
 
 ## Deploy
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/emdashCommerce/dashcommerce)
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/emdashCommerce/dashcommerce)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/emdashCommerce/starter)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/emdashCommerce/starter)
 [![Run with Docker](https://img.shields.io/badge/Run%20with-Docker-2496ED?logo=docker&logoColor=white)](#docker)
 
 Three production paths, one codebase. `astro.config.mjs` branches on env vars, so local dev, Docker, Railway (Node+Postgres) and Cloudflare Workers (D1+R2) all build from the same source.
