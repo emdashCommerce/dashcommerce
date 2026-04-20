@@ -13,6 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Astro 6's CLI forks a Node process; the runner's default Node is 20
+      # but Astro requires >=22.12.0. Set Node before Bun so `node` in PATH
+      # points at 22 when `astro check` / `astro build` fork.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
