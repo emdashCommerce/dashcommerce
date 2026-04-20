@@ -10,6 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 (nothing yet)
 
+## [0.1.1] — 2026-04-19
+
+### Added
+
+- **`dashcommerce-merge-seed` CLI** (`@dashcommerce/core` `bin`): merges `defineProductsCollection()` + `defineProductTaxonomies()` into the host `seed.json` with deduplication by collection `slug` and taxonomy `name`. Resolves the seed path like `emdash seed` (`.emdash/seed.json` if present, else `package.json` → `emdash.seed`). Programmatic API: `mergeDashCommerceSeed()` exported from the package root.
+- Recommended bootstrap: `dashcommerce-merge-seed && emdash seed` (after `emdash init` on a fresh database).
+
 ## [0.1.0] — 2026-04-19
 
 First **npm** release of `@dashcommerce/core` under semantic versioning `0.1.0`. The plugin descriptor version (`DASHCOMMERCE_VERSION`) matches the package.

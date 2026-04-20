@@ -2,7 +2,7 @@
 
 The DashCommerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
 
-**Current npm version: 0.1.0.** See the [monorepo README](../../README.md) for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
+**Current npm version: 0.1.1.** See the [monorepo README](../../README.md) for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
 
 ## Package exports
 
@@ -17,20 +17,53 @@ The DashCommerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
 
 ## Install
 
+Four steps to add DashCommerce to an existing EmDash + Astro site:
+
 ```sh
 bun add @dashcommerce/core
 ```
 
+Register the plugin in `astro.config.mjs`:
+
 ```ts
-// astro.config.mjs
 import { dashcommerce } from "@dashcommerce/core";
 
-emdash({
-  plugins: [dashcommerce()],
-});
+emdash({ plugins: [dashcommerce()] });
 ```
 
-For a fully-wired reference setup (seed data, storefront pages, Stripe keys), see [`@dashcommerce/starter`](../starter).
+Merge the products collection + taxonomies into your seed file, then re-apply:
+
+```sh
+bunx dashcommerce-merge-seed
+bun emdash seed --on-conflict=update
+```
+
+Open `/_emdash/admin/plugins/dashcommerce/settings` and paste your Stripe test keys.
+
+For a fully-wired reference setup (seed data, storefront pages, Stripe keys), see [`@dashcommerce/starter`](../starter). Full walkthrough: [dashcommerce.dev/docs/getting-started](https://dashcommerce.dev/docs/getting-started).
+
+## Seed merge CLI
+
+`@dashcommerce/core` ships a `dashcommerce-merge-seed` binary (on your `PATH` via `node_modules/.bin`). It writes the `products` collection and `product_category` / `product_tag` taxonomies into your EmDash `seed.json`, replacing any prior DashCommerce entries by slug / name. Unrelated keys in the seed file (settings, content, menus, other collections) are left intact.
+
+```sh
+# Typical one-liner after emdash init (fresh DB)
+bunx dashcommerce-merge-seed && bun emdash seed --on-conflict=update
+```
+
+Or add to `package.json`:
+
+```json
+"scripts": {
+  "bootstrap": "dashcommerce-merge-seed && bun emdash seed --on-conflict=update"
+}
+```
+
+Why `--on-conflict=update`? On a first run it's a no-op, but subsequent runs (after a DashCommerce release that tweaks the `products` schema) need it to update the collection in place rather than skipping it.
+
+Options: `--seed <path>` (override file), `--cwd <dir>`. When `--seed` is omitted the CLI uses the same default resolution as `emdash seed`: `.emdash/seed.json` if present, otherwise `package.json` → `emdash.seed`.
+
+Prefer to assemble the seed in TypeScript? Import `mergeDashCommerceSeed(seedObject)` from the package root — same dedupe rules as the CLI.
 
 ## Runtime surface
 

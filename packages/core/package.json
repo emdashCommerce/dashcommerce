@@ -1,6 +1,6 @@
 {
   "name": "@dashcommerce/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DashCommerce — full WooCommerce-equivalent commerce plugin for EmDash CMS",
   "type": "module",
   "main": "dist/index.js",
@@ -29,6 +29,9 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [
     "emdash",
     "emdash-plugin",
@@ -52,6 +55,9 @@
     "url": "https://github.com/emdashCommerce/dashcommerce/issues"
   },
   "homepage": "https://dashcommerce.dev",
+  "bin": {
+    "dashcommerce-merge-seed": "./dist/cli/merge-seed.js"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",

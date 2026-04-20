@@ -1,6 +1,6 @@
 # @dashcommerce/starter
 
-**v0.1.0** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) and **`@dashcommerce/core@0.1.0`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page.
+**v0.1.1** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) and **`@dashcommerce/core@0.1.1`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page.
 
 **Live demo:** [demo.dashcommerce.dev](https://demo.dashcommerce.dev) · **Templates:** [dashcommerce.dev/templates](https://dashcommerce.dev/templates)
 
@@ -33,7 +33,7 @@ Mounts alongside at `/_emdash/admin` with the full EmDash surface plus DashComme
 ```sh
 cd packages/starter
 bun install
-bun run bootstrap   # emdash init + seed (creates DB + 6 demo products)
+bun run bootstrap   # emdash init + dashcommerce-merge-seed + seed (DB + catalog)
 bun run dev         # Astro at :4321
 ```
 

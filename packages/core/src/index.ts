@@ -12,7 +12,7 @@ import type { PluginDescriptor } from "emdash";
 import { DASHCOMMERCE_STORAGE } from "./storage-collections";
 
 export const DASHCOMMERCE_PLUGIN_ID = "dashcommerce";
-export const DASHCOMMERCE_VERSION = "0.1.0";
+export const DASHCOMMERCE_VERSION = "0.1.1";
 
 export interface DashCommerceOptions {
 	/**
@@ -173,6 +173,8 @@ export function dashcommerce(options: DashCommerceOptions = {}): PluginDescripto
 
 export { defineProductsCollection, defineProductTaxonomies } from "./seed/products-collection";
 export type { DefineProductsCollectionOptions } from "./seed/products-collection";
+export { mergeDashCommerceSeed } from "./seed/merge-dashcommerce-seed";
+export type { MergeDashCommerceSeedOptions } from "./seed/merge-dashcommerce-seed";
 
 // Re-export public type surface so consumers can import them from the package root.
 export type {

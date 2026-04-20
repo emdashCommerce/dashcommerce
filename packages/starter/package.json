@@ -1,6 +1,6 @@
 {
 	"name": "@dashcommerce/starter",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": false,
 	"description": "DashCommerce starter — a full Astro commerce site. Clone, configure Stripe keys, go.",
 	"type": "module",
@@ -10,7 +10,7 @@
 		"preview": "astro preview",
 		"seed": "emdash seed --on-conflict=update",
 		"seed:skip": "emdash seed --on-conflict=skip",
-		"bootstrap": "emdash init && emdash seed --on-conflict=update",
+		"bootstrap": "emdash init && dashcommerce-merge-seed && emdash seed --on-conflict=update",
 		"typecheck": "astro check"
 	},
 	"emdash": {

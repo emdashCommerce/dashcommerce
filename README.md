@@ -6,11 +6,11 @@ Typed end-to-end, sandbox-safe, edge-renderable. Every feature category Woo ship
 
 - 📘 Documentation: <https://dashcommerce.dev/docs>
 - 💬 Issues: <https://github.com/emdashCommerce/dashcommerce/issues>
-- 📦 npm: [`@dashcommerce/core@0.1.0`](https://www.npmjs.com/package/@dashcommerce/core)
+- 📦 npm: [`@dashcommerce/core@0.1.1`](https://www.npmjs.com/package/@dashcommerce/core)
 
 ## Status
 
-**v0.1.0 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
+**v0.1.1 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
 
 ## What's in the box
 
@@ -45,9 +45,32 @@ The marketing / docs site source also lives in this monorepo under [`site/`](./s
 
 ## Quick start
 
+### Already have an EmDash site? (30 seconds)
+
 ```sh
 bun add @dashcommerce/core
 ```
+
+Register the plugin in `astro.config.mjs`:
+
+```ts
+import { dashcommerce } from "@dashcommerce/core";
+
+emdash({ plugins: [dashcommerce()] });
+```
+
+Merge the products collection + taxonomies into your seed file and re-apply:
+
+```sh
+bunx dashcommerce-merge-seed
+bun emdash seed --on-conflict=update
+```
+
+Open `/_emdash/admin/plugins/dashcommerce/settings` and paste your Stripe test keys.
+
+The merge step is idempotent — it only replaces DashCommerce's own entries (the `products` collection, `product_category` / `product_tag` taxonomies). Everything else in your seed is preserved. If you prefer to assemble the seed in code, import `mergeDashCommerceSeed()` from `@dashcommerce/core` instead of running the CLI.
+
+### Starting fresh?
 
 ```ts
 // astro.config.mjs
@@ -68,7 +91,14 @@ export default defineConfig({
 });
 ```
 
-Add the products collection to your `seed.json` (`defineProductsCollection()` helper prints the snippet), run `bun emdash seed`, open `/_emdash/admin`, paste your Stripe test keys under **DashCommerce → Settings**.
+```sh
+bun emdash init
+bunx dashcommerce-merge-seed
+bun emdash seed --on-conflict=update
+bun dev
+```
+
+Or clone [`@dashcommerce/starter`](./packages/starter) for a fully-wired storefront with demo catalog.
 
 Full walkthrough: [Getting started](https://dashcommerce.dev/docs/getting-started) · [Stripe setup](https://dashcommerce.dev/docs/stripe).
 
