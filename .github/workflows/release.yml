@@ -22,6 +22,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Astro 6's CLI forks a Node process; runner's default Node is 20 and
+      # Astro requires >=22.12.0. Set this up BEFORE Bun so `node` in PATH
+      # points at 22 when `astro build` runs.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
