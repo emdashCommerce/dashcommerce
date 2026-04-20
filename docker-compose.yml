@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    image: dashcommerce-starter:latest
+    ports:
+      - "4321:4321"
+    environment:
+      SITE_URL: http://localhost:4321
+      # DATABASE_URL: postgres://user:pass@db:5432/dashcommerce   # uncomment to use the db service below
+    volumes:
+      - data:/data
+      - uploads:/app/packages/starter/uploads
+    restart: unless-stopped
+
+  # Optional Postgres — keep commented for the SQLite quickstart path.
+  # Uncomment together with DATABASE_URL above for a Postgres-backed stack.
+  #
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: pass
+  #     POSTGRES_DB: dashcommerce
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+volumes:
+  data:
+  uploads:
+  # pgdata:

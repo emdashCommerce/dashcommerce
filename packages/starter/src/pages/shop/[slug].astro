@@ -46,7 +46,7 @@ const galleryImages = [
   d.gallery_3,
   d.gallery_4,
   d.gallery_5,
-].filter((v): v is NonNullable<typeof v> => v != null && v !== "");
+].filter((v): v is NonNullable<typeof v> => Boolean(v));
 const hasGallery = galleryImages.length > 0;
 
 // Related products (same type, different product)
@@ -78,7 +78,7 @@ const relatedCards = related.map((p) => {
     href:  `/shop/${p.data.slug ?? p.id}`,
     title: String(p.data.title ?? ""),
     grad:  getGrad(String(p.data.type)),
-    image: img && img !== "" ? img : null,
+    image: img ?? null,
     price: priceEntry && firstCurrency
       ? new Intl.NumberFormat("en-US", { style: "currency", currency: firstCurrency }).format(priceEntry.amount / 100)
       : null,

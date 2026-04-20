@@ -4,6 +4,10 @@ All notable changes to this package are documented here and in the [monorepo CHA
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-04-20
+
+- Widened `emdash` peer range to `>=0.4.0 <0.6.0` — consumers on emdash 0.5 (needed for the Cloudflare D1/R2 adapters in `@emdash-cms/cloudflare`) are supported alongside existing 0.4 installs.
+
 ## [0.1.2] — 2026-04-20
 
 - **`dashcommerce-merge-seed --with-demo-catalog`**: append 6 demo products (one per product type) + curated `product_category` / `product_tag` terms. Idempotent by product `id`.

@@ -1,8 +1,75 @@
 # @dashcommerce/starter
 
-**v0.1.2** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) and **`@dashcommerce/core@0.1.2`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page.
+**v0.2.0** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) 0.5 and **`@dashcommerce/core@0.1.3`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page. Ships three deploy targets (Node, Cloudflare Workers, Docker) from one codebase.
 
 **Live demo:** [demo.dashcommerce.dev](https://demo.dashcommerce.dev) · **Templates:** [dashcommerce.dev/templates](https://dashcommerce.dev/templates)
+
+## Deploy
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/emdashCommerce/dashcommerce)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/emdashCommerce/dashcommerce)
+[![Run with Docker](https://img.shields.io/badge/Run%20with-Docker-2496ED?logo=docker&logoColor=white)](#docker)
+
+Three production paths, one codebase. `astro.config.mjs` branches on env vars, so local dev, Docker, Railway (Node+Postgres) and Cloudflare Workers (D1+R2) all build from the same source.
+
+### Cloudflare Workers (D1 + R2)
+
+Uses `@astrojs/cloudflare` + `@emdash-cms/cloudflare` (D1 SQLite + R2 storage). One-time setup after clicking the button — or run locally:
+
+```sh
+wrangler d1 create dashcommerce-demo            # paste database_id into wrangler.jsonc
+wrangler r2 bucket create dashcommerce-demo-media
+wrangler kv:namespace create SESSION            # paste id into wrangler.jsonc
+openssl rand -hex 32 | wrangler secret put EMDASH_AUTH_SECRET
+openssl rand -hex 32 | wrangler secret put EMDASH_PREVIEW_SECRET
+bun run cf:d1:seed                              # dumps local SQLite → applies to D1
+bun run cf:deploy
+```
+
+The `DEPLOY_TARGET=cloudflare` env (set by `cf:deploy`) flips `astro.config.mjs` to the Cloudflare adapter + D1 + R2 bindings. Monorepo note: if the button drops you into the dashboard for manual config, set **Root Directory** to `packages/starter`.
+
+### Railway (Node + Postgres + S3/R2)
+
+Uses `@astrojs/node` + Neon Postgres (or any Postgres) + S3-compatible storage (Cloudflare R2 works via its S3 API). Env vars on the service:
+
+```
+DATABASE_URL=postgres://…  SITE_URL=https://your-domain
+S3_BUCKET=…  S3_ENDPOINT=…  S3_ACCESS_KEY_ID=…  S3_SECRET_ACCESS_KEY=…
+S3_REGION=auto  S3_PUBLIC_URL=https://pub-…
+```
+
+One-time bootstrap against the remote DB (from your laptop):
+
+```sh
+DATABASE_URL=postgres://… bun run --filter '@dashcommerce/starter' bootstrap
+```
+
+`railway.json` at the repo root pins build + start commands, so "+ New Service → GitHub repo" picks them up with no extra clicking.
+
+### Docker
+
+Zero-config local run — `docker compose up` from the repo root gives you the storefront at [localhost:4321](http://localhost:4321) with SQLite + uploads persisted in named volumes:
+
+```sh
+docker compose up             # builds once, then runs
+docker compose exec app bun run bootstrap   # seed DB + demo catalog
+```
+
+The same `Dockerfile` is your "deploy anywhere" image. Push it to any registry and run it on Fly/Render/ECS/Kubernetes/your-metal:
+
+```sh
+docker build -t ghcr.io/you/dashcommerce .
+docker push ghcr.io/you/dashcommerce
+
+docker run -p 4321:4321 \
+  -e SITE_URL=https://your-domain \
+  -e DATABASE_URL=postgres://…           # optional; defaults to SQLite in /data
+  -v dashcommerce_data:/data \
+  -v dashcommerce_uploads:/app/packages/starter/uploads \
+  ghcr.io/you/dashcommerce
+```
+
+To swap SQLite for Postgres, uncomment the `db` service in `docker-compose.yml` and set `DATABASE_URL=postgres://user:pass@db:5432/dashcommerce`.
 
 ## What you get
 
