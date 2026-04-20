@@ -1,6 +1,6 @@
 # @dashcommerce/starter
 
-**v0.1.2** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) and **`@dashcommerce/core@0.1.2`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page.
+**v0.2.0** — a ready-to-run Astro commerce site built on [EmDash CMS](https://github.com/emdash-cms/emdash) 0.5 and **`@dashcommerce/core@0.1.3`**. Clone, paste your Stripe test keys, run — every feature category the core plugin ships is exercised by a real page. Ships three deploy targets (Node, Cloudflare Workers, Docker) from one codebase.
 
 **Live demo:** [demo.dashcommerce.dev](https://demo.dashcommerce.dev) · **Templates:** [dashcommerce.dev/templates](https://dashcommerce.dev/templates)
 

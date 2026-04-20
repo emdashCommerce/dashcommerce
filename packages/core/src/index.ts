@@ -12,7 +12,7 @@ import type { PluginDescriptor } from "emdash";
 import { DASHCOMMERCE_STORAGE } from "./storage-collections";
 
 export const DASHCOMMERCE_PLUGIN_ID = "dashcommerce";
-export const DASHCOMMERCE_VERSION = "0.1.2";
+export const DASHCOMMERCE_VERSION = "0.1.3";
 
 export interface DashCommerceOptions {
 	/**
