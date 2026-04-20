@@ -87,7 +87,7 @@ jobs:
       - name: Regenerate standalone lockfile
         working-directory: target
         run: |
-          rm -f bun.lockb
+          rm -f bun.lock bun.lockb
           bun install --ignore-scripts
 
       - name: Commit + push to target
