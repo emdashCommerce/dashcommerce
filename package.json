@@ -14,7 +14,7 @@
     "test": "bun run --filter '*' test",
     "format": "biome format --write .",
     "lint": "biome lint .",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && bun run --cwd packages/core build",
     "changeset": "changeset",
     "release": "bun run --filter '*' build && changeset publish"
   },
