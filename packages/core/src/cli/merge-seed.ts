@@ -59,19 +59,28 @@ Usage:
   dashcommerce-merge-seed [options]
 
 Options:
-  --seed <path>   Seed file path (relative to cwd). Default: same resolution as \`emdash seed\`
-  --cwd <dir>     Working directory (default: process.cwd())
-  -h, --help      Show this message
+  --seed <path>         Seed file path (relative to cwd). Default: same resolution as \`emdash seed\`
+  --cwd <dir>           Working directory (default: process.cwd())
+  --with-demo-catalog   Also append 6 demo products (one per product type) plus
+                        curated product_category / product_tag terms. Idempotent —
+                        existing products with matching ids are preserved.
+  -h, --help            Show this message
 
 Writes a pretty-printed JSON file. Preserves unrelated keys (settings, content, menus, …).
 Collections are deduped by collection slug; taxonomies by taxonomy name.
 `);
 }
 
-function parseArgs(argv: string[]): { seed?: string; cwd: string; help: boolean } {
+function parseArgs(argv: string[]): {
+	seed?: string;
+	cwd: string;
+	help: boolean;
+	withDemoCatalog: boolean;
+} {
 	let seed: string | undefined;
 	let cwd = process.cwd();
 	let help = false;
+	let withDemoCatalog = false;
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === undefined) {
@@ -95,16 +104,20 @@ function parseArgs(argv: string[]): { seed?: string; cwd: string; help: boolean 
 			}
 			continue;
 		}
+		if (a === "--with-demo-catalog") {
+			withDemoCatalog = true;
+			continue;
+		}
 		if (a.startsWith("-")) {
 			console.error(`Unknown option: ${a}`);
 			process.exit(1);
 		}
 	}
-	return { seed, cwd, help };
+	return { seed, cwd, help, withDemoCatalog };
 }
 
 async function main(): Promise<void> {
-	const { seed: seedFlag, cwd, help } = parseArgs(process.argv.slice(2));
+	const { seed: seedFlag, cwd, help, withDemoCatalog } = parseArgs(process.argv.slice(2));
 	if (help) {
 		printHelp();
 		process.exit(0);
@@ -133,10 +146,11 @@ async function main(): Promise<void> {
 		}
 	}
 
-	const merged = mergeDashCommerceSeed(base);
+	const merged = mergeDashCommerceSeed(base, { withDemoCatalog });
 	const out = `${JSON.stringify(merged, null, "\t")}\n`;
 	await writeFile(target, out, "utf-8");
-	console.info(`Wrote DashCommerce collection + taxonomies to ${target}`);
+	const suffix = withDemoCatalog ? " + demo catalog (6 products)" : "";
+	console.info(`Wrote DashCommerce collection + taxonomies${suffix} to ${target}`);
 }
 
 main().catch((e) => {

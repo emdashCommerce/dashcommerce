@@ -228,7 +228,7 @@ export function SettingsPage() {
 	const enabledCurrencies =
 		(effective("enabledCurrencies") as string[] | null | undefined) ?? [];
 
-	const needsStripeKey = !saved._secrets.stripeSecretKey?.isSet;
+	const needsStripeKey = !saved._secrets?.stripeSecretKey?.isSet;
 
 	return (
 		<div
@@ -602,7 +602,7 @@ function SecretField({
 	setField: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 	disabled: boolean;
 }) {
-	const meta = saved._secrets[keyName];
+	const meta = saved._secrets?.[keyName];
 	const value = (draft[keyName] as string | undefined) ?? "";
 	return (
 		<FormField

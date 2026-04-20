@@ -2,7 +2,7 @@
 
 The DashCommerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
 
-**Current npm version: 0.1.1.** See the [monorepo README](../../README.md) for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
+**Current npm version: 0.1.2.** See the [monorepo README](../../README.md) for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
 
 ## Package exports
 
@@ -40,6 +40,15 @@ bun emdash seed --on-conflict=update
 
 Open `/_emdash/admin/plugins/dashcommerce/settings` and paste your Stripe test keys.
 
+**Want sample data?** Add `--with-demo-catalog` to the merge step to seed six demo products (one per product type) plus `product_category` and `product_tag` terms, so the admin isn't empty on first boot:
+
+```sh
+bunx dashcommerce-merge-seed --with-demo-catalog
+bun emdash seed --on-conflict=update
+```
+
+Re-running is safe — existing products with matching ids are preserved. Swap or delete the demo entries any time from the Products admin.
+
 For a fully-wired reference setup (seed data, storefront pages, Stripe keys), see [`@dashcommerce/starter`](../starter). Full walkthrough: [dashcommerce.dev/docs/getting-started](https://dashcommerce.dev/docs/getting-started).
 
 ## Seed merge CLI
@@ -61,9 +70,9 @@ Or add to `package.json`:
 
 Why `--on-conflict=update`? On a first run it's a no-op, but subsequent runs (after a DashCommerce release that tweaks the `products` schema) need it to update the collection in place rather than skipping it.
 
-Options: `--seed <path>` (override file), `--cwd <dir>`. When `--seed` is omitted the CLI uses the same default resolution as `emdash seed`: `.emdash/seed.json` if present, otherwise `package.json` → `emdash.seed`.
+Options: `--seed <path>` (override file), `--cwd <dir>`, `--with-demo-catalog` (append 6 demo products + curated taxonomy terms). When `--seed` is omitted the CLI uses the same default resolution as `emdash seed`: `.emdash/seed.json` if present, otherwise `package.json` → `emdash.seed`.
 
-Prefer to assemble the seed in TypeScript? Import `mergeDashCommerceSeed(seedObject)` from the package root — same dedupe rules as the CLI.
+Prefer to assemble the seed in TypeScript? Import `mergeDashCommerceSeed(seedObject, { withDemoCatalog })` from the package root — same dedupe rules as the CLI. The demo catalog is also exported directly as `DEMO_PRODUCTS`, `DEMO_PRODUCT_CATEGORY_TERMS`, and `DEMO_PRODUCT_TAG_TERMS` for cherry-picking.
 
 ## Runtime surface
 

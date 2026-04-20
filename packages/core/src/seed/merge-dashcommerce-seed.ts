@@ -3,10 +3,30 @@
  * Used by the `dashcommerce-merge-seed` CLI and available for programmatic use.
  */
 
+import {
+	DEMO_PRODUCTS,
+	DEMO_PRODUCT_CATEGORY_TERMS,
+	DEMO_PRODUCT_TAG_TERMS,
+	type DemoProductEntry,
+} from "./demo-catalog";
 import { defineProductTaxonomies, defineProductsCollection } from "./products-collection";
 import type { DefineProductsCollectionOptions } from "./products-collection";
 
-export type MergeDashCommerceSeedOptions = DefineProductsCollectionOptions;
+export interface MergeDashCommerceSeedOptions extends DefineProductsCollectionOptions {
+	/**
+	 * Append six demo products spanning every DashCommerce product type
+	 * (simple, variable, grouped, external, subscription, digital) plus
+	 * curated `product_category` / `product_tag` terms. Useful for first-run
+	 * smoke tests so the admin isn't empty.
+	 *
+	 * Merging is additive and keyed by product `id`: existing entries with
+	 * matching ids are preserved so operator-authored products are never
+	 * overwritten.
+	 *
+	 * @default false
+	 */
+	withDemoCatalog?: boolean;
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -16,15 +36,29 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * Merge `defineProductsCollection` / `defineProductTaxonomies` into a seed-like object.
  * - **Collections:** replaces an existing entry with the same `slug` as the merged collection, otherwise appends.
  * - **Taxonomies:** removes any existing entries whose `name` matches a DashCommerce product taxonomy, then appends the canonical definitions.
+ * - **Demo catalog** (`withDemoCatalog: true`): populates the product taxonomies with curated terms and appends six demo products under `content.products`, keyed by `id` so existing entries are preserved.
  */
 export function mergeDashCommerceSeed(
 	seed: Record<string, unknown>,
 	options: MergeDashCommerceSeedOptions = {},
 ): Record<string, unknown> {
-	const collection = defineProductsCollection(options) as Record<string, unknown>;
+	const { withDemoCatalog, ...collectionOptions } = options;
+
+	const collection = defineProductsCollection(collectionOptions) as Record<string, unknown>;
 	const slug = typeof collection.slug === "string" ? collection.slug : "products";
 
-	const incomingTaxonomies = defineProductTaxonomies() as Array<Record<string, unknown>>;
+	const baseTaxonomies = defineProductTaxonomies() as Array<Record<string, unknown>>;
+	const incomingTaxonomies: Array<Record<string, unknown>> = withDemoCatalog
+		? baseTaxonomies.map((tax) => {
+				if (tax.name === "product_category") {
+					return { ...tax, terms: DEMO_PRODUCT_CATEGORY_TERMS };
+				}
+				if (tax.name === "product_tag") {
+					return { ...tax, terms: DEMO_PRODUCT_TAG_TERMS };
+				}
+				return tax;
+			})
+		: baseTaxonomies;
 	const incomingTaxonomyNames = new Set(
 		incomingTaxonomies.map((t) => (typeof t.name === "string" ? t.name : "")).filter(Boolean),
 	);
@@ -51,10 +85,26 @@ export function mergeDashCommerceSeed(
 		return name === "" || !incomingTaxonomyNames.has(name);
 	});
 
-	return {
+	const merged: Record<string, unknown> = {
 		...seed,
 		version: seed.version ?? "1",
 		collections,
 		taxonomies: [...kept, ...incomingTaxonomies],
 	};
+
+	if (withDemoCatalog) {
+		const contentRaw = isRecord(seed.content) ? seed.content : {};
+		const productsRaw = contentRaw[slug];
+		const existingProducts: DemoProductEntry[] = Array.isArray(productsRaw)
+			? productsRaw.filter(isRecord).map((p) => p as unknown as DemoProductEntry)
+			: [];
+		const existingIds = new Set(existingProducts.map((p) => p.id).filter(Boolean));
+		const appended = DEMO_PRODUCTS.filter((p) => !existingIds.has(p.id));
+		merged.content = {
+			...contentRaw,
+			[slug]: [...existingProducts, ...appended],
+		};
+	}
+
+	return merged;
 }

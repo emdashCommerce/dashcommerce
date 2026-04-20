@@ -6,9 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+(nothing yet)
+
+## [0.1.2] — 2026-04-20
+
 ### Added
 
-(nothing yet)
+- **`dashcommerce-merge-seed --with-demo-catalog`** — optional CLI flag appends six demo products (one per product type: simple, variable, grouped, external, subscription, downloadable) plus curated `product_category` / `product_tag` terms. Merging is keyed by product `id`, so existing entries with matching ids are preserved and the flag is safe to re-run.
+- **Programmatic demo catalog exports** — `DEMO_PRODUCTS`, `DEMO_PRODUCT_CATEGORY_TERMS`, `DEMO_PRODUCT_TAG_TERMS` (and matching `DemoProductEntry` / `DemoTaxonomyTerm` types) re-exported from `@dashcommerce/core` for cherry-picking from custom seed scripts.
+- **`mergeDashCommerceSeed(seed, { withDemoCatalog })`** — same behaviour as the CLI flag for programmatic callers.
+- `@dashcommerce/starter` now imports the demo catalog from `@dashcommerce/core` so the starter and the CLI flag stay in sync (single source of truth).
+
+### Fixed
+
+- **Admin Settings page crash on fresh installs** — guard `saved._secrets` with an optional chain. Previously rendered `Cannot read properties of undefined (reading 'stripeSecretKey')` before the plugin lifecycle had populated secret placeholders.
+- **Admin Reports page crash when no paid orders exist** — guard `data.series` reads with `Array.isArray` and optional-chain nested `currencies` lookups. Empty reporting responses now render the "No paid orders in this range" empty state instead of throwing `data.series is not iterable`.
+
+### Build
+
+- Mark Node built-ins (`node:*`) as explicit externals in the tsdown config so the Node-only CLI entry (`src/cli/merge-seed.ts`) no longer triggers UNRESOLVED_IMPORT warnings. Sandbox-safety for `sandbox-entry.ts` remains enforced by `platform: "neutral"` plus code review.
 
 ## [0.1.1] — 2026-04-19
 

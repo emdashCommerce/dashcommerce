@@ -166,10 +166,10 @@ function RevenueCard({
 	);
 
 	const currencies = useMemo(() => {
-		if (!data) return [] as string[];
+		if (!data || !Array.isArray(data.series)) return [] as string[];
 		const set = new Set<string>();
 		for (const pt of data.series) {
-			for (const k of Object.keys(pt.currencies)) set.add(k);
+			for (const k of Object.keys(pt.currencies ?? {})) set.add(k);
 		}
 		return [...set].sort();
 	}, [data]);
@@ -182,16 +182,16 @@ function RevenueCard({
 	}, [currencies, focusCurrency]);
 
 	const sparkValues = useMemo(() => {
-		if (!data || !focusCurrency) return [];
-		return data.series.map((pt) => pt.currencies[focusCurrency] ?? 0);
+		if (!data || !focusCurrency || !Array.isArray(data.series)) return [];
+		return data.series.map((pt) => pt.currencies?.[focusCurrency] ?? 0);
 	}, [data, focusCurrency]);
 
 	function exportCsv(): void {
-		if (!data) return;
+		if (!data || !Array.isArray(data.series)) return;
 		const header = ["bucket", ...currencies];
 		const rows = data.series.map((pt) => [
 			pt.bucket,
-			...currencies.map((c) => ((pt.currencies[c] ?? 0) / 100).toFixed(2)),
+			...currencies.map((c) => ((pt.currencies?.[c] ?? 0) / 100).toFixed(2)),
 		]);
 		downloadCsv(`revenue-${range.from}-to-${range.to}-${groupBy}.csv`, [
 			header,
@@ -228,7 +228,7 @@ function RevenueCard({
 						onChange={(e) => setFocusCurrency(e.currentTarget.value)}
 					/>
 				)}
-				{data && data.series.length > 0 && (
+				{Array.isArray(data?.series) && data.series.length > 0 && (
 					<Button size="sm" variant="secondary" onClick={exportCsv}>
 						Export CSV
 					</Button>
@@ -238,7 +238,7 @@ function RevenueCard({
 				<Loading />
 			) : error ? (
 				<ErrorRetry error={error} onRetry={reload} />
-			) : !data || data.series.length === 0 ? (
+			) : !data || !Array.isArray(data.series) || data.series.length === 0 ? (
 				<EmptyState
 					title="No paid orders in this range"
 					description="Widen the date range or wait for fresh orders to show up."

@@ -15,7 +15,21 @@ export default defineConfig({
 	dts: true,
 	clean: true,
 	sourcemap: true,
-	external: ["emdash", "react", "react-dom", "@emdash-cms/admin", "astro", "@stripe/stripe-js", "@stripe/react-stripe-js"],
+	external: [
+		"emdash",
+		"react",
+		"react-dom",
+		"@emdash-cms/admin",
+		"astro",
+		"@stripe/stripe-js",
+		"@stripe/react-stripe-js",
+		// `node:*` imports are only used by the CLI entry (src/cli/merge-seed.ts),
+		// which runs in Node. sandbox-entry.ts and its import graph remain
+		// Node-free — enforce that via the `platform: "neutral"` setting below
+		// plus code review. Listing these here just silences unresolved-import
+		// warnings that are legitimate for the CLI.
+		/^node:/,
+	],
 	// Sandbox-entry must remain sandbox-compatible — no Node built-ins.
 	platform: "neutral",
 });

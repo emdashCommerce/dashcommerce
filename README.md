@@ -6,11 +6,11 @@ Typed end-to-end, sandbox-safe, edge-renderable. Every feature category Woo ship
 
 - 📘 Documentation: <https://dashcommerce.dev/docs>
 - 💬 Issues: <https://github.com/emdashCommerce/dashcommerce/issues>
-- 📦 npm: [`@dashcommerce/core@0.1.1`](https://www.npmjs.com/package/@dashcommerce/core)
+- 📦 npm: [`@dashcommerce/core@0.1.2`](https://www.npmjs.com/package/@dashcommerce/core)
 
 ## Status
 
-**v0.1.1 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
+**v0.1.2 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
 
 ## What's in the box
 
@@ -68,7 +68,14 @@ bun emdash seed --on-conflict=update
 
 Open `/_emdash/admin/plugins/dashcommerce/settings` and paste your Stripe test keys.
 
-The merge step is idempotent — it only replaces DashCommerce's own entries (the `products` collection, `product_category` / `product_tag` taxonomies). Everything else in your seed is preserved. If you prefer to assemble the seed in code, import `mergeDashCommerceSeed()` from `@dashcommerce/core` instead of running the CLI.
+Want sample data to play with? Add `--with-demo-catalog` to seed six example products (one per type) plus curated category/tag terms:
+
+```sh
+bunx dashcommerce-merge-seed --with-demo-catalog
+bun emdash seed --on-conflict=update
+```
+
+The merge step is idempotent — it only replaces DashCommerce's own entries (the `products` collection, `product_category` / `product_tag` taxonomies) and, with `--with-demo-catalog`, only appends demo products whose ids aren't already in your seed. Everything else is preserved. If you prefer to assemble the seed in code, import `mergeDashCommerceSeed(seed, { withDemoCatalog })` from `@dashcommerce/core`.
 
 ### Starting fresh?
 

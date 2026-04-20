@@ -7,7 +7,7 @@
 		"author": "DashCommerce"
 	},
 	"settings": {
-		"title": "The Edit",
+		"title": "My Shop",
 		"tagline": "A Stripe-powered storefront, editable entirely from the admin.",
 		"postsPerPage": 9,
 		"social": {
