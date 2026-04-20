@@ -141,6 +141,30 @@ jobs:
               console.log('Stripped stale main + assets block from wrangler.jsonc');
             }
           }
+
+          // ── railway.json ──
+          // Railway auto-detect runs `bun run build`, which on the flat repo
+          // is the Cloudflare build. Override with build:node so Railway gets
+          // a Node-standalone server bundle compatible with its runtime.
+          const railway = {
+            "$schema": "https://railway.com/railway.schema.json",
+            build: {
+              builder: "RAILPACK",
+              buildCommand: "bun install --frozen-lockfile && bun run build:node",
+            },
+            deploy: {
+              startCommand: "bun run start",
+              healthcheckPath: "/",
+              healthcheckTimeout: 60,
+              restartPolicyType: "ON_FAILURE",
+              restartPolicyMaxRetries: 3,
+            },
+          };
+          fs.writeFileSync(
+            'target/railway.json',
+            JSON.stringify(railway, null, '\t') + '\n',
+          );
+          console.log('Wrote flat-repo railway.json (uses build:node for Railway)');
           NODE
 
       - name: Regenerate standalone lockfile
