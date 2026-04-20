@@ -1,6 +1,6 @@
 # @dashcommerce/core
 
-The DashCommerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
+The e-commerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
 
 **Current npm version: 0.1.2.** See the [monorepo README](../../README.md) for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
 
