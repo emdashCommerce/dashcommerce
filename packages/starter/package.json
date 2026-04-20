@@ -13,8 +13,8 @@
 		"seed": "emdash seed --on-conflict=update",
 		"seed:skip": "emdash seed --on-conflict=skip",
 		"bootstrap": "emdash init && dashcommerce-merge-seed && emdash seed --on-conflict=update",
-		"cf:deploy": "bun run build:cf && wrangler deploy",
-		"cf:dev": "bun run build:cf && wrangler dev",
+		"cf:deploy": "bun run build:cf && wrangler deploy --config dist/server/wrangler.json",
+		"cf:dev": "bun run build:cf && wrangler dev --config dist/server/wrangler.json",
 		"cf:d1:create": "wrangler d1 create dashcommerce-demo",
 		"cf:d1:seed": "bun run bootstrap && sqlite3 data.db .dump | grep -v -E '^(PRAGMA|BEGIN|COMMIT|CREATE TABLE sqlite_)' > .emdash/d1-seed.sql && wrangler d1 execute dashcommerce-demo --remote --file=.emdash/d1-seed.sql",
 		"typecheck": "astro check"
