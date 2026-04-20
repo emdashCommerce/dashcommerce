@@ -104,16 +104,43 @@ When you're ready to ship, the starter builds for three targets from one codebas
 
 ### Cloudflare Workers (D1 + R2)
 
-Runs on `@astrojs/cloudflare` + `@emdash-cms/cloudflare`. After clicking the button you'll still need to provision resources, wire secrets, and seed the DB. Locally:
+Runs on `@astrojs/cloudflare` + `@emdash-cms/cloudflare`. The starter stays multi-tenant — you bring your own D1/KV/R2 ids and pass them in as Worker **environment variables** at deploy time. A build-time patch script wires them into the adapter-generated config right before `wrangler deploy`.
+
+**One-time resource provisioning:**
 
 ```sh
-wrangler d1 create dashcommerce-demo                 # paste database_id into wrangler.jsonc
+wrangler d1 create dashcommerce-demo                 # copy the database_id from output
 wrangler r2 bucket create dashcommerce-demo-media
-wrangler kv namespace create SESSION                 # paste id into wrangler.jsonc
+wrangler kv namespace create SESSION                 # copy the namespace id from output
 openssl rand -hex 32 | wrangler secret put EMDASH_AUTH_SECRET
 openssl rand -hex 32 | wrangler secret put EMDASH_PREVIEW_SECRET
-bun run cf:d1:seed                                   # dumps local SQLite → applies to D1
-bun run cf:deploy
+```
+
+**Set these env vars on the Worker project** (Cloudflare dashboard → Settings → Variables):
+
+| Variable | From |
+|---|---|
+| `CF_D1_DATABASE_ID` | `wrangler d1 create` output |
+| `CF_KV_SESSION_ID` | `wrangler kv namespace create` output |
+| `CF_R2_BUCKET` | optional — overrides `dashcommerce-demo-media` |
+| `CF_R2_PUBLIC_URL` | optional — public bucket URL for media |
+
+**Seed the D1 database** (from your laptop, one time):
+
+```sh
+bun run cf:d1:seed       # dumps local SQLite → applies to D1
+```
+
+**Deploy** — either click the button or run locally:
+
+```sh
+CF_D1_DATABASE_ID=… CF_KV_SESSION_ID=… bun run cf:deploy
+```
+
+On CF's hosted build, the dashboard's deploy command should be:
+
+```
+npx wrangler deploy --config dist/server/wrangler.json
 ```
 
 D1 migrations must run via wrangler before deploy (no runtime DDL on Workers).

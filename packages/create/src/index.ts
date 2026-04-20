@@ -35,6 +35,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 	const args: ParsedArgs = {};
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
+		if (a === undefined) continue;
 		if (a === "-h" || a === "--help") {
 			args.help = true;
 		} else if (a === "-t" || a === "--template") {
@@ -157,6 +158,14 @@ async function main(): Promise<void> {
 	const directory = parsed.directory ?? (response.directory as string);
 	const templateKey = parsed.template ?? (response.template as string);
 	const template = TEMPLATES[templateKey];
+	if (!template) {
+		console.error(
+			pc.red(
+				`\n  Template "${templateKey}" is not in the registry. Available: ${Object.keys(TEMPLATES).join(", ")}\n`,
+			),
+		);
+		process.exit(1);
+	}
 	const targetDir = resolve(process.cwd(), directory);
 
 	// Refuse to overwrite a non-empty target. Empty dirs are fine — users
