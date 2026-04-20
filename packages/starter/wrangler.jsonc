@@ -14,7 +14,7 @@
 	// Use `bun run cf:deploy` which handles this automatically.
 
 	"vars": {
-		"SITE_URL": "https://cf-demo.dashcommerce.dev"
+		"SITE_URL": "https://demo.dashcommerce.dev"
 	},
 
 	"d1_databases": [
