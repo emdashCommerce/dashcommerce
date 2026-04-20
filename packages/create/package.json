@@ -1,6 +1,6 @@
 {
 	"name": "@dashcommerce/create",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Scaffold a new DashCommerce project. Invoke with `npm create @dashcommerce@latest`.",
 	"type": "module",
 	"main": "./dist/index.mjs",
