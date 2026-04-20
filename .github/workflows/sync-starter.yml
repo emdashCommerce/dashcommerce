@@ -124,26 +124,47 @@ jobs:
           fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
 
           // ── wrangler.jsonc ──
-          // Root wrangler.jsonc in the monorepo omits main/assets because
-          // the Astro adapter writes dist/server/wrangler.json at build time.
-          // On the flat repo we want `npx wrangler deploy` (CF dashboard
-          // default) to just work without the --config flag, so inject the
-          // adapter's expected output paths directly. Both files co-exist at
-          // deploy time; whichever wrangler reads has enough.
+          // Strip any previously-injected main + assets block. These fields
+          // must NOT exist at config-load time because @cloudflare/vite-plugin
+          // (invoked during astro sync, before the build runs) validates that
+          // main points at an existing file — and the file is the build
+          // output. @astrojs/cloudflare emits dist/server/wrangler.json at
+          // build time with these fields filled in correctly; deploy with:
+          //   npx wrangler deploy --config dist/server/wrangler.json
           const wranglerPath = 'target/wrangler.jsonc';
           if (fs.existsSync(wranglerPath)) {
             let content = fs.readFileSync(wranglerPath, 'utf8');
-            if (!/"main"\s*:/.test(content)) {
-              content = content.replace(
-                /("compatibility_flags"\s*:\s*\[[^\]]*\]\s*,?)/,
-                '$1\n\n\t"main": "./dist/server/entry.mjs",\n\t"assets": {\n\t\t"directory": "./dist/client",\n\t\t"binding": "ASSETS"\n\t},'
-              );
+            const mainBlockRe = /\n\n\t"main":\s*"\.\/dist\/server\/entry\.mjs",\n\t"assets":\s*\{[^}]*\},?/;
+            if (mainBlockRe.test(content)) {
+              content = content.replace(mainBlockRe, '');
               fs.writeFileSync(wranglerPath, content);
-              console.log('Injected main + assets into wrangler.jsonc');
-            } else {
-              console.log('wrangler.jsonc already has main; skipping injection');
+              console.log('Stripped stale main + assets block from wrangler.jsonc');
             }
           }
+
+          // ── railway.json ──
+          // Railway auto-detect runs `bun run build`, which on the flat repo
+          // is the Cloudflare build. Override with build:node so Railway gets
+          // a Node-standalone server bundle compatible with its runtime.
+          const railway = {
+            "$schema": "https://railway.com/railway.schema.json",
+            build: {
+              builder: "RAILPACK",
+              buildCommand: "bun install --frozen-lockfile && bun run build:node",
+            },
+            deploy: {
+              startCommand: "bun run start",
+              healthcheckPath: "/",
+              healthcheckTimeout: 60,
+              restartPolicyType: "ON_FAILURE",
+              restartPolicyMaxRetries: 3,
+            },
+          };
+          fs.writeFileSync(
+            'target/railway.json',
+            JSON.stringify(railway, null, '\t') + '\n',
+          );
+          console.log('Wrote flat-repo railway.json (uses build:node for Railway)');
           NODE
 
       - name: Regenerate standalone lockfile
