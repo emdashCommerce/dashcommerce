@@ -35,14 +35,26 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Checkout target repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.TARGET_REPO }}
-          token: ${{ secrets.STARTER_REPO_TOKEN }}
-          path: target
-          ref: ${{ env.TARGET_BRANCH }}
-          fetch-depth: 0
+      # Handle both "target repo has commits" and "target repo is brand-new and
+      # empty" cases without failing. actions/checkout refuses empty repos
+      # because there's no branch to resolve yet, so manage target's .git
+      # directly instead.
+      - name: Initialize or fetch target repo
+        run: |
+          mkdir -p target
+          cd target
+          git init --initial-branch="${TARGET_BRANCH}" --quiet
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${TARGET_REPO}.git"
+          if git fetch --depth=1 origin "${TARGET_BRANCH}" 2>/dev/null; then
+            echo "::notice::Fetched existing ${TARGET_REPO}@${TARGET_BRANCH}"
+            git reset --hard "origin/${TARGET_BRANCH}"
+          else
+            echo "::notice::${TARGET_REPO} is empty — this run will seed it"
+          fi
+        env:
+          TOKEN: ${{ secrets.STARTER_REPO_TOKEN }}
+          TARGET_REPO: ${{ env.TARGET_REPO }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
