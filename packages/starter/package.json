@@ -16,7 +16,7 @@
 		"cf:deploy": "bun run build:cf && wrangler deploy --config dist/server/wrangler.json",
 		"cf:dev": "bun run build:cf && wrangler dev --config dist/server/wrangler.json",
 		"cf:d1:create": "wrangler d1 create dashcommerce-demo",
-		"cf:d1:seed": "bun run bootstrap && sqlite3 data.db .dump | grep -v -E '^(PRAGMA|BEGIN|COMMIT|CREATE TABLE sqlite_)' > .emdash/d1-seed.sql && wrangler d1 execute dashcommerce-demo --remote --file=.emdash/d1-seed.sql",
+		"cf:d1:seed": "node scripts/cf-d1-seed.mjs",
 		"typecheck": "astro check"
 	},
 	"emdash": {
@@ -31,11 +31,11 @@
 		"@astrojs/react": "^5.0.0",
 		"@astrojs/sitemap": "^3.4.0",
 		"@dashcommerce/core": "workspace:*",
-		"@emdash-cms/cloudflare": "^0.5.0",
+		"@emdash-cms/cloudflare": "^0.6.0",
 		"@stripe/react-stripe-js": "^6.0.0",
 		"@stripe/stripe-js": "^9.0.0",
 		"astro": "^6.0.0",
-		"emdash": "^0.5.0",
+		"emdash": "^0.6.0",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0"
 	},

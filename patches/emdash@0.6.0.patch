@@ -1,8 +1,8 @@
 diff --git a/dist/astro/middleware.mjs b/dist/astro/middleware.mjs
-index f7a3dcb930371a4338c3418fdb767baf4144b42c..3ea00669a085a0fbeba55d948c8fead648a77cff 100644
+index 466f69f8eb08c1f779ebc0f804b73bd0637536b3..d83a6106d7ed6bc50a0318c4fae40fd9dd116848 100644
 --- a/dist/astro/middleware.mjs
 +++ b/dist/astro/middleware.mjs
-@@ -1254,7 +1254,7 @@ var EmDashRuntime = class EmDashRuntime {
+@@ -1401,7 +1401,7 @@ var EmDashRuntime = class EmDashRuntime {
  			const routeKey = path.replace(LEADING_SLASH_PATTERN, "");
  			let body = void 0;
  			try {
@@ -11,7 +11,7 @@ index f7a3dcb930371a4338c3418fdb767baf4144b42c..3ea00669a085a0fbeba55d948c8fead6
  			} catch {}
  			return routeRegistry.invoke(pluginId, routeKey, {
  				request,
-@@ -1387,7 +1387,7 @@ var EmDashRuntime = class EmDashRuntime {
+@@ -1534,7 +1534,7 @@ var EmDashRuntime = class EmDashRuntime {
  		const routeName = path.replace(LEADING_SLASH_PATTERN, "");
  		let body = void 0;
  		try {
@@ -39,10 +39,10 @@ index b295a642565f495ae12215c3c7be7494bc4ba43b..285539036ba344c43726b12fdf8f757c
  };
  
 diff --git a/src/emdash-runtime.ts b/src/emdash-runtime.ts
-index be83a7d5aee97cce76ff5dd775bd978e9e2fdd22..7630ab6809ad2470638de1a459f21897857d4a41 100644
+index dd9192aa624b9da20d36b03e2854547b155ce6a7..f19f37483060b1b8f6295c4f7484638df3f1e96f 100644
 --- a/src/emdash-runtime.ts
 +++ b/src/emdash-runtime.ts
-@@ -1869,7 +1869,7 @@ export class EmDashRuntime {
+@@ -2087,7 +2087,7 @@ export class EmDashRuntime {
  
  			let body: unknown = undefined;
  			try {
@@ -51,7 +51,7 @@ index be83a7d5aee97cce76ff5dd775bd978e9e2fdd22..7630ab6809ad2470638de1a459f21897
  			} catch {
  				// No body or not JSON
  			}
-@@ -2096,7 +2096,7 @@ export class EmDashRuntime {
+@@ -2314,7 +2314,7 @@ export class EmDashRuntime {
  
  		let body: unknown = undefined;
  		try {
