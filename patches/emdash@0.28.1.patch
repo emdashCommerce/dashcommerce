@@ -1,0 +1,49 @@
+diff --git a/dist/astro/middleware.mjs b/dist/astro/middleware.mjs
+index 0159c9ed9353975db214e657959839be113351dc..83430cb0cd9217164c03f9a4fcb4f5110c3cf2cb 100644
+--- a/dist/astro/middleware.mjs
++++ b/dist/astro/middleware.mjs
+@@ -2029,7 +2029,7 @@ var EmDashRuntime = class EmDashRuntime {
+ 			const routeKey = path.replace(LEADING_SLASH_PATTERN, "");
+ 			let body = void 0;
+ 			try {
+-				body = await request.json();
++				body = await request.clone().json();
+ 			} catch {}
+ 			return routeRegistry.invoke(pluginId, routeKey, {
+ 				request,
+@@ -2211,7 +2211,7 @@ var EmDashRuntime = class EmDashRuntime {
+ 		const routeName = path.replace(LEADING_SLASH_PATTERN, "");
+ 		let body = void 0;
+ 		try {
+-			body = await request.json();
++			body = await request.clone().json();
+ 		} catch {}
+ 		try {
+ 			const headers = sanitizeHeadersForSandbox(request.headers);
+diff --git a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+index 2bacc5aa46a090e3336e98ca7406bbdee5d2d889..bc989f6b3db6b02a59bc48d49620e54b2ef3d013 100644
+--- a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
++++ b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+@@ -57,6 +57,9 @@ const handleRequest = async ({ params, request, locals }) => {
+ 		const code = result.error?.code ?? "PLUGIN_ERROR";
+ 		return apiError(code, code === "INTERNAL_ERROR" ? "Plugin route error" : result.error?.message ?? "Plugin route error", result.status ?? (code === "NOT_FOUND" ? 404 : 400));
+ 	}
++	// DashCommerce patch: let plugin route handlers return a raw Response
++	// (cookies, redirects, webhook 200s). apiSuccess would serialize it to {}.
++	if (result.data instanceof Response) return result.data;
+ 	return apiSuccess(result.data);
+ };
+ const GET = handleRequest;
+diff --git a/dist/menus-b2T4clbO.mjs b/dist/menus-b2T4clbO.mjs
+index 4ca88fd2241381099f7b9d492b7cffd03ccbabf9..8d0673262ec217c8cebcc51ed55f501302621ff1 100644
+--- a/dist/menus-b2T4clbO.mjs
++++ b/dist/menus-b2T4clbO.mjs
+@@ -1998,7 +1998,7 @@ var PluginRouteHandler = class {
+ 		const routeContext = {
+ 			...this.contextFactory.createContext(this.plugin),
+ 			input: validatedInput,
+-			request: guardConsumedRequestBody(options.request),
++			request: options.request,
+ 			requestMeta: extractRequestMeta(options.request, this.trustedProxyHeaders)
+ 		};
+ 		try {

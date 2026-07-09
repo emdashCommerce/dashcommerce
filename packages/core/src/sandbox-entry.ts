@@ -10,13 +10,33 @@
  *   - All crypto via `crypto.subtle` (Web Crypto).
  *
  * Emdash's astro integration calls `createPlugin(options)` at build time
- * for native-format plugins. `options` comes from the descriptor's
- * `options` field (see src/index.ts). We feed them into
- * `adaptSandboxEntry` to produce a `ResolvedPlugin` — the same shape
- * standard-format plugins get for free.
+ * for native-format plugins (`format: "native"` + `entrypoint` in the
+ * descriptor — see src/index.ts). `options` comes from the descriptor's
+ * `options` field. We build a native `ResolvedPlugin` with `definePlugin`.
+ *
+ * emdash 0.28 note: route handlers are the NATIVE single-arg shape
+ * `(ctx: RouteContext) => Promise<unknown>`, where `RouteContext` extends
+ * `PluginContext` — so `ctx` carries both the request (`ctx.request`,
+ * `ctx.input`) and the plugin surface (`ctx.storage`, `ctx.kv`, `ctx.http`…).
+ * DashCommerce's route handlers are authored two-arg `(routeCtx, ctx)`; we
+ * adapt them to the single-arg form below (passing the one context as both).
+ * We deliberately do NOT use `adaptSandboxEntry` here: it flattens
+ * `routeCtx.request` to `{ url, method, headers }` with no body, which would
+ * break the Stripe webhook's raw-body signature verification.
  */
 
-import { adaptSandboxEntry, definePlugin, type PluginDescriptor } from "emdash";
+import {
+	definePlugin,
+	type FieldWidgetConfig,
+	type PluginAdminConfig,
+	type PluginAdminPage,
+	type PluginCapability,
+	type PluginContext,
+	type PluginDescriptor,
+	type PluginRoute,
+	type PortableTextBlockConfig,
+	type RouteContext,
+} from "emdash";
 
 import { productBeforeSave } from "./hooks/content";
 import { cronHandler } from "./hooks/cron";
@@ -33,59 +53,96 @@ import { subscriptionsPublicRoutes } from "./routes/subscriptions-public";
 import { webhookRoutes } from "./routes/webhook";
 import { DASHCOMMERCE_STORAGE } from "./storage-collections";
 
-const DEFAULT_CAPABILITIES = [
-	"read:content",
-	"write:content",
-	"read:media",
-	"read:users",
-	"network:fetch",
+const DEFAULT_CAPABILITIES: PluginCapability[] = [
+	"content:read",
+	"content:write",
+	"media:read",
+	"users:read",
+	"network:request",
 	"email:send",
 ];
 const DEFAULT_ALLOWED_HOSTS = ["api.stripe.com", "files.stripe.com"];
 
-const definition = definePlugin({
-	hooks: {
-		"content:beforeSave": {
-			handler: productBeforeSave,
-		},
-		cron: {
-			handler: cronHandler,
-		},
-		"plugin:install": {
-			handler: onInstall,
-		},
-		"plugin:activate": {
-			handler: onActivate,
-		},
-	},
-	routes: {
-		...cartRoutes,
-		...checkoutRoutes,
-		...configCheckRoutes,
-		...customerPortalRoutes,
-		...downloadsRoutes,
-		...ordersPublicRoutes,
-		...reviewsPublicRoutes,
-		...subscriptionsPublicRoutes,
-		...webhookRoutes,
-		...adminApiRoutes,
-	},
-});
+/**
+ * DashCommerce's route handlers are authored in the two-arg convention
+ * `(routeCtx, ctx)` — `routeCtx` for request data (`.request`, `.input`) and
+ * `ctx` for the plugin surface. In emdash's native format both are the same
+ * `RouteContext` (which extends `PluginContext`), so a single context serves
+ * as both. This is the loose entry shape those route maps satisfy.
+ */
+type CommerceRouteEntry = {
+	public?: boolean;
+	input?: PluginRoute["input"];
+	handler: (routeCtx: RouteContext, ctx: PluginContext) => Promise<unknown>;
+};
+
+const HOOKS = {
+	"content:beforeSave": { handler: productBeforeSave },
+	cron: { handler: cronHandler },
+	"plugin:install": { handler: onInstall },
+	"plugin:activate": { handler: onActivate },
+};
+
+const ROUTES = {
+	...cartRoutes,
+	...checkoutRoutes,
+	...configCheckRoutes,
+	...customerPortalRoutes,
+	...downloadsRoutes,
+	...ordersPublicRoutes,
+	...reviewsPublicRoutes,
+	...subscriptionsPublicRoutes,
+	...webhookRoutes,
+	...adminApiRoutes,
+} as unknown as Record<string, CommerceRouteEntry>;
+
+/**
+ * Adapt the authored two-arg route handlers into emdash's native single-arg
+ * `PluginRoute` form. `RouteContext` extends `PluginContext`, so the one
+ * `ctx` is passed as both arguments. `public` and `input` pass through.
+ */
+function toNativeRoutes(
+	routes: Record<string, CommerceRouteEntry>,
+): Record<string, PluginRoute> {
+	const out: Record<string, PluginRoute> = {};
+	for (const [name, route] of Object.entries(routes)) {
+		out[name] = {
+			public: route.public,
+			input: route.input,
+			handler: (ctx) => route.handler(ctx, ctx),
+		};
+	}
+	return out;
+}
+
+/**
+ * emdash's `PluginDefinition.storage` requires an `indexes` array on every
+ * collection; the descriptor's `storage` declaration leaves it optional.
+ * Normalize to the runtime shape.
+ */
+function toStorageConfig(
+	decl: NonNullable<PluginDescriptor["storage"]>,
+): Record<string, { indexes: string[]; uniqueIndexes?: string[] }> {
+	const out: Record<string, { indexes: string[]; uniqueIndexes?: string[] }> = {};
+	for (const [name, cfg] of Object.entries(decl)) {
+		out[name] = { indexes: cfg.indexes ?? [], uniqueIndexes: cfg.uniqueIndexes };
+	}
+	return out;
+}
 
 export interface CreatePluginOptions {
 	id?: string;
 	version?: string;
-	capabilities?: string[];
+	capabilities?: PluginCapability[];
 	allowedHosts?: string[];
 }
 
 /**
- * Static admin page list — must match src/index.ts adminPages.
- * Defined here so `adaptSandboxEntry` can populate `admin.pages`,
- * which the emdash plugin-manager API reads to set `hasAdminPages`
- * and show the Settings gear link on the Plugins page.
+ * Static admin page list — must match src/index.ts adminPages. Populates
+ * `admin.pages`, which the emdash plugin-manager API reads to set
+ * `hasAdminPages` and show the Settings gear link on the Plugins page.
  */
-const ADMIN_PAGES: PluginDescriptor["adminPages"] = [
+const ADMIN_PAGES: PluginAdminPage[] = [
 	{ path: "/orders", label: "Orders", icon: "shopping-bag" },
 	{ path: "/customers", label: "Customers", icon: "users" },
 	{ path: "/coupons", label: "Coupons", icon: "tag" },
@@ -99,7 +156,7 @@ const ADMIN_PAGES: PluginDescriptor["adminPages"] = [
 	{ path: "/settings", label: "Settings", icon: "settings" },
 ];
 
-const ADMIN_WIDGETS: PluginDescriptor["adminWidgets"] = [
+const ADMIN_WIDGETS: NonNullable<PluginAdminConfig["widgets"]> = [
 	{ id: "revenue-snapshot", title: "Revenue", size: "half" },
 	{ id: "low-stock-alerts", title: "Low Stock", size: "half" },
 	{ id: "recent-orders", title: "Recent Orders", size: "full" },
@@ -110,13 +167,7 @@ const ADMIN_WIDGETS: PluginDescriptor["adminWidgets"] = [
 // Custom content-field widgets this plugin provides. The content editor
 // resolves `widget: "dashcommerce:<name>"` on a field to the React
 // component exported from `admin/entry.tsx` under `fields[name]`.
-//
-// `adaptSandboxEntry` currently only forwards `adminPages`/`adminWidgets`
-// from the descriptor, so we merge these onto `resolved.admin` ourselves
-// below. Without that merge the admin manifest wouldn't know the widgets
-// exist and the editor would fall back to the default JSON textarea —
-// exactly the "prices field is still a text input" symptom.
-const FIELD_WIDGETS = [
+const FIELD_WIDGETS: FieldWidgetConfig[] = [
 	{
 		name: "vendor-select",
 		label: "Vendor picker",
@@ -129,7 +180,7 @@ const FIELD_WIDGETS = [
 	},
 ];
 
-const PORTABLE_TEXT_BLOCKS = [
+const PORTABLE_TEXT_BLOCKS: PortableTextBlockConfig[] = [
 	{
 		type: "product-embed",
 		label: "Embed Product",
@@ -151,40 +202,30 @@ const PORTABLE_TEXT_BLOCKS = [
 ];
 
 /**
- * Native-format entry called by emdash at build time with the options
- * serialized from the descriptor. Returns a ResolvedPlugin ready for the
+ * Native-format entry called by emdash with the options serialized from the
+ * descriptor (see src/index.ts). Returns a `ResolvedPlugin` ready for the
  * HookPipeline.
  */
 export function createPlugin(options: CreatePluginOptions = {}) {
-	// adaptSandboxEntry reads id/version/capabilities/allowedHosts/
-	// storage/adminPages/adminWidgets from the descriptor to build the
-	// ResolvedPlugin. adminPages must be present so the emdash plugin-manager
-	// API returns hasAdminPages:true and the Settings link appears.
-	const descriptor: PluginDescriptor = {
+	return definePlugin({
 		id: options.id ?? "dashcommerce",
 		version: options.version ?? "0.0.0",
-		entrypoint: "@dashcommerce/core/sandbox",
 		capabilities: options.capabilities ?? DEFAULT_CAPABILITIES,
 		allowedHosts: options.allowedHosts ?? DEFAULT_ALLOWED_HOSTS,
-		storage: DASHCOMMERCE_STORAGE,
-		adminPages: ADMIN_PAGES,
-		adminWidgets: ADMIN_WIDGETS,
-	};
-	const resolved = adaptSandboxEntry(definition, descriptor);
-	// Merge fieldWidgets / portableTextBlocks onto the resolved admin
-	// config. adaptSandboxEntry drops these today; without the merge the
-	// admin manifest would never learn about `dashcommerce:price-map`
-	// and the content editor would render the raw JSON textarea.
-	// biome-ignore lint/suspicious/noExplicitAny: widening PluginAdminConfig to attach fields emdash's type doesn't yet declare
-	const admin: any = (resolved as unknown as { admin?: unknown }).admin ?? {};
-	admin.fieldWidgets = FIELD_WIDGETS;
-	admin.portableTextBlocks = PORTABLE_TEXT_BLOCKS;
-	(resolved as unknown as { admin: unknown }).admin = admin;
-	return resolved;
+		storage: toStorageConfig(DASHCOMMERCE_STORAGE),
+		hooks: HOOKS,
+		routes: toNativeRoutes(ROUTES),
+		admin: {
+			pages: ADMIN_PAGES,
+			widgets: ADMIN_WIDGETS,
+			fieldWidgets: FIELD_WIDGETS,
+			portableTextBlocks: PORTABLE_TEXT_BLOCKS,
+		},
+	});
 }
 
 /**
- * Default export kept for direct-import consumers + tests that read the
- * raw { hooks, routes } definition without going through adaptSandboxEntry.
+ * Default export kept for direct-import consumers + tests that read the raw
+ * `{ hooks, routes }` definition without going through `createPlugin`.
  */
-export default definition;
+export default { hooks: HOOKS, routes: ROUTES };

@@ -1,18 +1,26 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "dashcommerce-demo",
+	// Custom Worker entry: Astro's fetch handler + EmDash's scheduled() handler,
+	// which the Cron Trigger below drives (plugin cron, scheduled publishing,
+	// system cleanup). See src/worker.ts. The @astrojs/cloudflare adapter merges
+	// its `assets` binding into the generated `dist/server/wrangler.json` at
+	// build time; `bun run build:cf` emits that file and we deploy against it.
+	"main": "./src/worker.ts",
 	"compatibility_date": "2026-04-01",
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	// `main` and `assets` are intentionally omitted here. @astrojs/cloudflare
-	// v13+ emits a fully-resolved `dist/server/wrangler.json` at build time
-	// that merges these fields with the bindings + vars below. Always deploy
-	// against that generated file:
-	//
-	//   wrangler deploy --config dist/server/wrangler.json
-	//
-	// Use `bun run cf:deploy` which handles this automatically.
+	// Cron Trigger — drives DashCommerce's abandoned-cart recovery, subscription
+	// dunning, and stock-lock sweeps (plus emdash scheduled publishing). Without
+	// it these background jobs never run on Cloudflare (emdash 0.19+).
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	// Deploy against the adapter-generated `dist/server/wrangler.json`, which
+	// merges `assets` + the bindings/vars below. Use `bun run cf:deploy`.
 	"vars": {
 		"SITE_URL": "https://demo.dashcommerce.dev"
 	},
