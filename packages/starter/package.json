@@ -31,11 +31,11 @@
 		"@astrojs/react": "^5.0.0",
 		"@astrojs/sitemap": "^3.4.0",
 		"@dashcommerce/core": "workspace:*",
-		"@emdash-cms/cloudflare": "^0.6.0",
+		"@emdash-cms/cloudflare": "^0.28.1",
 		"@stripe/react-stripe-js": "^6.0.0",
 		"@stripe/stripe-js": "^9.0.0",
 		"astro": "^6.0.0",
-		"emdash": "^0.6.0",
+		"emdash": "^0.28.1",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0"
 	},
