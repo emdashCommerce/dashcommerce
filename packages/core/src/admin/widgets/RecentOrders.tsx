@@ -19,7 +19,7 @@ export function RecentOrders() {
 
 	useEffect(() => {
 		api.get<{ items: Row[] }>("admin/widgets/recent-orders").then((r) =>
-			setRows(r.items),
+			setRows(r.items ?? []),
 		);
 	}, [api]);
 

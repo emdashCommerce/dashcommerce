@@ -8,7 +8,7 @@ export function PendingReviews() {
 	useEffect(() => {
 		api
 			.get<{ count: number }>("admin/widgets/pending-reviews")
-			.then((r) => setCount(r.count));
+			.then((r) => setCount(r.count ?? 0));
 	}, [api]);
 
 	if (count === null) return <Loading />;

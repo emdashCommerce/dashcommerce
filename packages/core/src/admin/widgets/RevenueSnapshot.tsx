@@ -22,9 +22,9 @@ export function RevenueSnapshot() {
 				<div>
 					<div style={{ fontSize: "0.8em", color: "#666" }}>Last 7 days</div>
 					<div style={{ fontSize: "1.4em", fontWeight: 700 }}>
-						{Object.entries(data.sevenDay).length === 0
+						{Object.entries(data.sevenDay ?? {}).length === 0
 							? "—"
-							: Object.entries(data.sevenDay)
+							: Object.entries(data.sevenDay ?? {})
 									.map(([c, v]) => `${c} ${(v as number) / 100}`)
 									.join(" · ")}
 					</div>
@@ -32,9 +32,9 @@ export function RevenueSnapshot() {
 				<div>
 					<div style={{ fontSize: "0.8em", color: "#666" }}>Last 30 days</div>
 					<div style={{ fontSize: "1.4em", fontWeight: 700 }}>
-						{Object.entries(data.thirtyDay).length === 0
+						{Object.entries(data.thirtyDay ?? {}).length === 0
 							? "—"
-							: Object.entries(data.thirtyDay)
+							: Object.entries(data.thirtyDay ?? {})
 									.map(([c, v]) => `${c} ${(v as number) / 100}`)
 									.join(" · ")}
 					</div>
