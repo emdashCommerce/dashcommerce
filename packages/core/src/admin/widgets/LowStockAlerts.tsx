@@ -15,7 +15,7 @@ export function LowStockAlerts() {
 
 	useEffect(() => {
 		api.get<{ items: Row[] }>("admin/widgets/low-stock-alerts").then((r) =>
-			setRows(r.items),
+			setRows(r.items ?? []),
 		);
 	}, [api]);
 

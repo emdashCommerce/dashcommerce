@@ -18,7 +18,7 @@ export function FailedSubscriptions() {
 
 	if (!data) return <Loading />;
 
-	if (data.count === 0) {
+	if ((data.count ?? 0) === 0) {
 		return <p style={{ margin: 0 }}>All subscriptions current ✓</p>;
 	}
 
@@ -28,7 +28,7 @@ export function FailedSubscriptions() {
 				{data.count} past-due
 			</div>
 			<ul style={{ margin: 0, paddingLeft: 18 }}>
-				{data.items.map((s) => (
+				{(data.items ?? []).map((s) => (
 					<li key={s.id}>
 						<MoneyDisplay value={s.unitAmount} /> / {s.intervalCount}{" "}
 						{s.interval}
