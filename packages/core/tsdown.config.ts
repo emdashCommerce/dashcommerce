@@ -6,6 +6,7 @@ export default defineConfig({
 		"src/sandbox-entry.ts",
 		"src/admin/entry.tsx",
 		"src/cli/merge-seed.ts",
+		"src/payment-provider.ts",
 		// NOTE: src/astro/index.ts is NOT bundled — it imports `.astro`
 		// components that rolldown can't compile. We ship it as source and
 		// let the host's Astro build resolve the imports (see package.json
