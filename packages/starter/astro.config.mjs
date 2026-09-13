@@ -66,4 +66,19 @@ export default defineConfig({
 		}),
 	],
 	devToolbar: { enabled: false },
+	vite: {
+		build: {
+			rollupOptions: {
+				// Externalize Cloudflare Workers runtime modules when building for Node.
+				// EmDash 0.37.0+ imports these conditionally, but Vite tries to bundle them
+				// during the build step, causing resolution errors. These are only available
+				// in the Cloudflare Workers runtime and should be treated as external.
+				external: target === "node" ? [
+					"cloudflare:sockets",
+					"cloudflare:email",
+					/^cloudflare:/,
+				] : [],
+			},
+		},
+	},
 });
