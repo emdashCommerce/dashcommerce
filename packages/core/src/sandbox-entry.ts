@@ -136,6 +136,11 @@ export interface CreatePluginOptions {
 	version?: string;
 	capabilities?: PluginCapability[];
 	allowedHosts?: string[];
+	/**
+	 * EmDash version for runtime compatibility check.
+	 * Passed from the descriptor after build-time detection.
+	 */
+	emdashVersion?: string;
 }
 
 /**
@@ -209,7 +214,8 @@ const PORTABLE_TEXT_BLOCKS: PortableTextBlockConfig[] = [
  */
 export function createPlugin(options: CreatePluginOptions = {}) {
 	// Validate EmDash version compatibility before initializing the plugin
-	validateEmDashCompatibility();
+	// The version is detected at build time in the descriptor and passed here
+	validateEmDashCompatibility(options.emdashVersion);
 	
 	return definePlugin({
 		id: options.id ?? "dashcommerce",

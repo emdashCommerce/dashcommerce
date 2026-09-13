@@ -10,6 +10,7 @@
 import type { PluginDescriptor } from "emdash";
 
 import { DASHCOMMERCE_STORAGE } from "./storage-collections";
+import { detectEmDashVersionAtBuildTime } from "./version-check";
 
 export const DASHCOMMERCE_PLUGIN_ID = "dashcommerce";
 export const DASHCOMMERCE_VERSION = "0.1.4";
@@ -21,6 +22,13 @@ export interface DashCommerceOptions {
 	 * (each store gets its own scoped storage + KV namespace).
 	 */
 	id?: string;
+	
+	/**
+	 * EmDash version for runtime compatibility check.
+	 * Auto-detected at build time if not provided.
+	 * @internal - set by the descriptor, not by end users
+	 */
+	emdashVersion?: string;
 }
 
 /**

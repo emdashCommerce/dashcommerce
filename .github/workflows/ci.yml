@@ -26,6 +26,10 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      
+      # Version constant drift check
+      - name: Check DASHCOMMERCE_VERSION constant
+        run: bun test packages/core/test/version-constant.test.ts
 
       - name: Typecheck
         run: bun run typecheck

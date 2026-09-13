@@ -26,6 +26,7 @@
   "files": [
     "dist",
     "src/astro",
+    "patches",
     "README.md",
     "CHANGELOG.md"
   ],

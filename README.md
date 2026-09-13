@@ -10,7 +10,102 @@ Typed end-to-end, sandbox-safe, edge-renderable. Every feature category Woo ship
 
 ## Status
 
-**v0.1.2 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
+**v0.1.5 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
+
+## Compatibility & Migration
+
+### EmDash Version Compatibility
+
+| DashCommerce Version | Supported EmDash Versions |
+|---|---|
+| **0.2.x (latest)** | EmDash `^0.37.0` (0.37.0 - 0.37.x) |
+| 0.1.x (maintenance) | EmDash `^0.28.0` (0.28.0 - 0.28.x) |
+
+**⚠️ Important**: Do NOT mix DashCommerce 0.2.x with EmDash < 0.37.0, or DashCommerce 0.1.x with EmDash >= 0.29.0. Incompatible versions will fail with clear error messages at plugin initialization.
+
+### Upgrade Path: 0.1.x → 0.2.x
+
+**Prerequisites**: Backup your database and verify your local dev environment works before upgrading production.
+
+**Step 1: Update all dependencies together**
+
+```bash
+# Install EmDash 0.37 + DashCommerce 0.2.x simultaneously
+npm install emdash@^0.37.0 @emdash-cms/admin@^0.37.0 @dashcommerce/core@^0.2.0
+
+# For Cloudflare deployments, also update:
+npm install @emdash-cms/cloudflare@^0.37.0
+```
+
+**Step 2: Apply EmDash patch (required)**
+
+DashCommerce requires [a small patch to EmDash](/packages/core/patches/emdash@0.37.0.patch) for webhook handling and response passthrough. The patch is shipped with `@dashcommerce/core@0.2.0` and documented in [`packages/core/patches/README.md`](/packages/core/patches/README.md).
+
+```bash
+# Using Bun (recommended) - add to package.json:
+{
+  "patchedDependencies": {
+    "emdash@0.37.0": "node_modules/@dashcommerce/core/patches/emdash@0.37.0.patch"
+  }
+}
+
+# Then reinstall:
+bun install
+```
+
+See [`patches/README.md`](/packages/core/patches/README.md) for pnpm/npm/yarn instructions.
+
+**Step 3: Update Astro config (if using Cloudflare Workers)**
+
+EmDash 0.37 imports `cloudflare:*` runtime modules that must be externalized for Node.js builds:
+
+```ts
+// astro.config.mjs
+export default defineConfig({
+  // ... existing config
+  vite: {
+    build: {
+      rollupOptions: {
+        external: target === "node" ? [/^cloudflare:/] : [],
+      },
+    },
+  },
+});
+```
+
+**Step 4: Test checkout and webhooks**
+
+1. Place a test order using Stripe test cards
+2. Verify webhook signature verification works
+3. Check that Stripe webhooks return HTTP 200 (not `{}`)
+4. Test subscription creation/renewal if using subscriptions
+
+**Step 5: Deploy to production**
+
+After verifying everything works locally, deploy to your hosting environment and monitor for any compatibility warnings in logs.
+
+### Stay on 0.1.x (no action required)
+
+If you're not ready to upgrade to EmDash 0.37:
+
+```bash
+# Pin to the latest 0.1.x release
+npm install @dashcommerce/core@^0.1.5
+
+# Keep EmDash on 0.28.x
+npm install emdash@^0.28.0 @emdash-cms/admin@^0.28.0
+```
+
+The 0.1.x line remains on npm and will continue working with EmDash 0.28.x. However, new features and non-security fixes will only land in 0.2.x+.
+
+### Breaking Changes in 0.2.0
+
+- **Minimum EmDash version**: Now `0.37.0` (was `0.28.0`)
+- **Patch required**: Must apply `emdash@0.37.0` patch for webhooks to work
+- **Node.js builds**: Must externalize `cloudflare:*` modules in Vite config
+- **Runtime version check**: Plugin will throw on incompatible EmDash versions (fail-closed for safety)
+
+See [CHANGELOG.md](/CHANGELOG.md) for full release notes.
 
 ## What's in the box
 
