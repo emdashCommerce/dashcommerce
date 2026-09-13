@@ -36,3 +36,38 @@ jobs:
       - name: Test
         run: bun run test
         continue-on-error: true
+  
+  compatibility-matrix:
+    name: EmDash Compatibility (${{ matrix.emdash-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emdash-version:
+          - "0.37.0"  # Current minimum supported version
+          # Add new versions as they're tested and verified
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies with specific EmDash version
+        run: |
+          bun install --frozen-lockfile
+          bun add -d emdash@${{ matrix.emdash-version }} @emdash-cms/admin@${{ matrix.emdash-version }}
+          bun add --cwd packages/starter emdash@${{ matrix.emdash-version }} @emdash-cms/cloudflare@${{ matrix.emdash-version }}
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Test
+        run: bun run test

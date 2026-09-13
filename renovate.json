@@ -1,0 +1,51 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "EmDash dependencies: auto-merge patch/minor when CI passes",
+      "matchPackagePatterns": [
+        "^emdash$",
+        "^@emdash-cms/"
+      ],
+      "groupName": "EmDash",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash",
+      "matchUpdateTypes": [
+        "patch",
+        "minor"
+      ],
+      "stabilityDays": 3,
+      "prCreation": "immediate"
+    },
+    {
+      "description": "EmDash major updates: create PR but require manual review",
+      "matchPackagePatterns": [
+        "^emdash$",
+        "^@emdash-cms/"
+      ],
+      "groupName": "EmDash (major)",
+      "automerge": false,
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "prCreation": "immediate",
+      "prPriority": 10
+    }
+  ],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "schedule": [
+    "after 9am and before 5pm every weekday",
+    "every weekend"
+  ],
+  "timezone": "UTC",
+  "assignees": [],
+  "reviewers": [],
+  "labels": [
+    "dependencies"
+  ]
+}
