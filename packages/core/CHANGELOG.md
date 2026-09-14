@@ -1,5 +1,51 @@
 # Changelog — @dashcommerce/core
 
+## 0.2.0
+
+### Minor Changes
+
+- [#23](https://github.com/emdashCommerce/dashcommerce/pull/23) [`ef8360b`](https://github.com/emdashCommerce/dashcommerce/commit/ef8360be32b6f99fd07cc3b0a47cb913c96e724c) Thanks [@cavewebs](https://github.com/cavewebs)! - Upgrade to EmDash 0.37.0 with comprehensive auto-update safety system.
+
+  **Breaking Change**: Minimum EmDash version is now `0.37.0` (peer dependency updated from `>=0.28.0 <0.29.0` to `>=0.37.0 <0.38.0`). This is a breaking change for consumers on EmDash 0.28-0.36.
+
+  **EmDash 0.37 Upgrade**:
+
+  - All EmDash dependencies upgraded from 0.28.x to 0.37.0 across the monorepo
+  - Ported EmDash patch for request.clone().json() and Response passthrough to 0.37.0 structure
+  - Fixed Node.js build by externalizing Cloudflare Workers runtime modules (`cloudflare:sockets`, etc.) that EmDash 0.37 imports conditionally
+
+  **Auto-Update Safety System** (prevents silent breakage on future EmDash updates):
+
+  1. **Runtime Compatibility Check**: New `version-check.ts` module validates EmDash version at plugin initialization, providing clear error messages when version is incompatible
+  2. **Renovate Configuration**: Auto-merges EmDash patch/minor updates when CI passes; requires manual review for major versions
+  3. **CI Compatibility Matrix**: Tests DashCommerce against all supported EmDash versions in parallel
+
+  **Supported EmDash Range**: This release supports `0.37.0 <= version < 0.38.0`. Future EmDash updates will be gated by CI and runtime compatibility checks.
+
+  All typechecks, builds, and tests pass on EmDash 0.37.0.
+
+### Patch Changes
+
+- [#16](https://github.com/emdashCommerce/dashcommerce/pull/16) [`b865dd7`](https://github.com/emdashCommerce/dashcommerce/commit/b865dd78bfb2b4d6805c7aa9526d85819da7a5ee) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 0.28.
+
+  Migrate from emdash 0.6 to 0.28.1. The plugin now builds its native
+  `ResolvedPlugin` via `definePlugin` with single-argument `RouteContext`
+  handlers (emdash's native route shape) instead of `adaptSandboxEntry`, whose
+  0.28 form flattens the request and would break the Stripe webhook's raw-body
+  signature check. Capability names are updated to the current vocabulary
+  (`network:request`, `content:read`, `content:write`, `media:read`,
+  `users:read`), and the emdash peer range is now `>=0.28.0 <0.29.0`.
+
+  The bundled emdash patch is re-authored for 0.28.1: plugin route handlers may
+  still return a raw `Response` (cookies, redirects, webhook 200s), and the raw
+  request body is preserved so `ctx.request.text()` works for Stripe webhook
+  signature verification.
+
+  The starter adds a Cloudflare Worker entry (`src/worker.ts`) plus a Cron
+  Trigger so plugin cron — abandoned-cart recovery, subscription dunning, and
+  stock-lock sweeps — runs on Workers (emdash 0.19+ drives cron from a
+  `scheduled()` handler, not request side effects).
+
 ## 0.1.4
 
 ### Patch Changes
