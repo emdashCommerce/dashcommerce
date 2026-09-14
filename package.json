@@ -16,7 +16,7 @@
     "lint": "biome lint .",
     "postinstall": "bun run --cwd packages/core build",
     "changeset": "changeset",
-    "release": "bun run --filter '*' build && changeset publish --tag next"
+    "release": "bun run --filter '*' build && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
