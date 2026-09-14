@@ -2,7 +2,7 @@
   "name": "dashcommerce-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "DashCommerce — the WooCommerce-equivalent commerce plugin for the EmDash ecosystem",
+  "description": "DashCommerce \u2014 the WooCommerce-equivalent commerce plugin for the EmDash ecosystem",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -16,7 +16,7 @@
     "lint": "biome lint .",
     "postinstall": "bun run --cwd packages/core build",
     "changeset": "changeset",
-    "release": "bun run --filter '*' build && changeset publish"
+    "release": "bun run --filter '*' build && changeset publish --tag next"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
