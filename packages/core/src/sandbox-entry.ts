@@ -48,6 +48,7 @@ import { configCheckRoutes } from "./routes/config-check";
 import { customerPortalRoutes } from "./routes/customer-portal";
 import { downloadsRoutes } from "./routes/downloads";
 import { ordersPublicRoutes } from "./routes/orders-public";
+import { validateEmDashCompatibility } from "./version-check";
 import { reviewsPublicRoutes } from "./routes/reviews-public";
 import { subscriptionsPublicRoutes } from "./routes/subscriptions-public";
 import { webhookRoutes } from "./routes/webhook";
@@ -135,6 +136,11 @@ export interface CreatePluginOptions {
 	version?: string;
 	capabilities?: PluginCapability[];
 	allowedHosts?: string[];
+	/**
+	 * EmDash version for runtime compatibility check.
+	 * Passed from the descriptor after build-time detection.
+	 */
+	emdashVersion?: string;
 }
 
 /**
@@ -207,6 +213,10 @@ const PORTABLE_TEXT_BLOCKS: PortableTextBlockConfig[] = [
  * HookPipeline.
  */
 export function createPlugin(options: CreatePluginOptions = {}) {
+	// Validate EmDash version compatibility before initializing the plugin
+	// The version is detected at build time in the descriptor and passed here
+	validateEmDashCompatibility(options.emdashVersion);
+	
 	return definePlugin({
 		id: options.id ?? "dashcommerce",
 		version: options.version ?? "0.0.0",

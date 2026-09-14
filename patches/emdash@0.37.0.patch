@@ -1,0 +1,27 @@
+diff --git a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+index e372dc4ca8aeb158e5273a1eee40d3f80dbbf97e..5f0287326f9a1bbd00cb2c94c0ff9d816b221c38 100644
+--- a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
++++ b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+@@ -44,6 +44,9 @@ const handleRequest = async ({ params, request, locals }) => {
+ 		const code = result.error?.code ?? "PLUGIN_ERROR";
+ 		return apiError(code, code === "INTERNAL_ERROR" ? "Plugin route error" : result.error?.message ?? "Plugin route error", result.status ?? (code === "NOT_FOUND" ? 404 : 400));
+ 	}
++	// DashCommerce patch: let plugin route handlers return a raw Response
++	// (cookies, redirects, webhook 200s). apiSuccess would serialize it to {}.
++	if (result.data instanceof Response) return result.data;
+ 	const response = apiSuccess(result.data);
+ 	if (routeMeta.cacheControl && (method === "GET" || method === "HEAD")) response.headers.set("Cache-Control", routeMeta.cacheControl);
+ 	return response;
+diff --git a/dist/menus-6qSwTNxG.mjs b/dist/menus-6qSwTNxG.mjs
+index a9ed9e58cdc0f8c4514b17da01628d94c9382463..ffbed57db79b7c014ad77e492e97505e80d572a2 100644
+--- a/dist/menus-6qSwTNxG.mjs
++++ b/dist/menus-6qSwTNxG.mjs
+@@ -2696,7 +2696,7 @@ const BODY_METHODS = new Set([
+ */
+ async function parseRouteInput(request) {
+ 	if (BODY_METHODS.has(request.method.toUpperCase())) try {
+-		return await request.json();
++		return await request.clone().json();
+ 	} catch {
+ 		return;
+ 	}
