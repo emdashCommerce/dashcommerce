@@ -45,7 +45,7 @@ jobs:
       - name: Create Release PR or publish
         uses: changesets/action@v1
         with:
-          publish: bun run release
+          publish: bun run --filter '*' build && bunx changeset publish --tag next
           createGithubReleases: true
           title: "chore: version packages"
           commit: "chore: version packages"
