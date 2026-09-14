@@ -13,7 +13,7 @@ import { DASHCOMMERCE_STORAGE } from "./storage-collections";
 import { detectEmDashVersionAtBuildTime } from "./version-check";
 
 export const DASHCOMMERCE_PLUGIN_ID = "dashcommerce";
-export const DASHCOMMERCE_VERSION = "0.1.4";
+export const DASHCOMMERCE_VERSION = "0.2.0";
 
 export interface DashCommerceOptions {
 	/**
