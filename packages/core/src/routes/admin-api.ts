@@ -1082,7 +1082,7 @@ async function postSubscriptionAction(
 
 async function listReviews(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
-	const status = url.searchParams.get("status") ?? "pending";
+	const status = url.searchParams.get("status");
 	const productId = url.searchParams.get("productId");
 	const ratingRaw = url.searchParams.get("rating");
 	const verifiedOnly = url.searchParams.get("verifiedOnly") === "true";
@@ -1094,9 +1094,8 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 		Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "50", 10) || 50),
 	);
 
-	const where: Record<string, string | { gte?: string; lte?: string }> = {
-		status,
-	};
+	const where: Record<string, string | { gte?: string; lte?: string }> = {};
+	if (status) where.status = status;
 	if (productId) where.productId = productId;
 	if (from || to) {
 		const range: { gte?: string; lte?: string } = {};
@@ -1106,13 +1105,19 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 	}
 
 	try {
+		const hasWhere = Object.keys(where).length > 0;
 		const result = await storeOf<Review>(ctx, "reviews").query({
-			where,
+			...(hasWhere ? { where } : {}),
 			orderBy: { createdAt: "desc" },
 			limit,
 			...(cursor ? { cursor } : {}),
 		});
 		let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
+		// Apply post-fetch filters: status default, rating, verifiedOnly
+		if (!status) {
+			// Default to pending when no status filter was provided
+			items = items.filter((r) => r.status === "pending");
+		}
 		const rating = ratingRaw ? Number.parseInt(ratingRaw, 10) : null;
 		if (rating && rating >= 1 && rating <= 5) {
 			items = items.filter((r) => r.rating === rating);
