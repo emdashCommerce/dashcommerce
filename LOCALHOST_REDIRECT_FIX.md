@@ -11,7 +11,9 @@ On the live demo at https://demo.dashcommerce.dev (Railway + Neon), URLs in Stri
 - Vendor invite refreshUrl: `http://localhost:8080/vendor/refresh`
 - Vendor invite returnUrl: `http://localhost:8080/vendor/done`
 
-## Root Cause
+## Root Causes (Two Issues)
+
+### 1. Request URL Behind Reverse Proxy
 
 The code was constructing redirect URLs using:
 ```typescript
@@ -27,9 +29,24 @@ Public: https://demo.dashcommerce.dev
 Internal: http://localhost:8080 ← What the app sees
 ```
 
+### 2. Stale Database Option
+
+The live Neon database had a stale option:
+```
+emdash:site_url = "http://localhost:8080"  ← Stale from dev/setup
+```
+
+This may have been set during initial development or migration. While the environment variable was correct (`SITE_URL=https://demo.dashcommerce.dev`), the database option took precedence in some code paths or could have been read by EmDash core for site URL resolution.
+
 ## The Fix
 
-Changed all server-side redirect URL construction to use `ctx.site.url` instead:
+### Code Changes
+
+Created a hardened `getPublicSiteUrl()` helper that:
+1. Uses `ctx.site.url` (from SITE_URL env var) instead of request origin
+2. Validates the URL is configured
+3. Warns if localhost is detected in production
+4. Strips trailing slashes for clean URL construction
 
 ```typescript
 // Before
@@ -37,7 +54,8 @@ const origin = new URL(routeCtx.request.url).origin;
 const successUrl = `${origin}/thank-you/${orderDraftId}...`;
 
 // After
-const siteUrl = ctx.site.url.replace(/\/$/, "");
+import { getPublicSiteUrl } from "../util/site-url";
+const siteUrl = getPublicSiteUrl(ctx);
 const successUrl = `${siteUrl}/thank-you/${orderDraftId}...`;
 ```
 
@@ -49,17 +67,43 @@ site: process.env.SITE_URL ?? "http://localhost:4321",
 
 ### Files Changed
 
-1. **`packages/core/src/routes/checkout.ts`**
-   - Line ~517: Stripe Checkout Session success/cancel URLs
+1. **`packages/core/src/util/site-url.ts`** (new)
+   - `getPublicSiteUrl(ctx)` - Validated public URL helper
+   - `isProductionSiteUrl(ctx)` - Production detection utility
+
+2. **`packages/core/src/routes/checkout.ts`**
+   - Line ~519: Stripe Checkout Session success/cancel URLs
    - Used for hosted checkout mode after cart submission
 
-2. **`packages/core/src/routes/subscriptions-public.ts`**
+3. **`packages/core/src/routes/subscriptions-public.ts`**
    - Line ~245: Billing portal return URL
    - Used when customers manage their subscriptions
 
-3. **`packages/core/src/routes/customer-portal.ts`**
+4. **`packages/core/src/routes/customer-portal.ts`**
    - Line ~114: Customer portal return URL
    - Used for billing portal access via email magic link
+
+### Database Option Cleanup
+
+**IMPORTANT:** After deploying this fix, operators should update the stale database option to match the production domain:
+
+```sql
+-- For Railway/Neon Postgres
+UPDATE options 
+SET value = '"https://demo.dashcommerce.dev"'
+WHERE key = 'emdash:site_url';
+
+-- Verify
+SELECT key, value FROM options WHERE key LIKE '%site%';
+```
+
+Expected result after cleanup:
+```
+emdash:site_url = "https://demo.dashcommerce.dev"
+site:url = "https://demo.dashcommerce.dev"
+```
+
+**Note:** The code fix ensures correct behavior even if this database option remains stale, but cleaning it up prevents confusion during debugging.
 
 ## Required Configuration
 
@@ -81,17 +125,30 @@ Set `SITE_URL` to your public domain in:
 
 ## Operational Steps for Live Demo
 
-Since Railway already has `SITE_URL` configured, **no database changes or manual fixes are needed**. Once this PR is merged and deployed:
+### Immediate (Required)
 
-1. ✅ New checkouts will redirect correctly
+Railway already has `SITE_URL` configured. Once this PR is merged and deployed:
+
+1. ✅ New checkouts will redirect correctly (code fix handles this)
 2. ✅ New vendor invites will use correct URLs
 3. ✅ Billing portal will return to correct URL
 
-**There is no need to:**
-- Update existing database records
-- Run SQL migrations
-- Clear caches
-- Restart services manually (Railway auto-deploys)
+### Follow-Up (Recommended)
+
+Clean up the stale database option to prevent future confusion:
+
+```sql
+-- Connect to Neon Postgres database
+-- Update the stale emdash:site_url option
+UPDATE options 
+SET value = '"https://demo.dashcommerce.dev"'
+WHERE key = 'emdash:site_url';
+
+-- Verify both site URL options are now correct
+SELECT key, value FROM options WHERE key LIKE '%site%';
+```
+
+**Parent is handling this database cleanup.** No manual restart or cache clearing needed.
 
 ## Verification Steps
 
@@ -145,10 +202,45 @@ interface PluginContext {
 ```
 
 This value:
-- ✅ Comes from configuration, not runtime detection
+- ✅ Comes from configuration (SITE_URL env var), not runtime detection
 - ✅ Is explicitly set via environment variable
 - ✅ Works correctly behind proxies
 - ✅ Is consistent across all routes and hooks
+- ✅ Takes precedence over database options in our helper
+
+### Database Options vs Environment Variables
+
+EmDash may store site configuration in multiple places:
+1. **Database KV options** (`emdash:site_url`, `site:url`) - Can become stale
+2. **Environment variables** (`SITE_URL`) - Always fresh from deploy config
+3. **Astro config** (`site` field) - Reads from SITE_URL
+
+The `getPublicSiteUrl()` helper ensures we always use the environment-driven value (`ctx.site.url`) rather than any potentially stale database options.
+
+### Helper Behavior
+
+```typescript
+export function getPublicSiteUrl(ctx: PluginContext): string {
+  const siteUrl = ctx.site?.url;
+  if (!siteUrl) {
+    throw new Error("ctx.site.url is not configured. Set SITE_URL.");
+  }
+  const normalized = siteUrl.replace(/\/$/, "");
+  
+  // Warn but allow localhost (useful for dev/test)
+  if (normalized.includes("localhost")) {
+    ctx.log.warn("Site URL is localhost - set SITE_URL for production");
+  }
+  
+  return normalized;
+}
+```
+
+This approach:
+- Fails fast if SITE_URL is missing
+- Logs warnings for localhost in production (aids debugging)
+- Allows localhost for development environments
+- Centralizes URL validation logic
 
 ### Why Request URL Doesn't Work
 
@@ -189,8 +281,50 @@ Common platforms where this occurs:
 
 The PR is marked as draft as requested. Review and merge when ready.
 
+## Database Option Reference
+
+### Checking Current Values
+
+```sql
+-- View all site-related options
+SELECT key, value FROM options WHERE key LIKE '%site%';
+```
+
+Expected output on a correctly configured system:
+```
+key              | value
+-----------------+----------------------------------
+emdash:site_url  | "https://demo.dashcommerce.dev"
+site:url         | "https://demo.dashcommerce.dev"
+```
+
+### Fixing Stale localhost Values
+
+If `emdash:site_url` shows localhost:
+
+```sql
+-- Update to production domain
+UPDATE options 
+SET value = '"https://demo.dashcommerce.dev"'
+WHERE key = 'emdash:site_url';
+
+-- Or delete and let it reinitialize from env
+DELETE FROM options WHERE key = 'emdash:site_url';
+```
+
+### When to Update Database Options
+
+Update the database option after:
+- Initial deployment setup
+- Domain changes
+- Environment migrations (dev → staging → prod)
+- Railway project redeployment with new domain
+
+The code fix in this PR ensures correct behavior even if the database option is stale, but keeping it synchronized prevents debugging confusion.
+
 ---
 
 **Fix Date:** September 15, 2026  
 **Affected Version:** EmDash 0.37 + @dashcommerce/core 0.2.0  
-**Target Deploy:** Railway (demo.dashcommerce.dev)
+**Target Deploy:** Railway (demo.dashcommerce.dev)  
+**Database:** Neon Postgres
