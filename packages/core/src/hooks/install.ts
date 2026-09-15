@@ -42,7 +42,7 @@ async function rotateSecretIfMissing(ctx: PluginContext, key: string): Promise<v
 }
 
 async function ensureDefaultShippingZone(ctx: PluginContext): Promise<void> {
-	const store = (
+	const zonesStore = (
 		ctx.storage as unknown as {
 			shipping_zones: {
 				query(opts: { limit: number }): Promise<{ items: unknown[] }>;
@@ -50,13 +50,43 @@ async function ensureDefaultShippingZone(ctx: PluginContext): Promise<void> {
 			};
 		}
 	).shipping_zones;
-	const existing = await store.query({ limit: 1 });
-	if (existing.items.length > 0) return;
+	const methodsStore = (
+		ctx.storage as unknown as {
+			shipping_methods: {
+				query(opts: { limit: number }): Promise<{ items: unknown[] }>;
+				put(id: string, data: unknown): Promise<void>;
+			};
+		}
+	).shipping_methods;
+
+	const existingZones = await zonesStore.query({ limit: 1 });
+	if (existingZones.items.length > 0) return;
+
 	const now = new Date().toISOString();
-	await store.put("default", {
-		id: "default",
-		name: "Default zone",
-		locations: [],
+
+	// Create a US-wide shipping zone that covers all 50 states + DC.
+	// This ensures demo/starter stores can ship to common US addresses
+	// like 10001 (New York) and 90210 (California) out of the box.
+	await zonesStore.put("us-domestic", {
+		id: "us-domestic",
+		name: "United States (Domestic)",
+		locations: [{ country: "US" }],
+		order: 0,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	// Create a default flat-rate shipping method for the US zone.
+	await methodsStore.put("us-flat-rate", {
+		id: "us-flat-rate",
+		zoneId: "us-domestic",
+		title: "Standard Shipping",
+		type: "flat_rate",
+		enabled: true,
+		config: {
+			type: "flat_rate",
+			amount: { currency: "USD", amount: 500 },
+		},
 		order: 0,
 		createdAt: now,
 		updatedAt: now,
