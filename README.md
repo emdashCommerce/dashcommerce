@@ -1,27 +1,60 @@
 # DashCommerce
 
-The WooCommerce-equivalent commerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash) — Cloudflare's Astro-native WordPress successor.
+**WooCommerce-class commerce for [EmDash CMS](https://github.com/emdash-cms/emdash)** — the Astro-native, Cloudflare-powered WordPress successor.
 
-Typed end-to-end, sandbox-safe, edge-renderable. Every feature category Woo ships (products, cart, Stripe checkout, orders, shipping, tax, coupons, subscriptions, downloadables, reviews, multi-vendor) lands in a single plugin.
+Full-featured ecommerce in one plugin: products, cart, checkout, orders, subscriptions, multi-vendor marketplace, and more. Runs on Cloudflare Workers or Node.js (Railway, Render, etc.). Typed end-to-end. Sandbox-safe. MIT licensed.
 
-- 📘 Documentation: <https://dashcommerce.dev/docs>
-- 💬 Issues: <https://github.com/emdashCommerce/dashcommerce/issues>
-- 📦 npm: [`@dashcommerce/core@0.1.2`](https://www.npmjs.com/package/@dashcommerce/core)
+## Get Started in 60 Seconds
 
-## Status
+```sh
+npm create @dashcommerce@latest
+```
 
-**v0.1.5 on npm.** The v1.0 feature roadmap is code-complete (cart through Connect, hosted checkout, transactional email, starter theme). SemVer: `0.x` may include minor breaking changes until **1.0.0** — see root `CHANGELOG.md`.
+Scaffolds a complete storefront with EmDash + DashCommerce, demo products, and Stripe test mode ready to go.
 
-## Compatibility & Migration
+🎯 **Live Demo**: [demo.dashcommerce.dev](https://demo.dashcommerce.dev)  
+📘 **Docs**: [dashcommerce.dev/docs](https://dashcommerce.dev/docs)  
+💬 **Issues**: [github.com/emdashCommerce/dashcommerce/issues](https://github.com/emdashCommerce/dashcommerce/issues)
 
-### EmDash Version Compatibility
+## Current Release
 
-| DashCommerce Version | Supported EmDash Versions |
-|---|---|
-| **0.2.x (latest)** | EmDash `^0.37.0` (0.37.0 - 0.37.x) |
-| 0.1.x (maintenance) | EmDash `^0.28.0` (0.28.0 - 0.28.x) |
+**v0.2.0** on npm — compatible with **EmDash 0.37+**
 
-**⚠️ Important**: Do NOT mix DashCommerce 0.2.x with EmDash < 0.37.0, or DashCommerce 0.1.x with EmDash >= 0.29.0. Incompatible versions will fail with clear error messages at plugin initialization.
+| Package | Version | EmDash Compatibility |
+|---|---|---|
+| [`@dashcommerce/core`](https://www.npmjs.com/package/@dashcommerce/core) | 0.2.0 | EmDash ^0.37.0 |
+| `@dashcommerce/create` | 0.2.0 | Scaffolds EmDash 0.37+ projects |
+
+The v1.0 feature roadmap is code-complete. SemVer: `0.x` may include minor breaking changes until **1.0.0** — see [CHANGELOG.md](./CHANGELOG.md).
+
+## Why DashCommerce
+
+- **Deploy Anywhere**: Cloudflare Workers (edge) or Node.js (Railway, Render, your VPS)
+- **Modern Auth**: Passkey support via EmDash's built-in auth system
+- **Stripe Native**: Hosted Checkout, Payment Element, Subscriptions, Connect for multi-vendor
+- **Type-Safe**: End-to-end TypeScript, from admin UI to storefront islands
+- **Sandbox-Safe**: No Node.js built-ins — runs in EmDash's hardened plugin sandbox
+- **Open Source**: MIT core; extensible plugin architecture
+
+## Feature Highlights
+
+Every feature category WooCommerce ships, in one plugin:
+
+**Core Commerce**: Products (simple, variable, subscription, digital), multi-currency, cart, hosted Stripe checkout, orders with refunds, customer portal
+
+**Growth Tools**: Coupons, shipping zones, tax automation (Stripe Tax optional), inventory management, reviews
+
+**Advanced**: Subscriptions with trials & dunning, multi-vendor marketplace (Stripe Connect), abandoned cart recovery, transactional email
+
+**Admin**: React-based dashboard with 12 pages, revenue reports, top products/customers, MRR tracking
+
+See [**What's in the box**](#whats-in-the-box) below for the complete feature breakdown.
+
+## Upgrading from 0.1.x?
+
+DashCommerce 0.2.x requires EmDash 0.37+. If you're on 0.1.x (EmDash 0.28.x), follow the migration guide below.
+
+**⚠️ Important**: Do NOT mix DashCommerce 0.2.x with EmDash < 0.37.0, or DashCommerce 0.1.x with EmDash >= 0.29.0. Incompatible versions fail with clear error messages at plugin initialization.
 
 ### Upgrade Path: 0.1.x → 0.2.x
 
@@ -174,6 +207,16 @@ The merge step is idempotent — it only replaces DashCommerce's own entries (th
 
 ### Starting fresh?
 
+Use the scaffold command from the top of this README:
+
+```sh
+npm create @dashcommerce@latest
+```
+
+This clones [`@dashcommerce/starter`](./packages/starter) with a fully-wired storefront, demo catalog, and Stripe test mode ready.
+
+Or wire it manually:
+
 ```ts
 // astro.config.mjs
 import { defineConfig } from "astro/config";
@@ -199,8 +242,6 @@ bunx dashcommerce-merge-seed
 bun emdash seed --on-conflict=update
 bun dev
 ```
-
-Or clone [`@dashcommerce/starter`](./packages/starter) for a fully-wired storefront with demo catalog.
 
 Full walkthrough: [Getting started](https://dashcommerce.dev/docs/getting-started) · [Stripe setup](https://dashcommerce.dev/docs/stripe).
 
