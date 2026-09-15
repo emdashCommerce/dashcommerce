@@ -166,26 +166,56 @@ async function queryOrders(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Order>(ctx, "orders").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Order), id: r.id }));
-	if (currency) items = items.filter((o) => o.currency === currency);
-	if (email) {
-		items = items.filter((o) => o.customerEmail.toLowerCase().includes(email));
+	try {
+		// Only include `where` if it has properties; older EmDash versions
+		// might not handle empty where clauses consistently.
+		const hasWhere = Object.keys(where).length > 0;
+		// CRITICAL: Do NOT use `orderBy` on Postgres — EmDash generates
+		// `->>` JSON path extraction on TEXT columns which triggers
+		// "operator does not exist: text ->> unknown". Fetch without
+		// orderBy and sort in JS. Works on D1/SQLite and Postgres.
+		const result = await storeOf<Order>(ctx, "orders").query({
+			...(hasWhere ? { where } : {}),
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Order), id: r.id }));
+		// Sort by createdAt desc in JS (replaces SQL ORDER BY)
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA; // desc
+		});
+		if (currency) items = items.filter((o) => o.currency === currency);
+		if (email) {
+			items = items.filter((o) => o.customerEmail.toLowerCase().includes(email));
+		}
+		const minTotal = minTotalRaw ? Number.parseInt(minTotalRaw, 10) : null;
+		const maxTotal = maxTotalRaw ? Number.parseInt(maxTotalRaw, 10) : null;
+		if (Number.isFinite(minTotal ?? NaN)) {
+			items = items.filter((o) => o.total.amount >= (minTotal ?? 0));
+		}
+		if (Number.isFinite(maxTotal ?? NaN)) {
+			items = items.filter((o) => o.total.amount <= (maxTotal ?? 0));
+		}
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("queryOrders failed", {
+			error: err instanceof Error ? err.message : String(err),
+			where,
+			hasWhere: Object.keys(where).length > 0,
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query orders — please contact support",
+			},
+			500,
+		);
 	}
-	const minTotal = minTotalRaw ? Number.parseInt(minTotalRaw, 10) : null;
-	const maxTotal = maxTotalRaw ? Number.parseInt(maxTotalRaw, 10) : null;
-	if (Number.isFinite(minTotal ?? NaN)) {
-		items = items.filter((o) => o.total.amount >= (minTotal ?? 0));
-	}
-	if (Number.isFinite(maxTotal ?? NaN)) {
-		items = items.filter((o) => o.total.amount <= (maxTotal ?? 0));
-	}
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function getOrderDetail(
@@ -337,24 +367,47 @@ async function queryCustomers(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Customer>(ctx, "customers").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Customer), id: r.id }));
-	if (search) {
-		items = items.filter(
-			(c) =>
-				c.email.toLowerCase().includes(search) ||
-				(c.firstName ?? "").toLowerCase().includes(search) ||
-				(c.lastName ?? "").toLowerCase().includes(search),
+	try {
+		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
+		const result = await storeOf<Customer>(ctx, "customers").query({
+			...(hasWhere ? { where } : {}),
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Customer), id: r.id }));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
+		if (search) {
+			items = items.filter(
+				(c) =>
+					c.email.toLowerCase().includes(search) ||
+					(c.firstName ?? "").toLowerCase().includes(search) ||
+					(c.lastName ?? "").toLowerCase().includes(search),
+			);
+		}
+		if (guestFilter === "true") items = items.filter((c) => !c.userId);
+		if (guestFilter === "false") items = items.filter((c) => Boolean(c.userId));
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("queryCustomers failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query customers — please contact support",
+			},
+			500,
 		);
 	}
-	if (guestFilter === "true") items = items.filter((c) => !c.userId);
-	if (guestFilter === "false") items = items.filter((c) => Boolean(c.userId));
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function getCustomerDetail(
@@ -954,33 +1007,56 @@ async function listSubscriptions(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Subscription>(ctx, "subscriptions").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({
-		...(r.data as Subscription),
-		id: r.id,
-	}));
-	if (productId) items = items.filter((s) => s.productId === productId);
-	if (email) {
-		// Email lookup requires joining customers; fetch the affected set
-		// lazily to avoid a full customer scan.
-		const customerIds = Array.from(new Set(items.map((s) => s.customerId)));
-		const customers = await Promise.all(
-			customerIds.map(async (id) => {
-				const c = await storeOf<Customer>(ctx, "customers").get(id);
-				return [id, c?.email?.toLowerCase() ?? ""] as const;
-			}),
-		);
-		const emailById = new Map(customers);
-		items = items.filter((s) =>
-			(emailById.get(s.customerId) ?? "").includes(email),
+	try {
+		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
+		const result = await storeOf<Subscription>(ctx, "subscriptions").query({
+			...(hasWhere ? { where } : {}),
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({
+			...(r.data as Subscription),
+			id: r.id,
+		}));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
+		if (productId) items = items.filter((s) => s.productId === productId);
+		if (email) {
+			// Email lookup requires joining customers; fetch the affected set
+			// lazily to avoid a full customer scan.
+			const customerIds = Array.from(new Set(items.map((s) => s.customerId)));
+			const customers = await Promise.all(
+				customerIds.map(async (id) => {
+					const c = await storeOf<Customer>(ctx, "customers").get(id);
+					return [id, c?.email?.toLowerCase() ?? ""] as const;
+				}),
+			);
+			const emailById = new Map(customers);
+			items = items.filter((s) =>
+				(emailById.get(s.customerId) ?? "").includes(email),
+			);
+		}
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("listSubscriptions failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query subscriptions — please contact support",
+			},
+			500,
 		);
 	}
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function postSubscriptionAction(
@@ -1027,7 +1103,7 @@ async function postSubscriptionAction(
 
 async function listReviews(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
-	const status = url.searchParams.get("status") ?? "pending";
+	const status = url.searchParams.get("status");
 	const productId = url.searchParams.get("productId");
 	const ratingRaw = url.searchParams.get("rating");
 	const verifiedOnly = url.searchParams.get("verifiedOnly") === "true";
@@ -1039,9 +1115,8 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 		Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? "50", 10) || 50),
 	);
 
-	const where: Record<string, string | { gte?: string; lte?: string }> = {
-		status,
-	};
+	const where: Record<string, string | { gte?: string; lte?: string }> = {};
+	if (status) where.status = status;
 	if (productId) where.productId = productId;
 	if (from || to) {
 		const range: { gte?: string; lte?: string } = {};
@@ -1050,19 +1125,47 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Review>(ctx, "reviews").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
-	const rating = ratingRaw ? Number.parseInt(ratingRaw, 10) : null;
-	if (rating && rating >= 1 && rating <= 5) {
-		items = items.filter((r) => r.rating === rating);
+	try {
+		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
+		const result = await storeOf<Review>(ctx, "reviews").query({
+			...(hasWhere ? { where } : {}),
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
+		// Apply post-fetch filters: status default, rating, verifiedOnly
+		if (!status) {
+			// Default to pending when no status filter was provided
+			items = items.filter((r) => r.status === "pending");
+		}
+		const rating = ratingRaw ? Number.parseInt(ratingRaw, 10) : null;
+		if (rating && rating >= 1 && rating <= 5) {
+			items = items.filter((r) => r.rating === rating);
+		}
+		if (verifiedOnly) items = items.filter((r) => r.verifiedPurchase);
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("listReviews failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query reviews — please contact support",
+			},
+			500,
+		);
 	}
-	if (verifiedOnly) items = items.filter((r) => r.verifiedPurchase);
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function postReviewModerate(
