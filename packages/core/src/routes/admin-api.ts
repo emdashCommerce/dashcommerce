@@ -762,11 +762,13 @@ async function deleteShippingZone(
 	if (!current) return json({ error: "Zone not found" }, 404);
 	// Zones own methods; fail fast if any method still references this zone
 	// rather than leaving orphaned methods in the store.
+	// Use fetch+filter instead of .where — EmDash's where clause building
+	// breaks on Postgres (syntax error near "=").
 	const methods = await storeOf<ShippingMethod>(ctx, "shipping_methods").query({
-		where: { zoneId: id },
-		limit: 1,
+		limit: 500,
 	});
-	if (methods.items.length > 0) {
+	const zoneHasMethods = methods.items.some((r) => (r.data as ShippingMethod).zoneId === id);
+	if (zoneHasMethods) {
 		return json(
 			{
 				error:
