@@ -2,7 +2,7 @@
   "name": "dashcommerce-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "DashCommerce \u2014 the WooCommerce-equivalent commerce plugin for the EmDash ecosystem",
+  "description": "DashCommerce — the WooCommerce-equivalent commerce plugin for the EmDash ecosystem",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -28,6 +28,6 @@
     "bun": ">=1.1.0"
   },
   "patchedDependencies": {
-    "emdash@0.37.0": "patches/emdash@0.37.0.patch"
+    "emdash@0.38.0": "patches/emdash@0.38.0.patch"
   }
 }
