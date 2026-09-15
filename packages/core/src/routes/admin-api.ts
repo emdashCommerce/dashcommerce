@@ -166,26 +166,47 @@ async function queryOrders(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Order>(ctx, "orders").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Order), id: r.id }));
-	if (currency) items = items.filter((o) => o.currency === currency);
-	if (email) {
-		items = items.filter((o) => o.customerEmail.toLowerCase().includes(email));
+	try {
+		// Only include `where` if it has properties; older EmDash versions
+		// might not handle empty where clauses consistently.
+		const hasWhere = Object.keys(where).length > 0;
+		const result = await storeOf<Order>(ctx, "orders").query({
+			...(hasWhere ? { where } : {}),
+			orderBy: { createdAt: "desc" },
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Order), id: r.id }));
+		if (currency) items = items.filter((o) => o.currency === currency);
+		if (email) {
+			items = items.filter((o) => o.customerEmail.toLowerCase().includes(email));
+		}
+		const minTotal = minTotalRaw ? Number.parseInt(minTotalRaw, 10) : null;
+		const maxTotal = maxTotalRaw ? Number.parseInt(maxTotalRaw, 10) : null;
+		if (Number.isFinite(minTotal ?? NaN)) {
+			items = items.filter((o) => o.total.amount >= (minTotal ?? 0));
+		}
+		if (Number.isFinite(maxTotal ?? NaN)) {
+			items = items.filter((o) => o.total.amount <= (maxTotal ?? 0));
+		}
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("queryOrders failed", {
+			error: err instanceof Error ? err.message : String(err),
+			where,
+			hasWhere: Object.keys(where).length > 0,
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query orders — please contact support",
+			},
+			500,
+		);
 	}
-	const minTotal = minTotalRaw ? Number.parseInt(minTotalRaw, 10) : null;
-	const maxTotal = maxTotalRaw ? Number.parseInt(maxTotalRaw, 10) : null;
-	if (Number.isFinite(minTotal ?? NaN)) {
-		items = items.filter((o) => o.total.amount >= (minTotal ?? 0));
-	}
-	if (Number.isFinite(maxTotal ?? NaN)) {
-		items = items.filter((o) => o.total.amount <= (maxTotal ?? 0));
-	}
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function getOrderDetail(
@@ -337,24 +358,41 @@ async function queryCustomers(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Customer>(ctx, "customers").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Customer), id: r.id }));
-	if (search) {
-		items = items.filter(
-			(c) =>
-				c.email.toLowerCase().includes(search) ||
-				(c.firstName ?? "").toLowerCase().includes(search) ||
-				(c.lastName ?? "").toLowerCase().includes(search),
+	try {
+		const hasWhere = Object.keys(where).length > 0;
+		const result = await storeOf<Customer>(ctx, "customers").query({
+			...(hasWhere ? { where } : {}),
+			orderBy: { createdAt: "desc" },
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Customer), id: r.id }));
+		if (search) {
+			items = items.filter(
+				(c) =>
+					c.email.toLowerCase().includes(search) ||
+					(c.firstName ?? "").toLowerCase().includes(search) ||
+					(c.lastName ?? "").toLowerCase().includes(search),
+			);
+		}
+		if (guestFilter === "true") items = items.filter((c) => !c.userId);
+		if (guestFilter === "false") items = items.filter((c) => Boolean(c.userId));
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("queryCustomers failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query customers — please contact support",
+			},
+			500,
 		);
 	}
-	if (guestFilter === "true") items = items.filter((c) => !c.userId);
-	if (guestFilter === "false") items = items.filter((c) => Boolean(c.userId));
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function getCustomerDetail(
@@ -954,33 +992,50 @@ async function listSubscriptions(
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Subscription>(ctx, "subscriptions").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({
-		...(r.data as Subscription),
-		id: r.id,
-	}));
-	if (productId) items = items.filter((s) => s.productId === productId);
-	if (email) {
-		// Email lookup requires joining customers; fetch the affected set
-		// lazily to avoid a full customer scan.
-		const customerIds = Array.from(new Set(items.map((s) => s.customerId)));
-		const customers = await Promise.all(
-			customerIds.map(async (id) => {
-				const c = await storeOf<Customer>(ctx, "customers").get(id);
-				return [id, c?.email?.toLowerCase() ?? ""] as const;
-			}),
-		);
-		const emailById = new Map(customers);
-		items = items.filter((s) =>
-			(emailById.get(s.customerId) ?? "").includes(email),
+	try {
+		const hasWhere = Object.keys(where).length > 0;
+		const result = await storeOf<Subscription>(ctx, "subscriptions").query({
+			...(hasWhere ? { where } : {}),
+			orderBy: { createdAt: "desc" },
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({
+			...(r.data as Subscription),
+			id: r.id,
+		}));
+		if (productId) items = items.filter((s) => s.productId === productId);
+		if (email) {
+			// Email lookup requires joining customers; fetch the affected set
+			// lazily to avoid a full customer scan.
+			const customerIds = Array.from(new Set(items.map((s) => s.customerId)));
+			const customers = await Promise.all(
+				customerIds.map(async (id) => {
+					const c = await storeOf<Customer>(ctx, "customers").get(id);
+					return [id, c?.email?.toLowerCase() ?? ""] as const;
+				}),
+			);
+			const emailById = new Map(customers);
+			items = items.filter((s) =>
+				(emailById.get(s.customerId) ?? "").includes(email),
+			);
+		}
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("listSubscriptions failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query subscriptions — please contact support",
+			},
+			500,
 		);
 	}
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function postSubscriptionAction(
@@ -1050,19 +1105,35 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 		where.createdAt = range;
 	}
 
-	const result = await storeOf<Review>(ctx, "reviews").query({
-		where,
-		orderBy: { createdAt: "desc" },
-		limit,
-		...(cursor ? { cursor } : {}),
-	});
-	let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
-	const rating = ratingRaw ? Number.parseInt(ratingRaw, 10) : null;
-	if (rating && rating >= 1 && rating <= 5) {
-		items = items.filter((r) => r.rating === rating);
+	try {
+		const result = await storeOf<Review>(ctx, "reviews").query({
+			where,
+			orderBy: { createdAt: "desc" },
+			limit,
+			...(cursor ? { cursor } : {}),
+		});
+		let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
+		const rating = ratingRaw ? Number.parseInt(ratingRaw, 10) : null;
+		if (rating && rating >= 1 && rating <= 5) {
+			items = items.filter((r) => r.rating === rating);
+		}
+		if (verifiedOnly) items = items.filter((r) => r.verifiedPurchase);
+		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
+	} catch (err) {
+		ctx.log.error("listReviews failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return json(
+			{
+				error: "query_failed",
+				message:
+					err instanceof Error
+						? err.message
+						: "Could not query reviews — please contact support",
+			},
+			500,
+		);
 	}
-	if (verifiedOnly) items = items.filter((r) => r.verifiedPurchase);
-	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 }
 
 async function postReviewModerate(
