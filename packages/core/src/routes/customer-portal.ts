@@ -111,8 +111,8 @@ async function handlePortalLink(
 		return jsonResponse({ sent: true });
 	}
 
-	const origin = new URL(routeCtx.request.url).origin;
-	const returnUrl = input.returnUrl ?? `${origin}/account`;
+	const siteUrl = ctx.site.url.replace(/\/$/, "");
+	const returnUrl = input.returnUrl ?? `${siteUrl}/account`;
 
 	let portalUrl: string | null = null;
 	try {

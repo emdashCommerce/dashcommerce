@@ -13,7 +13,7 @@
     },
     "packages/core": {
       "name": "@dashcommerce/core",
-      "version": "0.1.4",
+      "version": "0.2.0",
       "bin": {
         "dashcommerce-merge-seed": "./dist/cli/merge-seed.js",
       },
@@ -59,7 +59,7 @@
     },
     "packages/starter": {
       "name": "@dashcommerce/starter",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@astrojs/cloudflare": "^13.1.10",
         "@astrojs/node": "^10.0.0",

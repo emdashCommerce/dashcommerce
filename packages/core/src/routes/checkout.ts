@@ -507,18 +507,21 @@ export const checkoutRoutes = {
 					]
 				: [];
 
-			// Discount as a negative line item — Stripe rejects negative
-			// `unit_amount` on Checkout, so we fold discounts into the
-			// unit price above. If a merchant wants the discount broken
-			// out visually on the Stripe page, they can use Stripe Coupons
-			// (a Pass 2 item).
+		// Discount as a negative line item — Stripe rejects negative
+		// `unit_amount` on Checkout, so we fold discounts into the
+		// unit price above. If a merchant wants the discount broken
+		// out visually on the Stripe page, they can use Stripe Coupons
+		// (a Pass 2 item).
 
-			const origin = new URL(routeCtx.request.url).origin;
+		// Use ctx.site.url for redirect URLs instead of request.url.origin
+		// to ensure production deployments use the public domain (SITE_URL)
+		// rather than internal routing (e.g. Railway's localhost:8080).
+		const siteUrl = ctx.site.url.replace(/\/$/, "");
 
-			// Pass `{CHECKOUT_SESSION_ID}` literally — Stripe substitutes
-			// it server-side on redirect.
-			const successUrl = `${origin}/thank-you/${encodeURIComponent(orderDraftId)}?session_id={CHECKOUT_SESSION_ID}`;
-			const cancelUrl = `${origin}/checkout?canceled=1`;
+		// Pass `{CHECKOUT_SESSION_ID}` literally — Stripe substitutes
+		// it server-side on redirect.
+		const successUrl = `${siteUrl}/thank-you/${encodeURIComponent(orderDraftId)}?session_id={CHECKOUT_SESSION_ID}`;
+		const cancelUrl = `${siteUrl}/checkout?canceled=1`;
 
 			// Vendor split (Connect). Reuses the single-vendor path from
 			// create-intent. Multi-vendor carts are rejected the same way.

@@ -242,8 +242,8 @@ async function handlePortal(
 	const client = await loadStripeClient(ctx);
 	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
 
-	const origin = new URL(routeCtx.request.url).origin;
-	const returnUrl = input.returnUrl ?? `${origin}/account`;
+	const siteUrl = ctx.site.url.replace(/\/$/, "");
+	const returnUrl = input.returnUrl ?? `${siteUrl}/account`;
 
 	try {
 		const portal = await createBillingPortalSession(
