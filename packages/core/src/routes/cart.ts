@@ -612,29 +612,29 @@ export const cartRoutes = {
 					};
 				}
 			).shipping_zones;
-			const methodsStore = (
-				ctx.storage as unknown as {
-					shipping_methods: {
-						query(opts: {
-							where: Record<string, string | number>;
-							limit: number;
-						}): Promise<{ items: Array<{ id: string; data: ShippingMethod }> }>;
-					};
-				}
-			).shipping_methods;
+		const methodsStore = (
+			ctx.storage as unknown as {
+				shipping_methods: {
+					query(opts: {
+						where?: Record<string, string | number>;
+						limit: number;
+					}): Promise<{ items: Array<{ id: string; data: ShippingMethod }> }>;
+				};
+			}
+		).shipping_methods;
 
-			const zones = (await zonesStore.query({ limit: 200 })).items.map((r) => ({
-				...r.data,
-				id: r.id,
-			}));
-			const zone = pickZone(cart.shippingAddress, zones);
-			if (!zone) return jsonResponse({ options: [] }, withSessionCookie(setCookie));
-			const methods = (
-				await methodsStore.query({
-					where: { zoneId: zone.id, enabled: 1 },
-					limit: 50,
-				})
-			).items.map((r) => ({ ...r.data, id: r.id }));
+		const zones = (await zonesStore.query({ limit: 200 })).items.map((r) => ({
+			...r.data,
+			id: r.id,
+		}));
+		const zone = pickZone(cart.shippingAddress, zones);
+		if (!zone) return jsonResponse({ options: [] }, withSessionCookie(setCookie));
+		// Fetch all methods and filter in JS — EmDash's .where builds SQLite-style
+		// SQL that breaks on Postgres (syntax error near "="). This fetch+filter
+		// approach works across both databases.
+		const methods = (await methodsStore.query({ limit: 200 })).items
+			.map((r) => ({ ...r.data, id: r.id }))
+			.filter((m) => m.zoneId === zone.id && (m.enabled === true || (m.enabled as unknown) === 1));
 
 			const options = calculateRates({
 				items: cart.items,
@@ -669,31 +669,31 @@ export const cartRoutes = {
 					};
 				}
 			).shipping_zones;
-			const methodsStore = (
-				ctx.storage as unknown as {
-					shipping_methods: {
-						get(id: string): Promise<ShippingMethod | null>;
-						query(opts: {
-							where: Record<string, string | number>;
-							limit: number;
-						}): Promise<{ items: Array<{ id: string; data: ShippingMethod }> }>;
-					};
-				}
-			).shipping_methods;
-			const zones = (await zonesStore.query({ limit: 200 })).items.map((r) => ({
-				...r.data,
-				id: r.id,
-			}));
-			const zone = pickZone(cart.shippingAddress, zones);
-			if (!zone) {
-				return errorResponse("No shipping zone matches the address", 409, setCookie);
+		const methodsStore = (
+			ctx.storage as unknown as {
+				shipping_methods: {
+					get(id: string): Promise<ShippingMethod | null>;
+					query(opts: {
+						where?: Record<string, string | number>;
+						limit: number;
+					}): Promise<{ items: Array<{ id: string; data: ShippingMethod }> }>;
+				};
 			}
-			const methods = (
-				await methodsStore.query({
-					where: { zoneId: zone.id, enabled: 1 },
-					limit: 50,
-				})
-			).items.map((r) => ({ ...r.data, id: r.id }));
+		).shipping_methods;
+		const zones = (await zonesStore.query({ limit: 200 })).items.map((r) => ({
+			...r.data,
+			id: r.id,
+		}));
+		const zone = pickZone(cart.shippingAddress, zones);
+		if (!zone) {
+			return errorResponse("No shipping zone matches the address", 409, setCookie);
+		}
+		// Fetch all methods and filter in JS — EmDash's .where builds SQLite-style
+		// SQL that breaks on Postgres (syntax error near "="). This fetch+filter
+		// approach works across both databases.
+		const methods = (await methodsStore.query({ limit: 200 })).items
+			.map((r) => ({ ...r.data, id: r.id }))
+			.filter((m) => m.zoneId === zone.id && (m.enabled === true || (m.enabled as unknown) === 1));
 			const options = calculateRates({
 				items: cart.items,
 				currency: cart.currency,
