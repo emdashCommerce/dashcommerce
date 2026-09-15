@@ -29,6 +29,7 @@ import { findSubscription } from "../subscriptions/create";
 import { cancel, pause, resume } from "../subscriptions/lifecycle";
 import { verifyToken } from "../subscriptions/tokens";
 import type { Customer, Subscription } from "../types";
+import { getPublicSiteUrl } from "../util/site-url";
 
 async function loadStripeClient(ctx: PluginContext): Promise<StripeClientOptions | null> {
 	const secret = await ctx.kv.get<string>("settings:stripeSecretKey");
@@ -242,8 +243,8 @@ async function handlePortal(
 	const client = await loadStripeClient(ctx);
 	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
 
-	const origin = new URL(routeCtx.request.url).origin;
-	const returnUrl = input.returnUrl ?? `${origin}/account`;
+	const siteUrl = getPublicSiteUrl(ctx);
+	const returnUrl = input.returnUrl ?? `${siteUrl}/account`;
 
 	try {
 		const portal = await createBillingPortalSession(
