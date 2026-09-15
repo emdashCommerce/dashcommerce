@@ -170,13 +170,22 @@ async function queryOrders(
 		// Only include `where` if it has properties; older EmDash versions
 		// might not handle empty where clauses consistently.
 		const hasWhere = Object.keys(where).length > 0;
+		// CRITICAL: Do NOT use `orderBy` on Postgres — EmDash generates
+		// `->>` JSON path extraction on TEXT columns which triggers
+		// "operator does not exist: text ->> unknown". Fetch without
+		// orderBy and sort in JS. Works on D1/SQLite and Postgres.
 		const result = await storeOf<Order>(ctx, "orders").query({
 			...(hasWhere ? { where } : {}),
-			orderBy: { createdAt: "desc" },
 			limit,
 			...(cursor ? { cursor } : {}),
 		});
 		let items = result.items.map((r) => ({ ...(r.data as Order), id: r.id }));
+		// Sort by createdAt desc in JS (replaces SQL ORDER BY)
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA; // desc
+		});
 		if (currency) items = items.filter((o) => o.currency === currency);
 		if (email) {
 			items = items.filter((o) => o.customerEmail.toLowerCase().includes(email));
@@ -360,13 +369,19 @@ async function queryCustomers(
 
 	try {
 		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
 		const result = await storeOf<Customer>(ctx, "customers").query({
 			...(hasWhere ? { where } : {}),
-			orderBy: { createdAt: "desc" },
 			limit,
 			...(cursor ? { cursor } : {}),
 		});
 		let items = result.items.map((r) => ({ ...(r.data as Customer), id: r.id }));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
 		if (search) {
 			items = items.filter(
 				(c) =>
@@ -994,9 +1009,9 @@ async function listSubscriptions(
 
 	try {
 		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
 		const result = await storeOf<Subscription>(ctx, "subscriptions").query({
 			...(hasWhere ? { where } : {}),
-			orderBy: { createdAt: "desc" },
 			limit,
 			...(cursor ? { cursor } : {}),
 		});
@@ -1004,6 +1019,12 @@ async function listSubscriptions(
 			...(r.data as Subscription),
 			id: r.id,
 		}));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
 		if (productId) items = items.filter((s) => s.productId === productId);
 		if (email) {
 			// Email lookup requires joining customers; fetch the affected set
@@ -1106,13 +1127,19 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 
 	try {
 		const hasWhere = Object.keys(where).length > 0;
+		// Omit orderBy to avoid Postgres "text ->> unknown" error
 		const result = await storeOf<Review>(ctx, "reviews").query({
 			...(hasWhere ? { where } : {}),
-			orderBy: { createdAt: "desc" },
 			limit,
 			...(cursor ? { cursor } : {}),
 		});
 		let items = result.items.map((r) => ({ ...(r.data as Review), id: r.id }));
+		// Sort by createdAt desc in JS
+		items.sort((a, b) => {
+			const dateA = new Date(a.createdAt).getTime();
+			const dateB = new Date(b.createdAt).getTime();
+			return dateB - dateA;
+		});
 		// Apply post-fetch filters: status default, rating, verifiedOnly
 		if (!status) {
 			// Default to pending when no status filter was provided

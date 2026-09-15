@@ -68,6 +68,8 @@ describe("admin orders query error handling", () => {
 		const queryCall = (ctx.storage as { orders: { query: ReturnType<typeof mock> } }).orders.query.mock
 			.calls[0][0];
 		expect("where" in queryCall).toBe(false);
+		// CRITICAL: orderBy must be omitted to avoid Postgres "text ->> unknown" error
+		expect("orderBy" in queryCall).toBe(false);
 	});
 
 	it("queryOrders: includes where clause when filters provided", async () => {
@@ -85,6 +87,8 @@ describe("admin orders query error handling", () => {
 			.calls[0][0];
 		expect("where" in queryCall).toBe(true);
 		expect(queryCall.where).toEqual({ status: "completed" });
+		// CRITICAL: orderBy must be omitted even with filters
+		expect("orderBy" in queryCall).toBe(false);
 	});
 
 	it("queryCustomers: storage throw → HTTP 500 with error + ctx.log.error called", async () => {
@@ -153,6 +157,7 @@ describe("admin orders query error handling", () => {
 		const queryCall = (ctx.storage as { reviews: { query: ReturnType<typeof mock> } }).reviews.query.mock
 			.calls[0][0];
 		expect("where" in queryCall).toBe(false);
+		expect("orderBy" in queryCall).toBe(false);
 	});
 
 	it("listReviews: includes where clause when status filter provided", async () => {
@@ -170,5 +175,6 @@ describe("admin orders query error handling", () => {
 			.calls[0][0];
 		expect("where" in queryCall).toBe(true);
 		expect(queryCall.where).toEqual({ status: "approved" });
+		expect("orderBy" in queryCall).toBe(false);
 	});
 });
