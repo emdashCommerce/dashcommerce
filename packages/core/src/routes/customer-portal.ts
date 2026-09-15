@@ -29,6 +29,7 @@ import type { PluginContext, RouteContext, StorageCollection } from "emdash";
 import type { StripeClientOptions } from "../stripe/client";
 import { createBillingPortalSession } from "../stripe/checkout-sessions";
 import type { Customer } from "../types";
+import { getPublicSiteUrl } from "../util/site-url";
 
 const RATE_LIMIT_MS = 5 * 60 * 1000;
 const rateKey = (email: string) => `state:portalLinkSentAt:${email.toLowerCase()}`;
@@ -111,7 +112,7 @@ async function handlePortalLink(
 		return jsonResponse({ sent: true });
 	}
 
-	const siteUrl = ctx.site.url.replace(/\/$/, "");
+	const siteUrl = getPublicSiteUrl(ctx);
 	const returnUrl = input.returnUrl ?? `${siteUrl}/account`;
 
 	let portalUrl: string | null = null;

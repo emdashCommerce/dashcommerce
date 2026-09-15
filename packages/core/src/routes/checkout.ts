@@ -35,6 +35,7 @@ import { normalizeProductFields } from "../products/normalize";
 import { computeSplit, connectEnabled } from "../vendors/split";
 import { resolveSessionId } from "./cart";
 import { DEFAULT_CHECKOUT_MODE, type CheckoutMode } from "../settings/schema";
+import { getPublicSiteUrl } from "../util/site-url";
 
 const DRAFT_PREFIX = "draft:";
 const DRAFT_TTL_MS = 15 * 60 * 1000;
@@ -513,10 +514,10 @@ export const checkoutRoutes = {
 		// out visually on the Stripe page, they can use Stripe Coupons
 		// (a Pass 2 item).
 
-		// Use ctx.site.url for redirect URLs instead of request.url.origin
-		// to ensure production deployments use the public domain (SITE_URL)
-		// rather than internal routing (e.g. Railway's localhost:8080).
-		const siteUrl = ctx.site.url.replace(/\/$/, "");
+		// Use getPublicSiteUrl() to ensure we never use localhost or stale
+		// database options (emdash:site_url) for Stripe redirect URLs.
+		// Production deployments must set SITE_URL environment variable.
+		const siteUrl = getPublicSiteUrl(ctx);
 
 		// Pass `{CHECKOUT_SESSION_ID}` literally — Stripe substitutes
 		// it server-side on redirect.
