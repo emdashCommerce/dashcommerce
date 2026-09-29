@@ -19,6 +19,10 @@
       "import": "./dist/admin/entry.js",
       "types": "./dist/admin/entry.d.ts"
     },
+    "./payment-provider": {
+      "import": "./dist/payment-provider.js",
+      "types": "./dist/payment-provider.d.ts"
+    },
     "./astro": "./src/astro/index.ts",
     "./astro/components/*": "./src/astro/components/*",
     "./astro/islands/*": "./src/astro/islands/*"
