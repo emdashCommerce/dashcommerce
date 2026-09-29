@@ -20,13 +20,16 @@ EmDash wraps all plugin route responses in `apiSuccess()`, which serializes Resp
 
 ## Applying the Patch
 
+Patches are maintained for both supported EmDash versions (0.37.x and 0.38.x). The package manager will automatically apply the correct patch based on your installed EmDash version.
+
 ### Option 1: Using Bun (Recommended)
 
 ```bash
 # Add to package.json:
 {
   "patchedDependencies": {
-    "emdash@0.37.0": "patches/emdash@0.37.0.patch"
+    "emdash@0.37.0": "patches/emdash@0.37.0.patch",
+    "emdash@0.38.0": "patches/emdash@0.38.0.patch"
   }
 }
 
@@ -41,7 +44,8 @@ bun install
 {
   "pnpm": {
     "patchedDependencies": {
-      "emdash@0.37.0": "patches/emdash@0.37.0.patch"
+      "emdash@0.37.0": "patches/emdash@0.37.0.patch",
+      "emdash@0.38.0": "patches/emdash@0.38.0.patch"
     }
   }
 }
@@ -63,8 +67,11 @@ npm install -D patch-package
   }
 }
 
-# Copy the patch file to your project root:
+# Copy the appropriate patch file to your project root:
+# For EmDash 0.37.x:
 cp node_modules/@dashcommerce/core/patches/emdash@0.37.0.patch patches/
+# For EmDash 0.38.x:
+cp node_modules/@dashcommerce/core/patches/emdash@0.38.0.patch patches/
 
 # Run:
 npm install

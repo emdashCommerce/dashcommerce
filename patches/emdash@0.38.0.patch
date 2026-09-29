@@ -1,0 +1,14 @@
+diff --git a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+index fc449ae587a71622495df9869becc8209b506b74..6d762d6e830ab6d88bc57cb25002c868eb981fc4 100644
+--- a/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
++++ b/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+@@ -44,6 +44,9 @@ const handleRequest = async ({ params, request, locals }) => {
+ 		const code = result.error?.code ?? "PLUGIN_ERROR";
+ 		return apiError(code, code === "INTERNAL_ERROR" ? "Plugin route error" : result.error?.message ?? "Plugin route error", result.status ?? (code === "NOT_FOUND" ? 404 : 400));
+ 	}
++	// DashCommerce patch: let plugin route handlers return a raw Response
++	// (cookies, redirects, webhook 200s). apiSuccess would serialize it to {}.
++	if (result.data instanceof Response) return result.data;
+ 	const response = apiSuccess(result.data);
+ 	if (routeMeta.cacheControl && (method === "GET" || method === "HEAD")) response.headers.set("Cache-Control", routeMeta.cacheControl);
+ 	return response;
