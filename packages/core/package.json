@@ -1,6 +1,6 @@
 {
 	"name": "@dashcommerce/core",
-	"version": "0.2.2",
+	"version": "0.3.0",
 	"description": "DashCommerce — full WooCommerce-equivalent commerce plugin for EmDash CMS",
 	"type": "module",
 	"main": "dist/index.js",
@@ -27,7 +27,13 @@
 		"./astro/components/*": "./src/astro/components/*",
 		"./astro/islands/*": "./src/astro/islands/*"
 	},
-	"files": ["dist", "src/astro", "patches", "README.md", "CHANGELOG.md"],
+	"files": [
+		"dist",
+		"src/astro",
+		"patches",
+		"README.md",
+		"CHANGELOG.md"
+	],
 	"engines": {
 		"node": ">=20"
 	},
