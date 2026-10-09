@@ -1,0 +1,26 @@
+diff --git a/dist/routes-BfIxc7ft.mjs b/dist/routes-BfIxc7ft.mjs
+--- a/dist/routes-BfIxc7ft.mjs
++++ b/dist/routes-BfIxc7ft.mjs
+@@ -78,7 +78,7 @@
+ async function parseRouteInput(request, declaration) {
+ 	if (declaration) return parseDeclaredPluginRouteInput(request, declaration);
+ 	if (BODY_METHODS.has(request.method.toUpperCase())) try {
+-		return await request.json();
++		return await request.clone().json();
+ 	} catch {
+ 		return;
+ 	}
+diff --git a/dist/http-route-dispatch-C8G7hAK6.mjs b/dist/http-route-dispatch-C8G7hAK6.mjs
+--- a/dist/http-route-dispatch-C8G7hAK6.mjs
++++ b/dist/http-route-dispatch-C8G7hAK6.mjs
+@@ -179,6 +179,10 @@
+ 		const details = code !== "INTERNAL_ERROR" && result.error && "details" in result.error ? result.error.details : void 0;
+ 		return apiError(code, message, status, isRecord(details) ? details : void 0);
+ 	}
++	// DashCommerce patch: let plugin route handlers return a raw Response
++	// (cookies, redirects, webhook 200s). apiSuccess would serialize it to {}.
++	// Official response: "raw" also strips Set-Cookie via the wire allowlist.
++	if (result.data instanceof Response) return result.data;
+ 	let response;
+ 	if (routeMeta.response === "raw") try {
+ 		response = pluginRouteResponseFromWire(await pluginRouteResponseToWire(result.data, routeMeta.public ? { publicRequestUrl: request.url } : { allowExternalLocation: true }), method);

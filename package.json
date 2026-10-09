@@ -29,6 +29,7 @@
   },
   "patchedDependencies": {
     "emdash@0.37.0": "patches/emdash@0.37.0.patch",
-    "emdash@1.1.0": "patches/emdash@1.1.0.patch"
+    "emdash@1.1.0": "patches/emdash@1.1.0.patch",
+    "emdash@1.2.0": "patches/emdash@1.2.0.patch"
   }
 }
