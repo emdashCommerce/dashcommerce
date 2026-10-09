@@ -74,6 +74,7 @@ const DEFAULT_ALLOWED_HOSTS = ["api.stripe.com", "files.stripe.com"];
 type CommerceRouteEntry = {
 	public?: boolean;
 	input?: PluginRoute["input"];
+	response?: PluginRoute["response"];
 	handler: (routeCtx: RouteContext, ctx: PluginContext) => Promise<unknown>;
 };
 
@@ -84,7 +85,7 @@ const HOOKS = {
 	"plugin:activate": { handler: onActivate },
 };
 
-const ROUTES = {
+export const ROUTES = {
 	...cartRoutes,
 	...checkoutRoutes,
 	...configCheckRoutes,
@@ -100,9 +101,9 @@ const ROUTES = {
 /**
  * Adapt the authored two-arg route handlers into emdash's native single-arg
  * `PluginRoute` form. `RouteContext` extends `PluginContext`, so the one
- * `ctx` is passed as both arguments. `public` and `input` pass through.
+ * `ctx` is passed as both arguments. `public`, `input`, and `response` pass through.
  */
-function toNativeRoutes(
+export function toNativeRoutes(
 	routes: Record<string, CommerceRouteEntry>,
 ): Record<string, PluginRoute> {
 	const out: Record<string, PluginRoute> = {};
@@ -110,6 +111,7 @@ function toNativeRoutes(
 		out[name] = {
 			public: route.public,
 			input: route.input,
+			response: route.response ?? "raw",
 			handler: (ctx) => route.handler(ctx, ctx),
 		};
 	}
