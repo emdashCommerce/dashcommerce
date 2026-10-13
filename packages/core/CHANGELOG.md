@@ -1,5 +1,19 @@
 # Changelog — @dashcommerce/core
 
+## 0.3.1
+
+### Patch Changes
+
+- [#45](https://github.com/emdashCommerce/dashcommerce/pull/45) [`7a156cb`](https://github.com/emdashCommerce/dashcommerce/commit/7a156cb3f7729bb85f676a9653ea6dc350f08e4f) Thanks [@cavewebs](https://github.com/cavewebs)! - Match checkout sidebar radios to `methodId` from `cart/shipping-methods`, and broadcast shipping-method cart updates as silent so the cart drawer does not cover checkout.
+
+- [#45](https://github.com/emdashCommerce/dashcommerce/pull/45) [`4b1f2a1`](https://github.com/emdashCommerce/dashcommerce/commit/4b1f2a1fe967df89cdd90259ff03dd92d903bdfc) Thanks [@cavewebs](https://github.com/cavewebs)! - Preserve raw Web `Response` objects on EmDash 1.2 (cart `Set-Cookie`, Stripe webhook bodies) without defaulting `response: "raw"`, which fails typecheck on 0.37 and strips cookies on unpatched 1.x. Ship a version-exact 1.2.0 patch that clones the request body and duck-types `Response`, warn when the host version has no matching patch, and fail loudly if a webhook arrives with the body already consumed.
+
+  Thanks [@moset15](https://github.com/moset15) for the original routing fix in [#42](https://github.com/emdashCommerce/dashcommerce/issues/42).
+
+- [#45](https://github.com/emdashCommerce/dashcommerce/pull/45) [`12fd4e5`](https://github.com/emdashCommerce/dashcommerce/commit/12fd4e5d4f03f9329ec4d6dc46b709f738d235aa) Thanks [@cavewebs](https://github.com/cavewebs)! - Stop the shipping admin page from crashing when `data.methods` (or zones/classes) is missing. A flattened EmDash success envelope used to throw `can't access property Symbol.iterator, data.methods is undefined`. Empty lists render instead.
+
+  Closes [#43](https://github.com/emdashCommerce/dashcommerce/issues/43).
+
 ## 0.3.0
 
 ### Minor Changes
