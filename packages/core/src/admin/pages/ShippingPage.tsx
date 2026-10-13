@@ -40,12 +40,7 @@ import type {
 	ShippingMethodType,
 	ShippingZone,
 } from "../../types";
-
-interface ShippingShape {
-	zones: ShippingZone[];
-	methods: ShippingMethod[];
-	classes: ShippingClass[];
-}
+import { normalizeShippingShape, type ShippingShape } from "../shipping-shape";
 
 const METHOD_TYPE_LABELS: Record<ShippingMethodType, string> = {
 	flat_rate: "Flat rate",
@@ -75,7 +70,7 @@ export function ShippingPage() {
 				api.get<ShippingShape>("admin/shipping"),
 				api.get<Record<string, unknown>>("admin/settings"),
 			]);
-			setData(shape);
+			setData(normalizeShippingShape(shape));
 			const raw = settings.enabledCurrencies;
 			if (Array.isArray(raw) && raw.length > 0) {
 				setCurrencies(raw.filter((c): c is string => typeof c === "string"));
