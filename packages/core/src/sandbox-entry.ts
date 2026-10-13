@@ -84,7 +84,7 @@ const HOOKS = {
 	"plugin:activate": { handler: onActivate },
 };
 
-const ROUTES = {
+export const ROUTES = {
 	...cartRoutes,
 	...checkoutRoutes,
 	...configCheckRoutes,
@@ -101,8 +101,13 @@ const ROUTES = {
  * Adapt the authored two-arg route handlers into emdash's native single-arg
  * `PluginRoute` form. `RouteContext` extends `PluginContext`, so the one
  * `ctx` is passed as both arguments. `public` and `input` pass through.
+ *
+ * Do not default `response: "raw"`. That field does not exist on EmDash 0.37
+ * `PluginRoute` (typecheck fails), and on unpatched 1.x it requires
+ * `pluginResponse()` and strips `Set-Cookie`. Raw `Response` passthrough is
+ * the patched dispatch duck-type, not the official `response: "raw"` path.
  */
-function toNativeRoutes(
+export function toNativeRoutes(
 	routes: Record<string, CommerceRouteEntry>,
 ): Record<string, PluginRoute> {
 	const out: Record<string, PluginRoute> = {};

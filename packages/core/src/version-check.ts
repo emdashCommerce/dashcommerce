@@ -31,6 +31,15 @@ export const SUPPORTED_EMDASH_RANGES: readonly EmDashVersionRange[] = [EMDASH_03
 export const SUPPORTED_EMDASH_PEER = ">=0.37.0 <0.38.0 || >=1.1.0 <2.0.0";
 
 /**
+ * EmDash versions that ship a matching DashCommerce patch.
+ *
+ * Patches target hashed dist filenames, so they only apply to that exact
+ * version. 1.2.1+ needs a regenerated patch even though the peer range
+ * still admits `>=1.1.0 <2.0.0`.
+ */
+export const EMDASH_VERSIONS_WITH_SHIPPED_PATCHES = ["0.37.0", "1.1.0", "1.2.0"] as const;
+
+/**
  * @deprecated Use {@link SUPPORTED_EMDASH_RANGES}. Kept as the 0.37.x window
  * so older call sites that read `.min` still see the true floor.
  */
@@ -84,6 +93,32 @@ function isInRange(installedVersion: string, range: EmDashVersionRange): boolean
 
 export function isEmDashVersionSupported(installedVersion: string): boolean {
 	return SUPPORTED_EMDASH_RANGES.some((range) => isInRange(installedVersion, range));
+}
+
+export function matchingShippedEmDashPatch(installedVersion: string): string | null {
+	const parsed = parseVersion(installedVersion);
+	if (!parsed) return null;
+	const exact = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
+	return (EMDASH_VERSIONS_WITH_SHIPPED_PATCHES as readonly string[]).includes(exact)
+		? exact
+		: null;
+}
+
+/**
+ * Warning when the host is in the supported peer range but has no
+ * version-exact patch. Null when the version is unsupported (callers
+ * should throw) or when a shipped patch matches.
+ */
+export function emDashPatchMismatchMessage(installedVersion: string): string | null {
+	if (!isEmDashVersionSupported(installedVersion)) return null;
+	if (matchingShippedEmDashPatch(installedVersion)) return null;
+	return (
+		`[DashCommerce] EmDash ${installedVersion} is in the supported range, ` +
+		`but DashCommerce patches are version-exact (hashed dist filenames). ` +
+		`Shipped patches: ${EMDASH_VERSIONS_WITH_SHIPPED_PATCHES.join(", ")}. ` +
+		`The 1.2.0 patch will not apply to 1.2.1+. Webhooks and Set-Cookie will fail ` +
+		`until you add a matching patch. See packages/core/patches/README.md.`
+	);
 }
 
 export function formatSupportedEmDashRanges(): string {
@@ -177,6 +212,8 @@ export function validateEmDashCompatibility(emdashVersion?: string): void {
 	try {
 		checkEmDashVersion(emdashVersion);
 		console.log(`[DashCommerce] ✓ EmDash ${emdashVersion} compatibility verified`);
+		const patchWarning = emDashPatchMismatchMessage(emdashVersion);
+		if (patchWarning) console.warn(patchWarning);
 	} catch (error) {
 		// Re-throw with additional context
 		if (error instanceof Error) {

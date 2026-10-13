@@ -8,6 +8,9 @@ Patches are version-exact (Bun `patchedDependencies` keys include the resolved v
 |---|---|
 | 0.37.0 | `patches/emdash@0.37.0.patch` |
 | 1.1.0 | `patches/emdash@1.1.0.patch` |
+| 1.2.0 | `patches/emdash@1.2.0.patch` |
+
+Patches target hashed dist filenames, so they only apply to that exact version. `emdash@1.2.1` will not pick up the 1.2.0 patch. DashCommerce warns at plugin init when the installed version has no matching file.
 
 The package manager applies the matching file for the version you installed.
 
@@ -21,7 +24,7 @@ EmDash's `parseRouteInput()` calls `request.json()` directly, consuming the requ
 
 **Fix**: Change `request.json()` to `request.clone().json()` so the original body can still be cloned.
 
-On 0.37 this lives in a hashed `dist/menus-*.mjs` chunk. On 1.1 it lives in `dist/routes-*.mjs`.
+On 0.37 this lives in a hashed `dist/menus-*.mjs` chunk. On 1.1 and 1.2 it lives in `dist/routes-*.mjs` (the hash changes per version).
 
 ### 2. Raw Response Passthrough
 
@@ -29,9 +32,9 @@ EmDash wraps plugin route responses in `apiSuccess()`, which serializes Response
 
 EmDash 1.x's official `response: "raw"` path is **not** a substitute: it requires `pluginResponse()` and strips `Set-Cookie` through a header allowlist.
 
-**Fix**: If `result.data instanceof Response`, return it directly.
+**Fix**: If `result.data` duck-types as a Web `Response` (`status`, `clone`, `headers.get`), return it directly. Do not use `instanceof Response` — that fails across realms. Do not set `response: "raw"` on DashCommerce routes: that field is missing on EmDash 0.37 and the official 1.x raw path strips `Set-Cookie`.
 
-On 0.37 this is in the plugin Astro route module. On 1.1 dispatch moved to `dist/http-route-dispatch-*.mjs`.
+On 0.37 this is in the plugin Astro route module. On 1.1 and 1.2 dispatch lives in `dist/http-route-dispatch-*.mjs` (hashed per version).
 
 ## Applying the Patch
 
@@ -42,7 +45,8 @@ On 0.37 this is in the plugin Astro route module. On 1.1 dispatch moved to `dist
 {
   "patchedDependencies": {
     "emdash@0.37.0": "patches/emdash@0.37.0.patch",
-    "emdash@1.1.0": "patches/emdash@1.1.0.patch"
+    "emdash@1.1.0": "patches/emdash@1.1.0.patch",
+    "emdash@1.2.0": "patches/emdash@1.2.0.patch"
   }
 }
 
@@ -58,7 +62,8 @@ bun install
   "pnpm": {
     "patchedDependencies": {
       "emdash@0.37.0": "patches/emdash@0.37.0.patch",
-      "emdash@1.1.0": "patches/emdash@1.1.0.patch"
+      "emdash@1.1.0": "patches/emdash@1.1.0.patch",
+      "emdash@1.2.0": "patches/emdash@1.2.0.patch"
     }
   }
 }
@@ -83,6 +88,7 @@ npm install -D patch-package
 # Copy the patch that matches your installed EmDash version:
 cp node_modules/@dashcommerce/core/patches/emdash@0.37.0.patch patches/
 cp node_modules/@dashcommerce/core/patches/emdash@1.1.0.patch patches/
+cp node_modules/@dashcommerce/core/patches/emdash@1.2.0.patch patches/
 
 # Run:
 npm install
@@ -95,11 +101,11 @@ After applying the patch, verify it worked:
 ```bash
 # 0.37.x
 grep "request.clone().json()" node_modules/emdash/dist/menus-*.mjs
-grep "instanceof Response" node_modules/emdash/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
+grep "result.data.clone" node_modules/emdash/dist/astro/routes/api/plugins/_pluginId_/_...path_.mjs
 
-# 1.1.x
+# 1.1.x / 1.2.x
 grep "request.clone().json()" node_modules/emdash/dist/routes-*.mjs
-grep "instanceof Response" node_modules/emdash/dist/http-route-dispatch-*.mjs
+grep "result.data.clone" node_modules/emdash/dist/http-route-dispatch-*.mjs
 ```
 
 Both should return matches. If not, the patch was not applied.
