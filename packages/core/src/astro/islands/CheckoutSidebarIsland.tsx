@@ -21,8 +21,8 @@ interface CartLine {
 	unitPrice: Money;
 	lineSubtotal: Money;
 }
-interface ShippingMethod {
-	id: string;
+interface ShippingRateOption {
+	methodId: string;
 	label: string;
 	amount: Money;
 }
@@ -60,7 +60,7 @@ export default function CheckoutSidebarIsland({
 	locale = "en-US",
 }: CheckoutSidebarIslandProps) {
 	const [cart, setCart] = useState<CartState | null>(null);
-	const [methods, setMethods] = useState<ShippingMethod[]>([]);
+	const [methods, setMethods] = useState<ShippingRateOption[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
@@ -79,8 +79,8 @@ export default function CheckoutSidebarIsland({
 					credentials: "include",
 				});
 				if (mRes.ok) {
-					const mBody = (await mRes.json()) as { options: ShippingMethod[] };
-					setMethods(mBody.options);
+					const mBody = (await mRes.json()) as { options: ShippingRateOption[] };
+					setMethods(mBody.options ?? []);
 				}
 			}
 		} catch (err) {
@@ -112,7 +112,9 @@ export default function CheckoutSidebarIsland({
 			}
 			const body = (await res.json()) as { cart: CartState };
 			setCart(body.cart);
-			window.dispatchEvent(new CustomEvent("dashcommerce:cart-updated"));
+			window.dispatchEvent(
+				new CustomEvent("dashcommerce:cart-updated", { detail: { silent: true } }),
+			);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Network error");
 		} finally {
@@ -156,13 +158,13 @@ export default function CheckoutSidebarIsland({
 					<h4>Shipping</h4>
 					<ul>
 						{methods.map((m) => (
-							<li key={m.id}>
+							<li key={m.methodId}>
 								<label>
 									<input
 										type="radio"
 										name="shipping-method"
-										checked={cart.shippingMethod?.id === m.id}
-										onChange={() => pickMethod(m.id)}
+										checked={cart.shippingMethod?.id === m.methodId}
+										onChange={() => pickMethod(m.methodId)}
 										disabled={pending}
 									/>{" "}
 									<span>{m.label}</span>

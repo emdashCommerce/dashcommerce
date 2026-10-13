@@ -337,7 +337,9 @@ const { digitalOnly = false } = Astro.props;
             const b = await res.json().catch(() => ({}));
             throw new Error((b as { error?: string }).error ?? `Save failed (${res.status})`);
           }
-          window.dispatchEvent(new CustomEvent("dashcommerce:cart-updated"));
+          window.dispatchEvent(
+            new CustomEvent("dashcommerce:cart-updated", { detail: { silent: true } }),
+          );
           if (payBtn) payBtn.disabled = false;
           if (payStep) payStep.dataset.ready = "1";
         } catch (err) {
