@@ -588,11 +588,17 @@ async function handleChargeRefunded(ctx: PluginContext, charge: StripeCharge): P
 	});
 }
 
+export const EMDASH_BODY_CONSUMED_ERROR =
+	"EmDash consumed the request body before DashCommerce could verify the webhook signature. Apply the version-exact patch from @dashcommerce/core/patches (request.clone().json()). Unpatched EmDash 1.2 fails webhooks this way. See packages/core/patches/README.md.";
+
 async function readRawBody(req: Request): Promise<string> {
 	// EmDash guards ctx.request.text()/json() after parsing into ctx.input.
 	// Our emdash patch parses via request.clone().json(), so the original
 	// body stream is still readable through an unguarded clone — required
 	// for Stripe signature verification over the exact raw payload.
+	if (req.bodyUsed) {
+		throw new Error(EMDASH_BODY_CONSUMED_ERROR);
+	}
 	return req.clone().text();
 }
 
@@ -772,6 +778,14 @@ export const webhookRoutes = {
 			const secret = creds?.webhookSecret;
 			if (!secret) {
 				return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
+					status: 500,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
+			if (req.bodyUsed) {
+				ctx.log.error(EMDASH_BODY_CONSUMED_ERROR);
+				return new Response(JSON.stringify({ error: EMDASH_BODY_CONSUMED_ERROR }), {
 					status: 500,
 					headers: { "Content-Type": "application/json" },
 				});

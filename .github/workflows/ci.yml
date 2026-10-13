@@ -49,6 +49,7 @@ jobs:
         emdash-version:
           - "0.37.0"  # Oldest supported (keep 0.37 installs unbricked)
           - "1.1.0"   # Current EmDash 1.x line
+          - "1.2.0"   # 1.2 hashed-dist patch (version-exact)
           # Add new versions as they're tested and verified
     steps:
       - uses: actions/checkout@v4
