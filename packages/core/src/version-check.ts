@@ -14,7 +14,7 @@ export interface EmDashVersionRange {
 }
 
 const EMDASH_037: EmDashVersionRange = { min: "0.37.0", maxExclusive: "0.38.0" };
-const EMDASH_1X: EmDashVersionRange = { min: "1.1.0", maxExclusive: "2.0.0" };
+const EMDASH_1X: EmDashVersionRange = { min: "1.1.0", maxExclusive: "1.4.0" };
 
 /**
  * Supported EmDash version ranges for DashCommerce.
@@ -22,22 +22,22 @@ const EMDASH_1X: EmDashVersionRange = { min: "1.1.0", maxExclusive: "2.0.0" };
  *
  * Dual range on purpose:
  * - 0.37.x remains supported for existing installs
- * - 1.1.x–1.x is the current EmDash line
+ * - 1.1.x–1.3.x is the current, tested EmDash line (capped below 1.4.0)
  * - 0.38–0.42 and the mistaken `1.0.0` publish are untested / unsafe
  */
 export const SUPPORTED_EMDASH_RANGES: readonly EmDashVersionRange[] = [EMDASH_037, EMDASH_1X];
 
 /** npm-style peer string matching {@link SUPPORTED_EMDASH_RANGES}. */
-export const SUPPORTED_EMDASH_PEER = ">=0.37.0 <0.38.0 || >=1.1.0 <2.0.0";
+export const SUPPORTED_EMDASH_PEER = ">=0.37.0 <0.38.0 || >=1.1.0 <1.4.0";
 
 /**
  * EmDash versions that ship a matching DashCommerce patch.
  *
  * Patches target hashed dist filenames, so they only apply to that exact
- * version. 1.2.1+ needs a regenerated patch even though the peer range
- * still admits `>=1.1.0 <2.0.0`.
+ * version. Patch releases like 1.3.1 need a regenerated patch even though the
+ * peer range still admits `>=1.1.0 <1.4.0`.
  */
-export const EMDASH_VERSIONS_WITH_SHIPPED_PATCHES = ["0.37.0", "1.1.0", "1.2.0"] as const;
+export const EMDASH_VERSIONS_WITH_SHIPPED_PATCHES = ["0.37.0", "1.1.0", "1.2.0", "1.3.0"] as const;
 
 /**
  * @deprecated Use {@link SUPPORTED_EMDASH_RANGES}. Kept as the 0.37.x window
@@ -116,7 +116,7 @@ export function emDashPatchMismatchMessage(installedVersion: string): string | n
 		`[DashCommerce] EmDash ${installedVersion} is in the supported range, ` +
 		`but DashCommerce patches are version-exact (hashed dist filenames). ` +
 		`Shipped patches: ${EMDASH_VERSIONS_WITH_SHIPPED_PATCHES.join(", ")}. ` +
-		`The 1.2.0 patch will not apply to 1.2.1+. Webhooks and Set-Cookie will fail ` +
+		`The 1.3.0 patch will not apply to 1.3.1+. Webhooks and Set-Cookie will fail ` +
 		`until you add a matching patch. See packages/core/patches/README.md.`
 	);
 }
@@ -156,7 +156,7 @@ export function checkEmDashVersion(installedVersion: string): void {
 			`This version of DashCommerce (@dashcommerce/core@0.2.x) has not been tested with EmDash ${installedVersion}.\n\n` +
 			`To fix, upgrade DashCommerce:\n` +
 			`  npm install @dashcommerce/core@latest\n\n` +
-			`Supported hosts: EmDash 0.37.x, or EmDash 1.1+ (not 1.0.0 — that npm publish is the wrong codebase).\n` +
+			`Supported hosts: EmDash 0.37.x, or EmDash 1.1 to 1.3 (not 1.0.0 — that npm publish is the wrong codebase).\n` +
 			`  npm install emdash@^1.1.0 @emdash-cms/admin@^1.1.0\n` +
 			`See https://github.com/emdashCommerce/dashcommerce#migration for details.`,
 	);
