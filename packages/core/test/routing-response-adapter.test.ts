@@ -47,6 +47,25 @@ async function loadPatchedPluginDispatch(): Promise<PluginDispatch | null> {
 	);
 }
 
+type ParseRouteInput = (request: Request, declaration?: unknown) => Promise<unknown>;
+
+async function loadPatchedParseRouteInput(): Promise<ParseRouteInput | null> {
+	const resolved = Bun.resolveSync("emdash", import.meta.dir);
+	const dist = dirname(resolved);
+	const files = [...new Bun.Glob("routes-*.mjs").scanSync({ cwd: dist })].filter(
+		(f) => !f.endsWith(".map"),
+	);
+	for (const file of files) {
+		const mod = (await import(join(dist, file))) as Record<string, unknown>;
+		for (const value of Object.values(mod)) {
+			if (typeof value === "function" && value.name === "parseRouteInput") {
+				return value as ParseRouteInput;
+			}
+		}
+	}
+	return null;
+}
+
 /**
  * Regression coverage for EmDash 1.2 Response flattening and the
  * maintainer notes on #42:
@@ -423,5 +442,50 @@ describe("signed webhook through real patched dispatch", () => {
 		});
 		expect(response).toBe(fake as unknown as Response);
 		expect(response.headers.get("Set-Cookie")).toContain("dashcommerce_sid=realm");
+	});
+	it("passes Set-Cookie through on a real Response from the cart route", async () => {
+		const dispatch = await loadPatchedPluginDispatch();
+		if (!dispatch) return;
+
+		const original = new Response(JSON.stringify({ cart: { id: "cart_set_cookie" } }), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				"Set-Cookie": "dashcommerce_sid=cart_set_cookie; Path=/; HttpOnly; SameSite=Lax",
+			},
+		});
+		const runtime = {
+			getPluginRouteMeta: () => ({ public: true }),
+			handlePluginApiRoute: async () => ({ success: true as const, data: original }),
+		};
+		const response = await dispatch({
+			runtime,
+			pluginId: "dashcommerce",
+			path: "cart",
+			request: new Request("http://test/cart", { method: "GET" }),
+		});
+		expect(response).toBe(original);
+		expect(response.status).toBe(200);
+		const setCookie = response.headers.get("Set-Cookie");
+		expect(setCookie).toContain("dashcommerce_sid=cart_set_cookie");
+		expect(setCookie).toContain("HttpOnly");
+		expect(await response.json()).toEqual({ cart: { id: "cart_set_cookie" } });
+	});
+
+	it("parseRouteInput leaves the webhook body readable a second time", async () => {
+		const parseRouteInput = await loadPatchedParseRouteInput();
+		if (!parseRouteInput) return;
+
+		const payload = JSON.stringify({ id: "evt_twice", type: "ping", data: { object: {} } });
+		const request = new Request("http://test/checkout/webhook", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "stripe-signature": "t=1,v1=abc" },
+			body: payload,
+		});
+		const input = await parseRouteInput(request);
+		expect(input).toEqual(JSON.parse(payload));
+		expect(request.bodyUsed).toBe(false);
+		expect(await request.clone().text()).toBe(payload);
+		expect(await request.text()).toBe(payload);
 	});
 });
