@@ -11,7 +11,7 @@ import type { PluginDescriptor } from "emdash";
 
 import pkg from "../package.json" with { type: "json" };
 import { DASHCOMMERCE_STORAGE } from "./storage-collections";
-import { detectEmDashVersionAtBuildTime } from "./version-check";
+import { detectEmDashVersionAtBuildTime, warnIfEmDashPatchMissing } from "./version-check";
 
 export const DASHCOMMERCE_PLUGIN_ID = "dashcommerce";
 /** Sourced from package.json so Changesets version bumps cannot drift. */
@@ -48,6 +48,8 @@ export interface DashCommerceOptions {
  */
 export function dashcommerce(options: DashCommerceOptions = {}): PluginDescriptor {
 	const id = options.id ?? DASHCOMMERCE_PLUGIN_ID;
+	const emdashVersion = options.emdashVersion ?? detectEmDashVersionAtBuildTime() ?? undefined;
+	warnIfEmDashPatchMissing(emdashVersion);
 
 	return {
 		id,
@@ -177,6 +179,8 @@ export function dashcommerce(options: DashCommerceOptions = {}): PluginDescripto
 				"email:send",
 			],
 			allowedHosts: ["api.stripe.com", "files.stripe.com"],
+			// Lets createPlugin run the version and shipped-patch check at init.
+			...(emdashVersion ? { emdashVersion } : {}),
 		},
 	} as PluginDescriptor;
 }

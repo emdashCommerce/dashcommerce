@@ -23,7 +23,7 @@ Scaffolds a complete storefront with EmDash + DashCommerce, demo products, and S
 
 ## Current Release
 
-**v0.2.2** on npm — peer **EmDash `>=0.37.0 <0.38.0 || >=1.1.0 <2.0.0`**. 0.37.x installs stay valid; current EmDash 1.x installs pass peer checks. Skip `emdash@1.0.0` (wrong codebase on npm) and untested 0.38–0.42 until peers widen.
+**v0.2.2** on npm — peer **EmDash `>=0.37.0 <0.38.0 || >=1.1.0 <1.4.0`**. 0.37.x installs stay valid; EmDash 1.1 to 1.3 installs pass peer checks. Skip `emdash@1.0.0` (wrong codebase on npm) and untested 0.38–0.42 until peers widen.
 
 | Package | Version | EmDash Compatibility |
 |---|---|---|
@@ -96,7 +96,7 @@ npm install emdash@^0.37.0 @emdash-cms/admin@^0.37.0 @dashcommerce/core@^0.2.0
 
 **Step 2: Apply EmDash patch (required)**
 
-DashCommerce requires [a small patch to EmDash](/packages/core/patches/emdash@1.1.0.patch) for webhook handling and response passthrough. Matching 0.37.0 and 1.2.0 patches ship alongside it. Patches are version-exact (hashed dist files); npm and yarn users must copy the file that matches the resolved `emdash` version into the app root. See [`packages/core/patches/README.md`](/packages/core/patches/README.md).
+DashCommerce requires [a small patch to EmDash](/packages/core/patches/emdash@1.1.0.patch) for webhook handling and response passthrough. Matching 0.37.0, 1.2.0, 1.3.0 and 1.3.1 patches ship alongside it. Patches are version-exact (hashed dist files); npm and yarn users must copy the file that matches the resolved `emdash` version into the app root. See [`packages/core/patches/README.md`](/packages/core/patches/README.md).
 
 ```bash
 # Using Bun (recommended) - add to package.json (use the key that matches your resolved emdash version):
@@ -104,7 +104,9 @@ DashCommerce requires [a small patch to EmDash](/packages/core/patches/emdash@1.
   "patchedDependencies": {
     "emdash@0.37.0": "node_modules/@dashcommerce/core/patches/emdash@0.37.0.patch",
     "emdash@1.1.0": "node_modules/@dashcommerce/core/patches/emdash@1.1.0.patch",
-    "emdash@1.2.0": "node_modules/@dashcommerce/core/patches/emdash@1.2.0.patch"
+    "emdash@1.2.0": "node_modules/@dashcommerce/core/patches/emdash@1.2.0.patch",
+    "emdash@1.3.0": "node_modules/@dashcommerce/core/patches/emdash@1.3.0.patch",
+    "emdash@1.3.1": "node_modules/@dashcommerce/core/patches/emdash@1.3.1.patch"
   }
 }
 
@@ -159,8 +161,8 @@ The 0.1.x line remains on npm and will continue working with EmDash 0.28.x. Howe
 
 ### Breaking Changes in 0.2.0
 
-- **Minimum EmDash version**: Now `0.37.0` (was `0.28.0`). Current peer also admits EmDash `>=1.1.0 <2.0.0`.
-- **Patch required**: Apply the patch that matches your resolved EmDash version (`emdash@0.37.0`, `emdash@1.1.0`, or `emdash@1.2.0`) for webhooks and raw Response passthrough. `patchedDependencies` only applies in the consumer's root, so npm/yarn installs must copy the matching file from `@dashcommerce/core/patches`.
+- **Minimum EmDash version**: Now `0.37.0` (was `0.28.0`). Current peer also admits EmDash `>=1.1.0 <1.4.0`.
+- **Patch required**: Apply the patch that matches your resolved EmDash version (`emdash@0.37.0`, `emdash@1.1.0`, `emdash@1.2.0`, `emdash@1.3.0`, or `emdash@1.3.1`) for webhooks and raw Response passthrough. `patchedDependencies` only applies in the consumer's root, so npm/yarn installs must copy the matching file from `@dashcommerce/core/patches`.
 - **Node.js builds**: Must externalize `cloudflare:*` modules in Vite config
 - **Runtime version check**: Plugin will throw on incompatible EmDash versions (fail-closed for safety)
 
