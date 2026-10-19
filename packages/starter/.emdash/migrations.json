@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"emdashVersion": "1.1.0",
+	"emdashVersion": "1.3.1",
 	"migrationSet": {
 		"names": [
 			"001_initial",
@@ -94,7 +94,7 @@
 			"090_redirect_enable_loop_guard",
 			"091_redirect_artifacts"
 		],
-		"fingerprint": "319ab15f96c2b36351ff1c748631e0c9c586914737650062d7cf69152046b69b"
+		"fingerprint": "cc301e91e93fc35e39ef7e57e6a3e084a066bbefc563223383de65b1d0e6e5aa"
 	},
 	"i18n": null,
 	"database": {

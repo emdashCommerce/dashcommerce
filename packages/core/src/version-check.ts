@@ -34,10 +34,11 @@ export const SUPPORTED_EMDASH_PEER = ">=0.37.0 <0.38.0 || >=1.1.0 <1.4.0";
  * EmDash versions that ship a matching DashCommerce patch.
  *
  * Patches target hashed dist filenames, so they only apply to that exact
- * version. Patch releases like 1.3.1 need a regenerated patch even though the
+ * version. Every EmDash release (including patch releases like 1.3.2) renames these
+ * chunks, so each one needs a regenerated patch even though the
  * peer range still admits `>=1.1.0 <1.4.0`.
  */
-export const EMDASH_VERSIONS_WITH_SHIPPED_PATCHES = ["0.37.0", "1.1.0", "1.2.0", "1.3.0"] as const;
+export const EMDASH_VERSIONS_WITH_SHIPPED_PATCHES = ["0.37.0", "1.1.0", "1.2.0", "1.3.0", "1.3.1"] as const;
 
 /**
  * @deprecated Use {@link SUPPORTED_EMDASH_RANGES}. Kept as the 0.37.x window
@@ -112,13 +113,20 @@ export function matchingShippedEmDashPatch(installedVersion: string): string | n
 export function emDashPatchMismatchMessage(installedVersion: string): string | null {
 	if (!isEmDashVersionSupported(installedVersion)) return null;
 	if (matchingShippedEmDashPatch(installedVersion)) return null;
-	return (
-		`[DashCommerce] EmDash ${installedVersion} is in the supported range, ` +
-		`but DashCommerce patches are version-exact (hashed dist filenames). ` +
-		`Shipped patches: ${EMDASH_VERSIONS_WITH_SHIPPED_PATCHES.join(", ")}. ` +
-		`The 1.3.0 patch will not apply to 1.3.1+. Webhooks and Set-Cookie will fail ` +
-		`until you add a matching patch. See packages/core/patches/README.md.`
-	);
+	const rule = "!".repeat(72);
+	return [
+		rule,
+		`[DashCommerce] WARNING: no DashCommerce patch ships for EmDash ${installedVersion}.`,
+		`EmDash ${installedVersion} is in the supported range, but DashCommerce patches are`,
+		`version-exact (hashed dist filenames) and every EmDash release renames them.`,
+		`Shipped patches: ${EMDASH_VERSIONS_WITH_SHIPPED_PATCHES.join(", ")}.`,
+		`The 1.3.1 patch will not apply to 1.3.2+.`,
+		`Until a matching patch is applied, Stripe webhooks fail signature checks,`,
+		`cart Set-Cookie is dropped, and raw Response routes return {}.`,
+		`Pin emdash to a shipped version or upgrade @dashcommerce/core.`,
+		`See packages/core/patches/README.md.`,
+		rule,
+	].join("\n");
 }
 
 export function formatSupportedEmDashRanges(): string {
@@ -169,14 +177,63 @@ export function checkEmDashVersion(installedVersion: string): void {
  * @returns The detected EmDash version string, or null if detection fails
  */
 export function detectEmDashVersionAtBuildTime(): string | null {
+	// `require("emdash/package.json")` does not work here: this package ships
+	// as ESM (no `require`) and emdash does not export `./package.json`.
+	// Resolve the emdash entry, then walk up to its package.json. Node
+	// built-ins come from `process.getBuiltinModule` so this module keeps no
+	// static `node:*` imports (sandbox-entry imports it too).
 	try {
-		// This import works at build time because Node/Bun can resolve package.json
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const emdashPkg = require("emdash/package.json");
-		return emdashPkg?.version ?? null;
+		const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } })
+			.process;
+		const getBuiltin = proc?.getBuiltinModule;
+		if (typeof getBuiltin !== "function") return null;
+		const nodeModule = getBuiltin("node:module") as {
+			createRequire(from: string): { resolve(id: string): string };
+		};
+		const fs = getBuiltin("node:fs") as {
+			existsSync(p: string): boolean;
+			readFileSync(p: string, enc: "utf8"): string;
+		};
+		const path = getBuiltin("node:path") as {
+			dirname(p: string): string;
+			join(...p: string[]): string;
+		};
+		const req = nodeModule.createRequire(import.meta.url);
+		let dir = path.dirname(req.resolve("emdash"));
+		for (let i = 0; i < 8; i++) {
+			const candidate = path.join(dir, "package.json");
+			if (fs.existsSync(candidate)) {
+				const pkg = JSON.parse(fs.readFileSync(candidate, "utf8")) as {
+					name?: string;
+					version?: string;
+				};
+				if (pkg.name === "emdash") return pkg.version ?? null;
+			}
+			const parent = path.dirname(dir);
+			if (parent === dir) break;
+			dir = parent;
+		}
+		return null;
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Descriptor-time (astro.config) check. Runs in Node during dev and build,
+ * so the warning lands in the terminal before any request is served.
+ * Never throws: the fail-closed check happens in `createPlugin`.
+ */
+export function warnIfEmDashPatchMissing(installedVersion: string | null | undefined): string | null {
+	if (!installedVersion) return null;
+	let message: string | null = null;
+	try {
+		message = emDashPatchMismatchMessage(installedVersion);
+	} catch {
+		return null;
+	}
+	if (message) console.warn(message);
+	return message;
 }
 
 /**
