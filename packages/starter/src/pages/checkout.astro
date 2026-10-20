@@ -4,8 +4,12 @@ import Shop from "../layouts/Shop.astro";
 import CheckoutForm from "@dashcommerce/core/astro/components/CheckoutForm.astro";
 import CheckoutSidebar from "@dashcommerce/core/astro/components/CheckoutSidebar.astro";
 import HostedCheckoutForm from "@dashcommerce/core/astro/components/HostedCheckoutForm.astro";
+import { SANDBOXED } from "../lib/edition";
 
 export const prerender = false;
+
+// The sandboxed edition goes straight from the cart to Stripe Checkout.
+if (SANDBOXED) return Astro.redirect("/cart", 302);
 
 const publishableKey = (await getPluginSetting("dashcommerce", "stripePublishableKey")) as string | null | undefined;
 const secretKey      = (await getPluginSetting("dashcommerce", "stripeSecretKey"))      as string | null | undefined;

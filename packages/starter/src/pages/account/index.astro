@@ -1,5 +1,9 @@
 ---
 import Shop from "../../layouts/Shop.astro";
+import { SANDBOXED } from "../../lib/edition";
+
+// Core-only feature: not available in the sandboxed edition.
+if (SANDBOXED) return new Response("Not found", { status: 404 });
 ---
 <Shop title="Account">
 	<div class="container-narrow acc-wrap">

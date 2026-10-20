@@ -3,6 +3,8 @@ import { getEmDashCollection, getEntryTerms } from "emdash";
 import { Image } from "emdash/ui";
 import Shop from "../../layouts/Shop.astro";
 import ProductDetails, { type ProductDetailsProduct } from "@dashcommerce/core/astro/components/ProductDetails.astro";
+import SandboxedProductInfo from "../../components/SandboxedProductInfo.astro";
+import { SANDBOXED } from "../../lib/edition";
 
 export const prerender = false;
 
@@ -214,7 +216,11 @@ const metaDescription = descStr.length > 0
 
     <!-- Right: details from core -->
     <div class="pdp-info">
-      <ProductDetails product={record as unknown as ProductDetailsProduct} />
+      {SANDBOXED ? (
+        <SandboxedProductInfo id={productDbId} data={d as unknown as Record<string, unknown>} />
+      ) : (
+        <ProductDetails product={record as unknown as ProductDetailsProduct} />
+      )}
     </div>
   </div>
 

@@ -37,6 +37,9 @@ Use `<Cart />` on a cart page, `<CartCount />` in the header and
 `<CheckoutSuccess />` on `/checkout/success`. The kit stores the cart token
 in localStorage under `dashcommerce-cart`.
 
+The DashCommerce starter (`packages/starter`) has the kit wired in behind
+`DASHCOMMERCE_EDITION=sandboxed`. See its README.
+
 ## Development
 
 ```sh

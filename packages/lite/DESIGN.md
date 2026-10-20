@@ -346,6 +346,13 @@ The webhook may land a moment after the redirect, so `waitForPayment` polls
 `order` every 1.5 seconds for up to 20 seconds while `paymentStatus` is
 `pending`, then clears the stored cart token once paid.
 
+The starter (`packages/starter`) carries copies of the kit and switches to
+it when built with `DASHCOMMERCE_EDITION=sandboxed` (default `native`, which
+keeps core). The starter is mirrored to `emdashCommerce/starter` as a flat
+repo by `.github/workflows/sync-starter.yml`, so it cannot import from this
+private package; `bun run kit:sync` refreshes the copies and
+`test/unit/starter-kit.test.ts` fails when they drift.
+
 `test/unit/storefront.test.ts` runs the module against the real route
 handlers. The Astro components compile in an Astro 6 build; they have not
 been run in a browser test.
