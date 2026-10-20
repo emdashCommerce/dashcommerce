@@ -1,0 +1,44 @@
+---
+/**
+ * Add-to-cart button for DashCommerce.
+ *
+ * Copy this file to src/components/ and storefront/dashcommerce.js to
+ * src/lib/dashcommerce.js in your theme.
+ *
+ *   <AddToCart productId={product.id} />
+ *
+ * `productId` is the content entry id of a published `products` entry.
+ */
+interface Props {
+	productId: string;
+	label?: string;
+	quantity?: number;
+	class?: string;
+}
+const { productId, label = "Add to cart", quantity = 1, class: className } = Astro.props;
+---
+
+<div class:list={["dc-add-to-cart", className]}>
+	<button type="button" data-dc-add={productId} data-dc-quantity={quantity}>{label}</button>
+	<p class="dc-message" data-dc-message role="status" aria-live="polite"></p>
+</div>
+
+<script>
+	import { createClient } from "../lib/dashcommerce.js";
+
+	const shop = createClient();
+	document.addEventListener("click", async (event) => {
+		const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-dc-add]");
+		if (!button) return;
+		const message = button.parentElement?.querySelector<HTMLElement>("[data-dc-message]");
+		button.disabled = true;
+		try {
+			await shop.addItem(button.dataset.dcAdd ?? "", Number(button.dataset.dcQuantity ?? 1));
+			if (message) message.textContent = "Added to cart";
+		} catch (err) {
+			if (message) message.textContent = err instanceof Error ? err.message : "Could not add to cart";
+		} finally {
+			button.disabled = false;
+		}
+	});
+</script>
