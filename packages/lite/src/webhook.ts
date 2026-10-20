@@ -9,10 +9,12 @@
  * The route uses `response: "raw"` so it can answer 400 for a bad signature
  * and 500 when processing fails (Stripe then retries). Handled events:
  *
- *   checkout.session.completed              paid -> mark paid
- *   checkout.session.async_payment_succeeded       -> mark paid
+ *   checkout.session.completed              paid -> mark paid, take stock
+ *   checkout.session.async_payment_succeeded       -> mark paid, take stock
  *   checkout.session.async_payment_failed          -> mark failed
  *   checkout.session.expired                       -> cancel pending order
+ *   charge.refunded                                -> record refund; a full
+ *                                                     refund restores stock
  *
  * Every processed event id is recorded in `stripe_events`; a repeated
  * delivery is acknowledged without side effects. Order writes use
@@ -20,9 +22,22 @@
  */
 
 import type { PluginContext } from "emdash/plugin";
-import { cartKey } from "./cart";
-import { fromStripeAddress, type LiteOrder, ordersStore, updateOrder } from "./orders";
-import { type StripeCheckoutSession, verifyStripeSignature } from "./shared";
+import { cartsStore } from "./cart";
+import {
+	fromStripeAddress,
+	type LiteOrder,
+	ordersStore,
+	stockToRestore,
+	updateOrder,
+} from "./orders";
+import {
+	deriveOrderStatusFromRefunds,
+	derivePaymentStatus,
+	money,
+	type StripeCheckoutSession,
+	verifyStripeSignature,
+} from "./shared";
+import { deductStock, restoreStock } from "./stock";
 
 export interface WebhookResult {
 	status: number;
@@ -32,20 +47,42 @@ export interface WebhookResult {
 interface StripeEvent {
 	id: string;
 	type: string;
+	livemode?: boolean;
 	data: { object: Record<string, unknown> };
 }
+
+/** The fields of a Stripe Charge that refunds need. */
+export interface StripeCharge {
+	id: string;
+	object?: "charge";
+	amount?: number;
+	amount_refunded?: number;
+	currency?: string;
+	payment_intent?: string | null;
+	refunded?: boolean;
+	metadata?: Record<string, string>;
+}
+
+type SessionWithExtras = StripeCheckoutSession & {
+	livemode?: boolean;
+	total_details?: { amount_tax?: number; amount_shipping?: number };
+	collected_information?: { shipping_details?: StripeCheckoutSession["shipping_details"] };
+};
 
 type EventsStore = {
 	exists(id: string): Promise<boolean>;
 	put(id: string, data: Record<string, unknown>): Promise<void>;
 };
 
-const HANDLED = new Set([
+export const HANDLED_EVENTS = [
 	"checkout.session.completed",
 	"checkout.session.async_payment_succeeded",
 	"checkout.session.async_payment_failed",
 	"checkout.session.expired",
-]);
+	"charge.refunded",
+] as const;
+
+const HANDLED = new Set<string>(HANDLED_EVENTS);
 
 export async function handleStripeWebhook(
 	ctx: PluginContext,
@@ -87,12 +124,15 @@ export async function handleStripeWebhook(
 
 	let outcome: string;
 	try {
-		outcome = await processSessionEvent(
-			ctx,
-			event.type,
-			event.data.object as unknown as StripeCheckoutSession,
-			now,
-		);
+		outcome =
+			event.type === "charge.refunded"
+				? await processChargeRefunded(ctx, event.data.object as unknown as StripeCharge, now)
+				: await processSessionEvent(
+						ctx,
+						event.type,
+						event.data.object as unknown as SessionWithExtras,
+						now,
+					);
 	} catch (err) {
 		ctx.log.error("Stripe webhook processing failed", {
 			type: event.type,
@@ -111,7 +151,7 @@ export async function handleStripeWebhook(
 async function processSessionEvent(
 	ctx: PluginContext,
 	type: string,
-	session: StripeCheckoutSession,
+	session: SessionWithExtras,
 	now: number,
 ): Promise<string> {
 	const orderId = session.metadata?.orderId ?? session.client_reference_id;
@@ -132,12 +172,24 @@ async function processSessionEvent(
 			ctx.log.warn("Stripe session references an unknown order", { orderId });
 			return "order_not_found";
 		}
-		if (written) {
-			// Payment confirmed: the cart has been bought, so empty it.
-			await ctx.kv.delete(cartKey(order.cartId));
-			return order.amountMismatch ? "paid_amount_mismatch" : "paid";
+		if (!written) return "unchanged";
+
+		// Payment confirmed: take the items out of stock, then empty the cart.
+		let outcome = order.amountMismatch ? "paid_amount_mismatch" : "paid";
+		if (order.stock === "deducted") {
+			const shortfalls = await deductStock(ctx, orderId, order.items, now);
+			if (shortfalls.length > 0) {
+				await updateOrder(store, orderId, (o) => ({
+					...o,
+					status: "on-hold",
+					stockShortfall: shortfalls,
+				}));
+				ctx.log.warn("Paid order sold more than the stock on hand", { orderId });
+				outcome = "paid_stock_shortfall";
+			}
 		}
-		return "unchanged";
+		await cartsStore(ctx).delete(order.cartId);
+		return outcome;
 	}
 
 	if (type === "checkout.session.async_payment_failed") {
@@ -152,7 +204,7 @@ async function processSessionEvent(
 	// checkout.session.expired
 	const { order } = await updateOrder(store, orderId, (o) =>
 		sessionMatches(o) && o.status === "pending" && o.paymentStatus === "pending"
-			? { ...o, status: "cancelled" }
+			? { ...o, status: "cancelled", cancelReason: "session_expired" }
 			: null,
 	);
 	return order ? "expired" : "order_not_found";
@@ -162,42 +214,110 @@ async function processSessionEvent(
  * Pure transition to "paid". Returns null when the order is already paid
  * (idempotent). A charged amount that differs from the order total puts
  * the order on hold for the merchant instead of marking it processing.
+ * With Stripe Tax, the expected amount is the order total plus the tax
+ * Stripe reports in `total_details.amount_tax`.
  */
 export function markPaid(
 	order: LiteOrder,
-	session: StripeCheckoutSession,
+	session: SessionWithExtras,
 	now: number,
 ): LiteOrder | null {
 	if (order.paymentStatus === "paid") return null;
 	const receivedCurrency = (session.currency ?? "").toUpperCase();
 	const receivedAmount = session.amount_total ?? -1;
-	const mismatch =
-		receivedAmount !== order.total.amount || receivedCurrency !== order.total.currency;
+	const stripeTax = order.automaticTax ? (session.total_details?.amount_tax ?? 0) : 0;
+	const expectedAmount = order.total.amount + stripeTax;
+	const mismatch = receivedAmount !== expectedAmount || receivedCurrency !== order.total.currency;
 
-	const collected = (
-		session as {
-			collected_information?: { shipping_details?: StripeCheckoutSession["shipping_details"] };
-		}
-	).collected_information?.shipping_details;
+	const collected = session.collected_information?.shipping_details;
 	const shipping = collected ?? session.shipping_details;
 	const email = session.customer_details?.email ?? order.customerEmail;
 	const address = fromStripeAddress(shipping?.name, shipping?.address);
+	const tracked = order.items.some((i) => i.stock);
 
 	const next: LiteOrder = {
 		...order,
 		status: mismatch ? "on-hold" : "processing",
 		paymentStatus: "paid",
 		paidAt: new Date(now).toISOString(),
+		amountPaid: receivedAmount,
 		stripeSessionId: session.id,
 		...(session.payment_intent ? { stripePaymentIntentId: String(session.payment_intent) } : {}),
-		...(email ? { customerEmail: email } : {}),
+		...(email ? { customerEmail: email.toLowerCase() } : {}),
 		...(address ? { shippingAddress: address } : {}),
+		...(typeof session.livemode === "boolean" ? { livemode: session.livemode } : {}),
+		...(tracked ? { stock: "deducted" as const } : {}),
 	};
+	if (order.automaticTax && !mismatch) {
+		next.taxTotal = money(order.currency, stripeTax);
+		next.total = money(order.currency, receivedAmount);
+	}
 	if (mismatch) {
 		next.amountMismatch = {
-			expected: order.total,
+			expected: money(order.currency, expectedAmount),
 			received: { currency: receivedCurrency, amount: receivedAmount },
 		};
 	}
+	return next;
+}
+
+async function processChargeRefunded(
+	ctx: PluginContext,
+	charge: StripeCharge,
+	now: number,
+): Promise<string> {
+	const store = ordersStore(ctx);
+	const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : undefined;
+	let orderId = charge.metadata?.orderId;
+	if (!orderId && pi) {
+		const found = await store.query({ where: { stripePaymentIntentId: pi }, limit: 1 });
+		orderId = found.items[0]?.id;
+	}
+	if (!orderId) return "order_not_found";
+	const refunded = typeof charge.amount_refunded === "number" ? charge.amount_refunded : 0;
+	const { order, previous, written } = await updateOrder(store, orderId, (o) =>
+		applyRefund(o, refunded, charge, now),
+	);
+	if (!order) return "order_not_found";
+	if (!written) return "unchanged";
+	if (previous && stockToRestore(previous, order)) {
+		await restoreStock(ctx, orderId, order.items, "refund", now);
+	}
+	return order.paymentStatus === "refunded" ? "refunded" : "partially_refunded";
+}
+
+/**
+ * Pure refund transition. `amount_refunded` is cumulative on the Charge,
+ * so applying the largest value seen is idempotent and order-independent.
+ * Refunds are facts reported by Stripe, so they apply from any paid state.
+ */
+export function applyRefund(
+	order: LiteOrder,
+	refundedTotal: number,
+	charge: Pick<StripeCharge, "amount" | "payment_intent">,
+	now: number,
+): LiteOrder | null {
+	if (!["paid", "partially-refunded", "refunded"].includes(order.paymentStatus)) return null;
+	if (
+		charge.payment_intent &&
+		order.stripePaymentIntentId &&
+		charge.payment_intent !== order.stripePaymentIntentId
+	) {
+		return null;
+	}
+	if (refundedTotal <= (order.refundedAmount ?? 0)) return null;
+	const paid = order.amountPaid ?? charge.amount ?? order.total.amount;
+	const paymentStatus = derivePaymentStatus(paid, refundedTotal);
+	const next: LiteOrder = {
+		...order,
+		refundedAmount: refundedTotal,
+		refundedAt: new Date(now).toISOString(),
+		paymentStatus,
+		status:
+			order.status === "cancelled" || order.status === "failed"
+				? order.status
+				: deriveOrderStatusFromRefunds(order.status, paid, refundedTotal),
+	};
+	if (paymentStatus === "refunded" && order.stock === "deducted") next.stock = "restored";
 	return next;
 }

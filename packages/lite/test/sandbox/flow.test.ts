@@ -32,6 +32,8 @@ async function setup() {
 			{ slug: "sku", label: "SKU", type: "string" },
 			{ slug: "stock_status", label: "Stock status", type: "string" },
 			{ slug: "backorders", label: "Backorders", type: "string" },
+			{ slug: "manage_stock", label: "Manage stock", type: "boolean" },
+			{ slug: "stock_quantity", label: "Stock quantity", type: "integer" },
 		],
 	});
 	const item = await h.fixtures.content("products", {
@@ -44,6 +46,8 @@ async function setup() {
 			sku: "MUG",
 			stock_status: "instock",
 			backorders: "no",
+			manage_stock: true,
+			stock_quantity: 5,
 		},
 	});
 	return { h, productId: item.id };
@@ -72,7 +76,7 @@ async function sign(payload: string, secret: string, t: number) {
 	return `t=${t},v1=${Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
-describe("DashCommerce Lite in the sandbox", () => {
+describe("DashCommerce (sandboxed) in workerd", () => {
 	it("runs cart -> checkout -> signed webhook -> admin", async () => {
 		const { h, productId } = await setup();
 		await h.fixtures.plugin.setting("stripeSecretKey", SK);
@@ -167,12 +171,18 @@ describe("DashCommerce Lite in the sandbox", () => {
 			status: "processing",
 			paymentStatus: "paid",
 			customerEmail: "buyer@example.com",
+			stock: "deducted",
+		});
+		// Stock ledger: 5 on the product, 2 sold. Written with storage updateIf/compareAndSet.
+		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({
+			onHand: 3,
+			baseline: 5,
 		});
 
 		// Order status for the success page.
 		const status = await call(h, "order", {
 			method: "GET",
-			url: `https://shop.example/_emdash/api/plugins/dashcommerce-lite/order?id=${co.orderId}&key=${co.orderKey}`,
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce/order?id=${co.orderId}&key=${co.orderKey}`,
 		});
 		expect(status.body.data).toMatchObject({ ok: true, order: { paymentStatus: "paid" } });
 
@@ -185,6 +195,96 @@ describe("DashCommerce Lite in the sandbox", () => {
 		expect(JSON.stringify(orders)).toContain(String(order?.orderNumber));
 		const settings = await h.admin.loadPage("/settings");
 		expect(JSON.stringify(settings)).not.toContain(SK);
+		const stock = await h.admin.loadPage("/stock");
+		expect(JSON.stringify(stock)).toContain('"onHand":3');
+		const widget = await h.admin.loadWidget("recent-orders");
+		expect(JSON.stringify(widget)).toContain(String(order?.orderNumber));
+
+		// Full refund through the real dispatcher: payment and stock go back.
+		const refundPayload = JSON.stringify({
+			id: "evt_sbx_refund",
+			type: "charge.refunded",
+			data: {
+				object: {
+					id: "ch_sbx",
+					object: "charge",
+					amount: 2400,
+					amount_refunded: 2400,
+					currency: "usd",
+					payment_intent: "pi_sbx",
+					refunded: true,
+				},
+			},
+		});
+		const refunded = await h.actions.routes.request("stripe/webhook", {
+			method: "POST",
+			headers: {
+				"stripe-signature": await sign(refundPayload, WH, t),
+				"content-type": "application/json",
+			},
+			rawBody: refundPayload,
+		});
+		expect(await refunded.json()).toMatchObject({ outcome: "refunded" });
+		expect(await h.inspect.storage.get("orders", co.orderId)).toMatchObject({
+			status: "refunded",
+			paymentStatus: "refunded",
+			refundedAmount: 2400,
+			stock: "restored",
+		});
+		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 5 });
+
+		// CSV export: the Orders page mints a one-time link to a raw route.
+		const exp = await h.admin.act("/orders", "export_csv", { value: "all" });
+		const token = JSON.stringify(exp).match(/orders\/export\?token=([A-Za-z0-9_-]{43})/)?.[1];
+		expect(token).toBeDefined();
+		const csv = await h.actions.routes.request("orders/export", {
+			method: "GET",
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce/orders/export?token=${token}`,
+		});
+		expect(csv.status).toBe(200);
+		expect(csv.headers.get("content-type")).toContain("text/csv");
+		expect(csv.headers.get("content-disposition")).toContain("attachment;");
+		expect(await csv.text()).toContain(String(order?.orderNumber));
+		const reused = await h.actions.routes.request("orders/export", {
+			method: "GET",
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce/orders/export?token=${token}`,
+		});
+		expect(reused.status).toBe(403);
+	});
+
+	it("schedules the cleanup task and runs it through the cron hook", async () => {
+		const { h, productId } = await setup();
+		await h.actions.plugin.activate();
+		const tasks = await h.inspect.scheduledTasks();
+		expect(JSON.stringify(tasks)).toContain("cleanup");
+
+		// An expired cart and a stale pending order.
+		await h.fixtures.plugin.storage("carts", "c".repeat(64), {
+			cart: { sessionId: "c".repeat(64), currency: "USD", items: [] },
+			expiresAt: "2020-01-01T00:00:00.000Z",
+		});
+		await h.fixtures.plugin.storage("orders", "stale1", {
+			orderNumber: "DCL-STALE",
+			orderKey: "k",
+			cartId: "x",
+			status: "pending",
+			paymentStatus: "pending",
+			currency: "USD",
+			items: [{ productId, title: "Mug", quantity: 1 }],
+			subtotal: { currency: "USD", amount: 1200 },
+			total: { currency: "USD", amount: 1200 },
+			createdAt: "2020-01-01T00:00:00.000Z",
+			updatedAt: "2020-01-01T00:00:00.000Z",
+		});
+		await h.transport.invokeHook("cron", {
+			name: "cleanup",
+			scheduledAt: new Date().toISOString(),
+		});
+		expect(await h.inspect.storage.get("carts", "c".repeat(64))).toBeNull();
+		expect(await h.inspect.storage.get("orders", "stale1")).toMatchObject({
+			status: "cancelled",
+			cancelReason: "stale",
+		});
 	});
 
 	it("explains a missing EMDASH_ENCRYPTION_KEY instead of failing", async () => {

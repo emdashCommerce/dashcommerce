@@ -16,24 +16,30 @@
 export {
 	add,
 	format,
+	minorUnitsFactor,
 	money,
 	zero,
 	type CurrencyCode,
 	type Money,
 } from "../../core/src/money";
-export { recalculate } from "../../core/src/cart/calculate";
+export { type PricingPolicy, recalculate } from "../../core/src/cart/calculate";
 export { newCart } from "../../core/src/cart/store";
 export { normalizeProductFields } from "../../core/src/products/normalize";
 export { resolvePrice } from "../../core/src/products/pricing";
 export { verifyStripeSignature } from "../../core/src/stripe/webhook-verify";
 export {
+	type CheckoutLineItem,
 	createCheckoutSession,
 	type CreateCheckoutSessionInput,
 	type StripeCheckoutSession,
 	type StripeSessionAddress,
 } from "../../core/src/stripe/checkout-sessions";
 export { StripeApiError } from "../../core/src/stripe/client";
-export { canTransition } from "../../core/src/orders/status";
+export {
+	canTransition,
+	deriveOrderStatusFromRefunds,
+	derivePaymentStatus,
+} from "../../core/src/orders/status";
 export { randomId } from "../../core/src/util/ids";
 export type {
 	CartLineItem,

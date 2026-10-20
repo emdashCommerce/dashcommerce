@@ -1,9 +1,12 @@
 /**
  * DashCommerce Lite: sandboxed runtime entry.
  *
- * Routes mount under /_emdash/api/plugins/dashcommerce-lite/<name>.
+ * Routes mount under /_emdash/api/plugins/dashcommerce/<name>.
  * Storefront routes are public, take the cart token in the
  * `X-DashCommerce-Cart` header, and return JSON. See DESIGN.md.
+ *
+ * Hooks: an hourly `cleanup` cron task is scheduled on install and on
+ * activate (see cron.ts).
  */
 
 import { pluginResponse, pluginRoute, type SandboxedPlugin } from "emdash/plugin";
@@ -16,6 +19,8 @@ import {
 	updateItemHandler,
 } from "./cart-routes";
 import { createCheckoutHandler } from "./checkout";
+import { handleCron, scheduleCleanup } from "./cron";
+import { handleExport } from "./export";
 import { ordersStore, safeEqual, toPublicOrder } from "./orders";
 import { asId, asObject, asString, fail } from "./validate";
 import { handleStripeWebhook } from "./webhook";
@@ -23,6 +28,12 @@ import { handleStripeWebhook } from "./webhook";
 const JSON_BODY = { body: "json" as const, maxBytes: 16 * 1024, headers: [CART_HEADER] };
 
 const plugin: SandboxedPlugin = {
+	hooks: {
+		"plugin:install": async (_event, ctx) => scheduleCleanup(ctx),
+		"plugin:activate": async (_event, ctx) => scheduleCleanup(ctx),
+		cron: handleCron,
+	},
+
 	routes: {
 		cart: pluginRoute({
 			public: true,
@@ -91,6 +102,26 @@ const plugin: SandboxedPlugin = {
 					status: result.status,
 					headers: { "content-type": "application/json" },
 					body: { kind: "text", value: JSON.stringify(result.body) },
+				});
+			},
+		}),
+
+		/**
+		 * CSV download for the Orders page. Public because a download link
+		 * cannot send the CSRF header private routes need; access needs a
+		 * one-time token the admin page mints (see export.ts).
+		 */
+		"orders/export": pluginRoute({
+			public: true,
+			methods: ["GET"],
+			request: { body: "none" },
+			response: "raw",
+			handler: async (routeCtx, ctx) => {
+				const result = await handleExport(ctx, routeCtx.input);
+				return pluginResponse({
+					status: result.status,
+					headers: result.headers,
+					body: { kind: "text", value: result.body },
 				});
 			},
 		}),

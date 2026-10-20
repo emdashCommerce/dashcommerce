@@ -17,12 +17,13 @@ import {
 	MAX_LINES,
 	MAX_QUANTITY,
 	mintToken,
+	priceCart,
 	readToken,
 	saveCart,
 	toCartView,
 } from "./cart";
 import { priceProduct } from "./products";
-import { readCurrency } from "./settings";
+import { type LiteConfig, loadConfig } from "./settings";
 import { type CartLineItem, type CartState, money, randomId } from "./shared";
 import { asId, asInt, asObject, fail } from "./validate";
 
@@ -30,40 +31,59 @@ export { CART_HEADER };
 
 type Headers = Record<string, string>;
 
+type Resolved = {
+	token: string;
+	cartId: string;
+	cart: CartState;
+	config: LiteConfig;
+};
+
+/** Settings plus the cart for the token: 1 or 2 bridge calls. */
 async function resolveCart(
 	ctx: PluginContext,
 	headers: Headers,
 	opts: { create: boolean },
-): Promise<{ token: string; cartId: string; cart: CartState; isNew: boolean } | null> {
-	const currency = await readCurrency(ctx);
+): Promise<{ config: LiteConfig; resolved: Resolved | null }> {
+	const config = await loadConfig(ctx);
+	const currency = config.currency;
 	const token = readToken(headers);
 	if (token) {
 		const cartId = await cartIdForToken(token);
-		const cart = await loadCart(ctx.kv, cartId);
+		const cart = await loadCart(ctx, cartId);
 		if (cart) {
 			// Store currency changed since this cart was created: start over
 			// rather than mixing currencies.
-			if (cart.currency !== currency) {
-				return { token, cartId, cart: emptyCart(cartId, currency), isNew: false };
-			}
-			return { token, cartId, cart, isNew: false };
+			const usable = cart.currency === currency ? cart : emptyCart(cartId, currency);
+			return { config, resolved: { token, cartId, cart: usable, config } };
 		}
-		if (opts.create) return { token, cartId, cart: emptyCart(cartId, currency), isNew: false };
-		return null;
+		if (opts.create) {
+			return { config, resolved: { token, cartId, cart: emptyCart(cartId, currency), config } };
+		}
+		return { config, resolved: null };
 	}
-	if (!opts.create) return null;
+	if (!opts.create) return { config, resolved: null };
 	const fresh = mintToken();
 	const cartId = await cartIdForToken(fresh);
-	return { token: fresh, cartId, cart: emptyCart(cartId, currency), isNew: true };
+	return {
+		config,
+		resolved: { token: fresh, cartId, cart: emptyCart(cartId, currency), config },
+	};
 }
 
 export async function getCartHandler(ctx: PluginContext, headers: Headers) {
-	const resolved = await resolveCart(ctx, headers, { create: false });
+	const { config, resolved } = await resolveCart(ctx, headers, { create: false });
 	if (!resolved) {
-		const currency = await readCurrency(ctx);
-		return { ok: true as const, token: null, cart: toCartView(emptyCart("", currency)) };
+		return {
+			ok: true as const,
+			token: null,
+			cart: toCartView(emptyCart("", config.currency), config),
+		};
 	}
-	return { ok: true as const, token: resolved.token, cart: toCartView(resolved.cart) };
+	return {
+		ok: true as const,
+		token: resolved.token,
+		cart: toCartView(priceCartForView(resolved), config),
+	};
 }
 
 export async function addItemHandler(ctx: PluginContext, headers: Headers, input: unknown) {
@@ -75,9 +95,9 @@ export async function addItemHandler(ctx: PluginContext, headers: Headers, input
 		return fail("INVALID_INPUT", `quantity must be an integer from 1 to ${MAX_QUANTITY}`);
 	}
 
-	const resolved = await resolveCart(ctx, headers, { create: true });
+	const { resolved } = await resolveCart(ctx, headers, { create: true });
 	if (!resolved) return fail("CART_UNAVAILABLE", "Could not open a cart");
-	const { token, cart } = resolved;
+	const { token, cart, config } = resolved;
 
 	const existing = cart.items.find((i) => i.productId === productId);
 	const nextQty = (existing?.quantity ?? 0) + quantity;
@@ -109,8 +129,8 @@ export async function addItemHandler(ctx: PluginContext, headers: Headers, input
 		};
 		items = [...cart.items, line];
 	}
-	const saved = await saveCart(ctx.kv, { ...cart, items });
-	return { ok: true as const, token, cart: toCartView(saved) };
+	const saved = await saveCart(ctx, { ...cart, items }, config);
+	return { ok: true as const, token, cart: toCartView(saved, config) };
 }
 
 export async function updateItemHandler(ctx: PluginContext, headers: Headers, input: unknown) {
@@ -120,9 +140,9 @@ export async function updateItemHandler(ctx: PluginContext, headers: Headers, in
 	if (!lineId || quantity === undefined) {
 		return fail("INVALID_INPUT", `lineId and quantity (0 to ${MAX_QUANTITY}) are required`);
 	}
-	const resolved = await resolveCart(ctx, headers, { create: false });
+	const { resolved } = await resolveCart(ctx, headers, { create: false });
 	if (!resolved) return fail("CART_NOT_FOUND", "No cart for this token");
-	const { token, cart } = resolved;
+	const { token, cart, config } = resolved;
 	const line = cart.items.find((i) => i.lineId === lineId);
 	if (!line) return fail("LINE_NOT_FOUND", "No such line in this cart");
 
@@ -137,17 +157,26 @@ export async function updateItemHandler(ctx: PluginContext, headers: Headers, in
 			i === line ? withQuantity({ ...i, unitPrice: priced.product.unitPrice }, quantity) : i,
 		);
 	}
-	const saved = await saveCart(ctx.kv, { ...cart, items });
-	return { ok: true as const, token, cart: toCartView(saved) };
+	const saved = await saveCart(ctx, { ...cart, items }, config);
+	return { ok: true as const, token, cart: toCartView(saved, config) };
 }
 
 export async function clearCartHandler(ctx: PluginContext, headers: Headers) {
-	const resolved = await resolveCart(ctx, headers, { create: false });
-	const currency = await readCurrency(ctx);
-	if (!resolved)
-		return { ok: true as const, token: null, cart: toCartView(emptyCart("", currency)) };
-	const saved = await saveCart(ctx.kv, emptyCart(resolved.cartId, currency));
-	return { ok: true as const, token: resolved.token, cart: toCartView(saved) };
+	const { config, resolved } = await resolveCart(ctx, headers, { create: false });
+	if (!resolved) {
+		return {
+			ok: true as const,
+			token: null,
+			cart: toCartView(emptyCart("", config.currency), config),
+		};
+	}
+	const saved = await saveCart(ctx, emptyCart(resolved.cartId, config.currency), config);
+	return { ok: true as const, token: resolved.token, cart: toCartView(saved, config) };
+}
+
+/** Show totals under the current shipping and tax settings without a write. */
+function priceCartForView(r: Resolved): CartState {
+	return priceCart(r.cart, r.config);
 }
 
 function withQuantity(line: CartLineItem, quantity: number): CartLineItem {

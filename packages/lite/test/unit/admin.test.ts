@@ -4,7 +4,7 @@ import { handleAdmin } from "../../src/admin";
 import type { LiteOrder } from "../../src/orders";
 import { makeCtx } from "../helpers/fake-ctx";
 
-const policy = { pluginPagePaths: ["/orders", "/settings"] };
+const policy = { pluginPagePaths: ["/orders", "/stock", "/settings"] };
 
 function expectValid(res: unknown) {
 	const v = validateBlockResponse(res, policy);
@@ -48,7 +48,7 @@ describe("Block Kit admin", () => {
 		const table = res.blocks.find((b) => b.type === "table") as { rows: Array<{ number: string }> };
 		expect(table.rows.map((r) => r.number)).toEqual(["DCL-2", "DCL-1"]);
 		const stats = res.blocks.find((b) => b.type === "stats") as { items: Array<{ value: number }> };
-		expect(stats.items.map((i) => i.value)).toEqual([1, 1]);
+		expect(stats.items.map((i) => i.value)).toEqual([1, 1, 0]);
 	});
 
 	test("order detail and status changes follow core transitions", async () => {
@@ -99,9 +99,7 @@ describe("Block Kit admin", () => {
 		const json = JSON.stringify(res);
 		expect(json).not.toContain("secretvalue");
 		expect(json).toContain('"has_value":true');
-		expect(json).toContain(
-			"https://shop.example/_emdash/api/plugins/dashcommerce-lite/stripe/webhook",
-		);
+		expect(json).toContain("https://shop.example/_emdash/api/plugins/dashcommerce/stripe/webhook");
 	});
 
 	const goodValues = {
@@ -129,6 +127,9 @@ describe("Block Kit admin", () => {
 			successUrl: "/thanks?o={ORDER_ID}",
 			cancelUrl: "/cart",
 			shippingCountries: "GB,IE",
+			flatShipping: 0,
+			flatTaxPercent: 0,
+			automaticTax: false,
 		});
 	});
 

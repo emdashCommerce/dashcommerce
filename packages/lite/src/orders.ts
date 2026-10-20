@@ -21,6 +21,11 @@ export interface LiteOrderItem {
 	quantity: number;
 	unitPrice: Money;
 	lineTotal: Money;
+	/**
+	 * Present when the product had manage_stock on at checkout. `baseline`
+	 * is its stock_quantity then (see stock.ts).
+	 */
+	stock?: { baseline: number; backorders: boolean };
 }
 
 export interface LiteAddress {
@@ -44,7 +49,26 @@ export interface LiteOrder {
 	currency: string;
 	items: LiteOrderItem[];
 	subtotal: Money;
+	shippingTotal?: Money;
+	taxTotal?: Money;
+	/** Order total. With Stripe Tax this is updated to the charged amount on payment. */
 	total: Money;
+	/** Stripe Tax computes tax on the hosted page. */
+	automaticTax?: boolean;
+	/** Amount Stripe charged, minor units. */
+	amountPaid?: number;
+	/** Cumulative refunded amount from `charge.refunded`, minor units. */
+	refundedAmount?: number;
+	refundedAt?: string;
+	/** Stock state for tracked items: taken on payment, put back on full refund or cancel. */
+	stock?: "deducted" | "restored";
+	/** Tracked items that sold beyond the stock on hand. */
+	stockShortfall?: Array<{ productId: string; title: string; short: number }>;
+	/** Why the order was cancelled, when the plugin cancelled it. */
+	cancelReason?: "session_expired" | "stale" | "admin";
+	/** Stripe livemode flag from the paid session, for dashboard links. */
+	livemode?: boolean;
+	/** Lowercased. */
 	customerEmail?: string;
 	shippingAddress?: LiteAddress;
 	stripeSessionId?: string;
@@ -65,6 +89,10 @@ export type OrdersStore = {
 		expectedRevision: string | null,
 		data: LiteOrder,
 	): Promise<{ applied: boolean }>;
+	updateIf(
+		id: string,
+		args: { where: Record<string, unknown>; set?: Partial<LiteOrder> },
+	): Promise<{ applied: true; data: LiteOrder } | { applied: false }>;
 	query(options?: {
 		where?: Record<string, unknown>;
 		orderBy?: Record<string, "asc" | "desc">;
@@ -93,17 +121,17 @@ export async function updateOrder(
 	id: string,
 	mutate: (order: LiteOrder) => LiteOrder | null,
 	attempts = 3,
-): Promise<{ order: LiteOrder | null; written: boolean }> {
+): Promise<{ order: LiteOrder | null; previous: LiteOrder | null; written: boolean }> {
 	for (let i = 0; i < attempts; i += 1) {
 		const current = await store.getVersioned(id);
-		if (!current) return { order: null, written: false };
+		if (!current) return { order: null, previous: null, written: false };
 		const next = mutate(current.value);
-		if (!next) return { order: current.value, written: false };
+		if (!next) return { order: current.value, previous: current.value, written: false };
 		const res = await store.compareAndSet(id, current.revision, {
 			...next,
 			updatedAt: new Date().toISOString(),
 		});
-		if (res.applied) return { order: next, written: true };
+		if (res.applied) return { order: next, previous: current.value, written: true };
 	}
 	throw new Error("Order update conflicted repeatedly");
 }
@@ -112,7 +140,18 @@ export async function updateOrder(
 export function applyStatus(order: LiteOrder, to: OrderStatus): LiteOrder | null {
 	if (order.status === to) return null;
 	if (!canTransition(order.status, to)) return null;
-	return { ...order, status: to };
+	const next: LiteOrder = { ...order, status: to };
+	if (to === "cancelled") {
+		next.cancelReason = "admin";
+		// A cancelled paid order gives its stock back.
+		if (order.stock === "deducted") next.stock = "restored";
+	}
+	return next;
+}
+
+/** True when moving `before` to `after` should put stock back. */
+export function stockToRestore(before: LiteOrder, after: LiteOrder): boolean {
+	return before.stock === "deducted" && after.stock === "restored";
 }
 
 export function fromStripeAddress(
@@ -141,7 +180,10 @@ export function toPublicOrder(id: string, o: LiteOrder) {
 		currency: o.currency,
 		items: o.items,
 		subtotal: o.subtotal,
+		shippingTotal: o.shippingTotal ?? { currency: o.currency, amount: 0 },
+		taxTotal: o.taxTotal ?? { currency: o.currency, amount: 0 },
 		total: o.total,
+		refundedAmount: o.refundedAmount ?? 0,
 		createdAt: o.createdAt,
 		paidAt: o.paidAt ?? null,
 	};

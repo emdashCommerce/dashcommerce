@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CART_HEADER, cartIdForToken, cartKey } from "../../src/cart";
+import { CART_HEADER, cartIdForToken } from "../../src/cart";
 import { addItemHandler } from "../../src/cart-routes";
 import { createCheckoutHandler } from "../../src/checkout";
 import type { LiteOrder } from "../../src/orders";
@@ -59,7 +59,7 @@ describe("checkout/session", () => {
 		const call = t.httpCalls[0] as HttpCall;
 		expect(call.url).toBe("https://api.stripe.com/v1/checkout/sessions");
 		expect(call.headers.Authorization).toBe(`Bearer ${SK}`);
-		expect(call.headers["Idempotency-Key"]).toBe(`dcl_checkout_${res.orderId}`);
+		expect(call.headers["Idempotency-Key"]).toBe(`dc_checkout_${res.orderId}`);
 		const form = new URLSearchParams(call.body);
 		expect(form.get("mode")).toBe("payment");
 		expect(form.get("line_items[0][price_data][unit_amount]")).toBe("1500");
@@ -195,7 +195,7 @@ describe("stripe/webhook", () => {
 			shippingAddress: { name: "Ada", line1: "1 Main St", country: "US", postalCode: "12345" },
 		});
 		expect(order.paidAt).toBeString();
-		expect(t.kv.has(cartKey(order.cartId))).toBe(false);
+		expect(t.carts.rows.has(order.cartId)).toBe(false);
 		expect(await t.stripeEvents.exists("evt_1")).toBe(true);
 	});
 
@@ -285,7 +285,7 @@ describe("stripe/webhook", () => {
 		expect(unknown.body).toMatchObject({ outcome: "order_not_found" });
 		const ignored = await deliver(
 			t,
-			JSON.stringify({ id: "evt_i", type: "charge.refunded", data: { object: {} } }),
+			JSON.stringify({ id: "evt_i", type: "payment_intent.created", data: { object: {} } }),
 		);
 		expect(ignored.body).toMatchObject({ ignored: true });
 	});

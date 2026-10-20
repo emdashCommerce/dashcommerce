@@ -1,21 +1,115 @@
 /**
- * In-memory PluginContext for unit tests. Implements only what Lite uses:
- * kv, settings, storage (orders, stripe_events), content.get, http.fetch,
- * log, site and plugin.
+ * In-memory PluginContext for unit tests. Implements what Lite uses: kv,
+ * settings (get/set/delete/list), storage collections declared in
+ * emdash-plugin.jsonc, content.get/list, http.fetch, cron, log, site and
+ * plugin.
+ *
+ * Storage follows the host's rules closely enough to catch mistakes:
+ * `where` and `orderBy` must use declared indexes, `updateIf` applies
+ * `set` and numeric `delta` only when the guard matches, and queries page
+ * with a cursor.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { PluginContext } from "emdash/plugin";
 
 type Doc = Record<string, unknown>;
 
-class MemoryCollection {
+function stripJsonc(src: string): string {
+	let out = "";
+	let inString = false;
+	for (let i = 0; i < src.length; i += 1) {
+		const ch = src[i] as string;
+		if (inString) {
+			out += ch;
+			if (ch === "\\") {
+				out += src[i + 1] ?? "";
+				i += 1;
+			} else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			out += ch;
+		} else if (ch === "/" && src[i + 1] === "/") {
+			while (i < src.length && src[i] !== "\n") i += 1;
+			out += "\n";
+		} else out += ch;
+	}
+	return out.replace(/,(\s*[}\]])/g, "$1");
+}
+
+export const MANIFEST = JSON.parse(
+	stripJsonc(readFileSync(resolve(import.meta.dir, "../../emdash-plugin.jsonc"), "utf8")),
+) as {
+	slug: string;
+	storage: Record<string, { indexes: Array<string | string[]>; uniqueIndexes?: string[] }>;
+};
+
+function matchValue(actual: unknown, cond: unknown): boolean {
+	if (cond !== null && typeof cond === "object" && !Array.isArray(cond)) {
+		const c = cond as Doc;
+		if ("in" in c) return (c.in as unknown[]).includes(actual);
+		if ("startsWith" in c)
+			return typeof actual === "string" && actual.startsWith(String(c.startsWith));
+		if (actual === undefined || actual === null) return false;
+		const a = actual as number | string;
+		if (c.gt !== undefined && !(a > (c.gt as number | string))) return false;
+		if (c.gte !== undefined && !(a >= (c.gte as number | string))) return false;
+		if (c.lt !== undefined && !(a < (c.lt as number | string))) return false;
+		if (c.lte !== undefined && !(a <= (c.lte as number | string))) return false;
+		return true;
+	}
+	return (actual ?? null) === cond;
+}
+
+function matches(data: Doc, where: Doc) {
+	return Object.entries(where).every(([k, v]) => matchValue(data[k], v));
+}
+
+export class MemoryCollection {
 	rows = new Map<string, { data: Doc; rev: number }>();
+	indexed: Set<string> | null;
+	constructor(
+		readonly name: string,
+		indexes?: Array<string | string[]>,
+	) {
+		this.indexed = indexes ? new Set(indexes.flat()) : null;
+	}
+	private checkFields(fields: string[], what: string) {
+		if (!this.indexed) return;
+		for (const f of fields) {
+			if (!this.indexed.has(f)) {
+				throw new Error(`${this.name}: cannot ${what} non-indexed field '${f}'`);
+			}
+		}
+	}
 	async get(id: string) {
 		return structuredClone(this.rows.get(id)?.data ?? null);
+	}
+	async getMany(ids: string[]) {
+		const out = new Map<string, Doc>();
+		for (const id of ids) {
+			const row = this.rows.get(id);
+			if (row) out.set(id, structuredClone(row.data));
+		}
+		return out;
 	}
 	async put(id: string, data: Doc) {
 		const prev = this.rows.get(id);
 		this.rows.set(id, { data: structuredClone(data), rev: (prev?.rev ?? 0) + 1 });
+	}
+	async putMany(items: Array<{ id: string; data: Doc }>) {
+		for (const i of items) await this.put(i.id, i.data);
+	}
+	async delete(id: string) {
+		return this.rows.delete(id);
+	}
+	async deleteMany(ids: string[]) {
+		let n = 0;
+		for (const id of ids) if (this.rows.delete(id)) n += 1;
+		return n;
 	}
 	async exists(id: string) {
 		return this.rows.has(id);
@@ -31,9 +125,31 @@ class MemoryCollection {
 		await this.put(id, data);
 		return { applied: true, revision: String(this.rows.get(id)?.rev) };
 	}
-	async query(
-		opts: { where?: Doc; orderBy?: Record<string, "asc" | "desc">; limit?: number } = {},
+	async updateIf(
+		id: string,
+		args: { where: Doc; set?: Doc; delta?: Record<string, { inc?: number; dec?: number }> },
 	) {
+		this.checkFields(Object.keys(args.where), "guard on");
+		const row = this.rows.get(id);
+		if (!row || !matches(row.data, args.where)) return { applied: false };
+		const next: Doc = { ...row.data, ...structuredClone(args.set ?? {}) };
+		for (const [k, d] of Object.entries(args.delta ?? {})) {
+			const base = typeof next[k] === "number" ? (next[k] as number) : 0;
+			next[k] = base + (d.inc ?? 0) - (d.dec ?? 0);
+		}
+		await this.put(id, next);
+		return { applied: true, data: structuredClone(next) };
+	}
+	async query(
+		opts: {
+			where?: Doc;
+			orderBy?: Record<string, "asc" | "desc">;
+			limit?: number;
+			cursor?: string;
+		} = {},
+	) {
+		this.checkFields(Object.keys(opts.where ?? {}), "query on");
+		this.checkFields(Object.keys(opts.orderBy ?? {}), "order by");
 		let items = [...this.rows.entries()].map(([id, r]) => ({ id, data: structuredClone(r.data) }));
 		if (opts.where) items = items.filter((i) => matches(i.data, opts.where as Doc));
 		const [[key, dir] = []] = Object.entries(opts.orderBy ?? {});
@@ -44,16 +160,16 @@ class MemoryCollection {
 				return dir === "desc" ? bv.localeCompare(av) : av.localeCompare(bv);
 			});
 		}
-		const limit = opts.limit ?? 50;
-		return { items: items.slice(0, limit), hasMore: items.length > limit };
+		const limit = Math.min(opts.limit ?? 50, 100);
+		const start = opts.cursor ? Number(opts.cursor) : 0;
+		const page = items.slice(start, start + limit);
+		const hasMore = items.length > start + limit;
+		return { items: page, hasMore, ...(hasMore ? { cursor: String(start + limit) } : {}) };
 	}
 	async count(where?: Doc) {
+		this.checkFields(Object.keys(where ?? {}), "count on");
 		return [...this.rows.values()].filter((r) => !where || matches(r.data, where)).length;
 	}
-}
-
-function matches(data: Doc, where: Doc) {
-	return Object.entries(where).every(([k, v]) => data[k] === v);
 }
 
 export interface FakeProduct {
@@ -78,17 +194,46 @@ export function makeCtx(
 ) {
 	const kv = new Map<string, unknown>();
 	const settings = new Map<string, unknown>(Object.entries(opts.settings ?? {}));
-	const orders = new MemoryCollection();
-	const stripeEvents = new MemoryCollection();
+	const collections = Object.fromEntries(
+		Object.entries(MANIFEST.storage).map(([name, cfg]) => [
+			name,
+			new MemoryCollection(name, [...cfg.indexes, ...(cfg.uniqueIndexes ?? [])]),
+		]),
+	) as Record<string, MemoryCollection>;
 	const products = new Map((opts.products ?? []).map((p) => [p.id, p]));
 	const httpCalls: HttpCall[] = [];
 	const logs: Array<{ level: string; msg: string; data?: unknown }> = [];
+	const cronTasks = new Map<string, { schedule: string }>();
+	const calls = { count: 0 };
+	const counted = <T extends object>(obj: T): T =>
+		new Proxy(obj, {
+			get(target, prop, receiver) {
+				const v = Reflect.get(target, prop, receiver);
+				if (typeof v !== "function") return v;
+				return (...args: unknown[]) => {
+					calls.count += 1;
+					return (v as (...a: unknown[]) => unknown).apply(target, args);
+				};
+			},
+		});
+
+	const toItem = (p: FakeProduct) => ({
+		id: p.id,
+		type: "products",
+		slug: p.id,
+		status: p.status ?? "published",
+		locale: "en",
+		data: p.data,
+		createdAt: "",
+		updatedAt: "",
+		publishedAt: "",
+	});
 
 	const ctx = {
-		plugin: { id: "dashcommerce-lite", version: "0.1.0" },
+		plugin: { id: MANIFEST.slug, version: "0.2.0" },
 		site: { name: "Test shop", url: "https://shop.example", locale: "en" },
 		url: (p: string) => `https://shop.example${p}`,
-		kv: {
+		kv: counted({
 			get: async (k: string) => structuredClone(kv.get(k) ?? null),
 			set: async (k: string, v: unknown) => void kv.set(k, structuredClone(v)),
 			delete: async (k: string) => kv.delete(k),
@@ -96,33 +241,27 @@ export function makeCtx(
 				[...kv.entries()]
 					.filter(([k]) => k.startsWith(prefix))
 					.map(([key, value]) => ({ key, value })),
-		},
-		settings: {
+		}),
+		settings: counted({
 			get: async (k: string) => settings.get(k) ?? null,
 			set: async (k: string, v: unknown) => void settings.set(k, v),
 			delete: async (k: string) => settings.delete(k),
 			list: async () => [...settings.entries()].map(([key, value]) => ({ key, value })),
-		},
-		storage: { orders, stripe_events: stripeEvents },
-		content: {
+		}),
+		storage: Object.fromEntries(Object.entries(collections).map(([k, c]) => [k, counted(c)])),
+		content: counted({
 			get: async (_collection: string, id: string) => {
 				const p = products.get(id);
-				if (!p) return null;
-				return {
-					id: p.id,
-					type: "products",
-					slug: p.id,
-					status: p.status ?? "published",
-					locale: "en",
-					data: p.data,
-					createdAt: "",
-					updatedAt: "",
-					publishedAt: "",
-				};
+				return p ? toItem(p) : null;
 			},
-			list: async () => ({ items: [], hasMore: false }),
-		},
-		http: {
+			list: async (_collection: string, o: { where?: { status?: string } } = {}) => ({
+				items: [...products.values()]
+					.filter((p) => !o.where?.status || (p.status ?? "published") === o.where.status)
+					.map(toItem),
+				hasMore: false,
+			}),
+		}),
+		http: counted({
 			fetch: async (url: string, init: RequestInit = {}) => {
 				const call: HttpCall = {
 					url,
@@ -134,6 +273,11 @@ export function makeCtx(
 				const res = opts.stripe?.(call) ?? { status: 500, body: { error: { message: "no stub" } } };
 				return new Response(JSON.stringify(res.body), { status: res.status });
 			},
+		}),
+		cron: {
+			schedule: async (name: string, o: { schedule: string }) => void cronTasks.set(name, o),
+			cancel: async (name: string) => void cronTasks.delete(name),
+			list: async () => [],
 		},
 		log: {
 			debug: (msg: string, data?: unknown) => logs.push({ level: "debug", msg, data }),
@@ -147,11 +291,16 @@ export function makeCtx(
 		ctx: ctx as unknown as PluginContext,
 		kv,
 		settings,
-		orders,
-		stripeEvents,
+		orders: collections.orders as MemoryCollection,
+		carts: collections.carts as MemoryCollection,
+		stock: collections.stock as MemoryCollection,
+		stripeEvents: collections.stripe_events as MemoryCollection,
 		products,
 		httpCalls,
 		logs,
+		cronTasks,
+		/** Bridge calls made so far (kv, settings, storage, content, http). */
+		calls,
 	};
 }
 

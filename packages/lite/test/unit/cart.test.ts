@@ -3,7 +3,6 @@ import {
 	CART_HEADER,
 	CART_TTL_MS,
 	cartIdForToken,
-	cartKey,
 	isValidToken,
 	loadCart,
 	mintToken,
@@ -35,22 +34,22 @@ describe("cart token", () => {
 	});
 
 	test("stores carts under the token hash, not the token", async () => {
-		const { ctx, kv } = makeCtx({ products: [product("p1")] });
+		const { ctx, carts } = makeCtx({ products: [product("p1")] });
 		const res = await addItemHandler(ctx, {}, { productId: "p1" });
 		expect(res.ok).toBe(true);
 		const token = (res as { token: string }).token;
 		const id = await cartIdForToken(token);
 		expect(id).toMatch(/^[0-9a-f]{64}$/);
-		expect([...kv.keys()]).toEqual([cartKey(id)]);
-		expect(JSON.stringify([...kv.entries()])).not.toContain(token);
+		expect([...carts.rows.keys()]).toEqual([id]);
+		expect(JSON.stringify([...carts.rows.entries()])).not.toContain(token);
 	});
 
 	test("expired carts are dropped", async () => {
 		const { ctx } = makeCtx({ products: [product("p1")] });
 		const res = (await addItemHandler(ctx, {}, { productId: "p1" })) as { token: string };
 		const id = await cartIdForToken(res.token);
-		expect(await loadCart(ctx.kv, id)).not.toBeNull();
-		expect(await loadCart(ctx.kv, id, Date.now() + CART_TTL_MS + 1000)).toBeNull();
+		expect(await loadCart(ctx, id)).not.toBeNull();
+		expect(await loadCart(ctx, id, Date.now() + CART_TTL_MS + 1000)).toBeNull();
 	});
 });
 
