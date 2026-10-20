@@ -4,17 +4,26 @@ on:
   push:
     branches:
       - main
+  # Manual re-run of the tag + GitHub Release step (for example after a
+  # failed run). Safe to trigger at any time: it does nothing if the tag
+  # and release for the current core version already exist.
+  workflow_dispatch:
 
-# Only one release flow runs at a time — prevents racing Version Packages PRs.
+# Only one release flow runs at a time — prevents racing Version Packages PRs
+# and duplicate tag/release creation.
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
-permissions:
-  contents: write         # push Version Packages PR commit
-  pull-requests: write    # open/update the Version Packages PR
+# Each job declares the permissions it needs.
+permissions: {}
 
 jobs:
   release:
+    name: Version Packages PR
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write         # push Version Packages PR commit
+      pull-requests: write    # open/update the Version Packages PR
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,3 +58,53 @@ jobs:
           commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Tag + GitHub Release for @dashcommerce/core. When the core version on
+  # main has no `v<version>` tag yet (normally right after a Version Packages
+  # PR merges), create the tag on this commit and a GitHub Release whose notes
+  # are that version's entry in packages/core/CHANGELOG.md. Any other push is
+  # a no-op. This does not publish to npm; that is still done by hand.
+  github-release:
+    name: Tag + GitHub Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write         # create the tag and the GitHub Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create tag and GitHub Release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          VERSION="$(node -p "require('./packages/core/package.json').version")"
+          TAG="v${VERSION}"
+          echo "@dashcommerce/core version: ${VERSION} (tag ${TAG})"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "::notice::Release ${TAG} already exists, nothing to do"
+            exit 0
+          fi
+
+          ./.github/scripts/release-notes.sh "${VERSION}" > "${RUNNER_TEMP}/notes.md"
+
+          args=(--title "${TAG}" --notes-file "${RUNNER_TEMP}/notes.md")
+          if [[ "${VERSION}" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
+            # Tag exists (pushed by hand or left by an earlier failed run).
+            # Keep it where it is and only add the missing release.
+            echo "Tag ${TAG} already exists, creating the release for it"
+            gh release create "${TAG}" --verify-tag "${args[@]}"
+          else
+            echo "Creating tag ${TAG} on ${GITHUB_SHA} and its release"
+            gh release create "${TAG}" --target "${GITHUB_SHA}" "${args[@]}"
+          fi
+
+          echo "::notice::Created GitHub Release ${TAG}"
