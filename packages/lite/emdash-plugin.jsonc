@@ -11,7 +11,7 @@
 	"author": { "name": "Timchosen Uzua" },
 	"security": { "url": "https://github.com/emdashCommerce/dashcommerce/security" },
 	"name": "DashCommerce",
-	"description": "Sell products from your EmDash content. Includes a cart, Stripe hosted Checkout, stock tracking, refunds, flat tax and shipping, and an orders admin with CSV export.",
+	"description": "Sell products from your EmDash content with a cart, Stripe Checkout, stock tracking, refunds, flat tax and shipping, and CSV order export.",
 	"keywords": ["commerce", "ecommerce", "stripe", "cart", "checkout"],
 	"repo": "https://github.com/emdashCommerce/dashcommerce",
 

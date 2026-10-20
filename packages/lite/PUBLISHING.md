@@ -88,10 +88,12 @@ The dry run should show exactly these changes, all taken from
 `emdash-plugin.jsonc`:
 
 - Name: DashCommerce
-- Description: Sell products from your EmDash content. Includes a cart,
-  Stripe hosted Checkout, stock tracking, refunds, flat tax and shipping,
-  and an orders admin with CSV export.
+- Description: Sell products from your EmDash content with a cart, Stripe
+  Checkout, stock tracking, refunds, flat tax and shipping, and CSV order
+  export.
 - Keywords: commerce, ecommerce, stripe, cart, checkout
+
+The registry caps the description at 140 characters; this one is 138.
 
 License (MIT), author (Timchosen Uzua) and the security contact are the
 same as on the existing profile. If the dry run shows other differences,
