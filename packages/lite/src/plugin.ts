@@ -1,5 +1,5 @@
 /**
- * DashCommerce Lite: sandboxed runtime entry.
+ * DashCommerce (sandboxed): runtime entry.
  *
  * Routes mount under /_emdash/api/plugins/dashcommerce/<name>.
  * Storefront routes are public, take the cart token in the

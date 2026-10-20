@@ -111,14 +111,14 @@ export function checkSellable(
 		return {
 			ok: false,
 			code: "PRODUCT_TYPE_UNSUPPORTED",
-			message: `${fields.type} products are not supported by DashCommerce Lite`,
+			message: `${fields.type} products cannot be bought in this store`,
 		};
 	}
 	if (fields.subscriptionConfig) {
 		return {
 			ok: false,
 			code: "PRODUCT_TYPE_UNSUPPORTED",
-			message: "Subscriptions are not supported by DashCommerce Lite",
+			message: "Subscriptions cannot be bought in this store",
 		};
 	}
 	if (available === null) {
