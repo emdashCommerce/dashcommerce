@@ -1,0 +1,59 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "dashcommerce-lite",
+	// TODO(before first publish): replace with the DashCommerce Atmosphere DID.
+	"publisher": "did:plc:placeholder000000000000",
+
+	"license": "MIT",
+	"author": { "name": "DashCommerce contributors", "url": "https://dashcommerce.dev" },
+	"security": { "url": "https://github.com/emdashCommerce/dashcommerce/security" },
+	"name": "DashCommerce Lite",
+	"description": "Sell products from your EmDash content with a token-based cart and Stripe hosted Checkout.",
+	"keywords": ["commerce", "stripe", "cart", "checkout", "orders"],
+	"repo": "https://github.com/emdashCommerce/dashcommerce",
+
+	// Trust contract. Keep this list as short as possible: every entry is
+	// shown to site operators on install, and adding one later forces a
+	// re-consent. See packages/lite/DESIGN.md.
+	//   content:read     read prices from the site's `products` collection
+	//   network:request  call the Stripe API (api.stripe.com only)
+	"capabilities": ["content:read", "network:request"],
+	"allowedHosts": ["api.stripe.com"],
+	"storage": {
+		"orders": {
+			"indexes": ["status", "paymentStatus", "createdAt"],
+			"uniqueIndexes": ["stripeSessionId"]
+		},
+		"stripe_events": {
+			"indexes": ["type", "createdAt"]
+		}
+	},
+
+	"admin": {
+		"pages": [
+			{ "path": "/orders", "label": "Orders", "icon": "shopping-bag" },
+			{ "path": "/settings", "label": "Settings", "icon": "settings" }
+		],
+		"settingsSchema": {
+			"stripeSecretKey": { "type": "secret", "label": "Stripe secret key" },
+			"stripeWebhookSecret": { "type": "secret", "label": "Stripe webhook signing secret" },
+			"currency": { "type": "string", "label": "Store currency", "default": "USD" },
+			"successUrl": {
+				"type": "string",
+				"label": "Success URL",
+				"default": "/checkout/success?order={ORDER_ID}&key={ORDER_KEY}"
+			},
+			"cancelUrl": { "type": "string", "label": "Cancel URL", "default": "/cart" },
+			"shippingCountries": {
+				"type": "string",
+				"label": "Shipping countries (ISO-2, comma separated)",
+				"default": ""
+			}
+		}
+	},
+
+	"release": {
+		"requires": { "env:emdash": ">=1.3.0 <2.0.0" }
+	}
+}

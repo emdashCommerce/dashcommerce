@@ -1,0 +1,43 @@
+{
+	"name": "@dashcommerce/lite",
+	"version": "0.1.0",
+	"private": true,
+	"description": "DashCommerce Lite: sandboxed commerce plugin for the EmDash plugin registry (products, token cart, Stripe hosted Checkout).",
+	"type": "module",
+	"main": "dist/index.mjs",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"types": "./dist/index.d.mts"
+		},
+		"./sandbox": "./dist/plugin.mjs"
+	},
+	"files": ["dist", "emdash-plugin.jsonc", "README.md"],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/emdashCommerce/dashcommerce.git",
+		"directory": "packages/lite"
+	},
+	"scripts": {
+		"validate": "emdash-plugin validate",
+		"build": "emdash-plugin build",
+		"bundle": "emdash-plugin bundle",
+		"size": "bun scripts/check-size.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test test/unit",
+		"test:sandbox": "vitest run"
+	},
+	"peerDependencies": {
+		"emdash": ">=1.1.0 <2.0.0"
+	},
+	"devDependencies": {
+		"@emdash-cms/blocks": "1.3.1",
+		"@emdash-cms/plugin-cli": "0.13.4",
+		"@emdash-cms/plugin-test": "0.2.10",
+		"emdash": "1.3.1",
+		"typescript": "^5.9.3",
+		"vite": "^8.0.0",
+		"vitest": "^4.1.0"
+	}
+}
