@@ -40,6 +40,43 @@ jobs:
       - name: Test
         run: bun run test
   
+  lite:
+    name: Lite plugin (validate, bundle, sandbox tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate manifest
+        run: bun run --cwd packages/lite validate
+
+      - name: Typecheck
+        run: bun run --cwd packages/lite typecheck
+
+      - name: Unit tests
+        run: bun run --cwd packages/lite test
+
+      # Registry caps (RFC 0001): 128 KB per file, 256 KB total.
+      - name: Bundle and check size caps
+        run: |
+          bun run --cwd packages/lite bundle
+          bun run --cwd packages/lite size
+
+      # Builds the plugin and runs it in workerd through EmDash's
+      # Cloudflare sandbox runner and PluginBridge.
+      - name: Sandbox tests (workerd)
+        run: bun run --cwd packages/lite test:sandbox
+
   compatibility-matrix:
     name: EmDash Compatibility (${{ matrix.emdash-version }})
     runs-on: ubuntu-latest
