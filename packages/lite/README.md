@@ -1,20 +1,41 @@
-# DashCommerce Lite
+# DashCommerce (sandboxed)
 
-Sandboxed commerce plugin for EmDash: simple products from the `products`
-collection, a token-based cart, Stripe hosted Checkout, and a signed Stripe
-webhook. Admin pages for orders and settings use Block Kit.
+The registry build of DashCommerce for EmDash, listed as `dashcommerce`.
+Simple products from the `products` collection, a token-based cart, Stripe
+hosted Checkout, a signed Stripe webhook, a stock ledger, refunds from
+Stripe, flat tax and shipping or Stripe Tax, and Block Kit pages for
+orders, stock and settings.
 
-Status: early. See `DESIGN.md` for the architecture, routes and the
-storefront integration.
+This package lives at `packages/lite` (`@dashcommerce/lite`, private). The
+full native plugin is `@dashcommerce/core`.
+
+See `DESIGN.md` for the architecture, routes and limits, and
+`PUBLISHING.md` for releases.
 
 ## Setup
 
-1. Install the plugin and approve its access: read content, and network
-   requests to `api.stripe.com`.
+1. Install DashCommerce from the plugin registry and approve its access:
+   read content, and network requests to `api.stripe.com`. Requires EmDash
+   1.3 or later.
 2. Set `EMDASH_ENCRYPTION_KEY` on the site so the Stripe keys can be stored
    encrypted.
-3. Open DashCommerce Lite > Settings, add the Stripe secret key, and add a
-   Stripe webhook endpoint for the URL shown there.
+3. Open DashCommerce > Settings, add the Stripe secret key, and add a Stripe
+   webhook endpoint for the URL and events shown there. Then add the
+   signing secret.
+4. Add the storefront kit to your theme: copy `storefront/dashcommerce.js`
+   and `storefront/dashcommerce.d.ts` to `src/lib/`, and the components in
+   `storefront/astro/` to `src/components/`.
+
+```astro
+---
+import AddToCart from "../components/AddToCart.astro";
+---
+<AddToCart productId={product.id} />
+```
+
+Use `<Cart />` on a cart page, `<CartCount />` in the header and
+`<CheckoutSuccess />` on `/checkout/success`. The kit stores the cart token
+in localStorage under `dashcommerce-cart`.
 
 ## Development
 
