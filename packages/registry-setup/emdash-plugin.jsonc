@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	"slug": "dashcommerce",
+	"publisher": "did:plc:yakxzbkuhphkc5eepv7p4wrc", // dashcommerce.bsky.social
+
+	"name": "DashCommerce Setup",
+	"description": "Setup guide for DashCommerce. The full store installs from npm as @dashcommerce/core; this listing shows the install steps in your admin.",
+	"keywords": ["commerce", "ecommerce", "stripe", "store", "setup"],
+	"license": "MIT",
+	"author": { "name": "Timchosen Uzua" },
+	"security": { "url": "https://github.com/emdashCommerce/dashcommerce/security" },
+	"repo": "https://github.com/emdashCommerce/dashcommerce",
+
+	// Trust contract. This plugin only returns a static Block Kit page,
+	// so it asks for no capabilities, no network hosts, and no storage.
+	// Changing any of these requires a version bump.
+	"capabilities": [],
+	"allowedHosts": [],
+	"storage": {},
+
+	"admin": {
+		"pages": [{ "path": "/setup", "label": "DashCommerce setup", "icon": "store" }]
+	},
+
+	"release": {
+		// The page uses Block Kit `link` elements, which EmDash 0.37 does not have.
+		// emdash@1.0.0 on npm is a different codebase, so the range starts at 1.1.0,
+		// the oldest 1.x release DashCommerce supports.
+		"requires": { "env:emdash": ">=1.1.0" },
+		"artifacts": {
+			"icon": { "file": "./icon.png" }
+		}
+	}
+}
