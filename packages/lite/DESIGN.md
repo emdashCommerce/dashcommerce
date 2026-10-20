@@ -13,8 +13,9 @@ The package directory and npm name stay `packages/lite` and
 the `dashcommerce` slug.
 
 It supersedes the setup listing. Version 0.1.0 of `dashcommerce` on the
-registry was `packages/registry-setup`, a static page with install steps for
-the native plugin. Version 0.2.0 replaces it with this store under the same
+registry was a static setup page with install steps for the native plugin,
+built from `packages/registry-setup`. That package has been removed (it is
+in git history), and 0.2.0 from this package replaces it under the same
 slug and publisher. See `PUBLISHING.md`.
 
 The native plugin is unchanged and remains the full option.

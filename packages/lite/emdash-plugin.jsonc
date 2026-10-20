@@ -1,9 +1,9 @@
 {
 	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
 
-	// Same registry listing as packages/registry-setup ("DashCommerce Setup",
-	// v0.1.0). This package ships as the next version of that listing and
-	// replaces the setup page. See PUBLISHING.md.
+	// Same registry listing as the retired setup page ("DashCommerce Setup",
+	// v0.1.0). This package ships as 0.2.0 of that listing and replaces it.
+	// See PUBLISHING.md.
 	"slug": "dashcommerce",
 	"publisher": "did:plc:yakxzbkuhphkc5eepv7p4wrc", // dashcommerce.bsky.social
 
