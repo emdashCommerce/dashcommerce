@@ -54,7 +54,10 @@ describe("setup page", () => {
 		expect(text).toContain("https://demo.dashcommerce.dev");
 		expect(text).toContain("https://dashcommerce.dev/docs");
 		expect(text).toContain("https://github.com/emdashCommerce/dashcommerce");
-		expect(text).toMatch(/sandboxed version/i);
+		expect(text).toContain("DashCommerce Lite");
+		expect(text).toContain("dashcommerce-lite");
+		expect(text).toContain("Don't install Lite alongside core.");
+		expect(text).not.toMatch(/in progress/i);
 	});
 
 	it("keeps copy plain", async () => {

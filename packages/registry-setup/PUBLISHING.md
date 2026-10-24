@@ -10,7 +10,7 @@ cd packages/registry-setup
 # Check before publishing
 bun run test
 bunx emdash-plugin bundle
-tar tzf dist/dashcommerce-0.1.0.tar.gz
+tar tzf dist/dashcommerce-0.1.1.tar.gz
 
 # Sign in (opens the Bluesky sign-in page in the browser)
 bunx emdash-plugin login dashcommerce.bsky.social
@@ -22,7 +22,7 @@ bunx emdash-plugin whoami
 bunx emdash-plugin publish
 
 # Follow the listing checks until the release is public
-bunx emdash-plugin info dashcommerce.bsky.social dashcommerce --version 0.1.0 --watch
+bunx emdash-plugin info dashcommerce.bsky.social dashcommerce --version 0.1.1 --watch
 ```
 
 Notes:
