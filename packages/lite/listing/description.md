@@ -40,4 +40,3 @@ Stripe events.
 
 - Source: https://github.com/emdashCommerce/dashcommerce/tree/main/packages/lite
 - Docs: https://github.com/emdashCommerce/dashcommerce/blob/main/packages/lite/README.md
-- Demo store (Stripe test mode): https://dashcommerce-lite-test.cmon-ground-ai.workers.dev
