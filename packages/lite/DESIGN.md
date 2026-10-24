@@ -166,7 +166,11 @@ them).
   is still running therefore converges to all stock back.
 - Work that does not fit in the request that started it (see Cloudflare
   limits) continues in one-shot cron tasks named
-  `stock-<orderId>-<pass>`, each scheduled by the pass before it. A new
+  `stock-<orderId>-<pass>`, each scheduled by the pass before it. Up to 5
+  remaining lines go to one task; more are split into slice tasks
+  `stock-<orderId>-<pass>-<n>` of 5 products each (listed in the task
+  data), so they all run in the next tick. A slice task only settles its
+  own products and schedules nothing unless those are not done. A new
   name per pass is needed because EmDash deletes a one-shot task by id
   after it runs. A task that throws is retried by EmDash with backoff. The
   recurring `stock-sweep` task (every 15 minutes) re-schedules any order
@@ -430,51 +434,58 @@ been run in a browser test.
 Sandboxed plugins run in Dynamic Workers (Worker Loader), which need the
 Workers Paid plan. Each sandboxed invocation gets 50 ms CPU and 10
 subrequests. Every `ctx.*` call (storage, content, settings, kv, cron, log
-and `http.fetch`) is an RPC to EmDash's bridge, and the code assumes each
-counts toward the 10. Lite keeps every request path at 10 or fewer
-regardless of cart size:
+and `http.fetch`) is an RPC to EmDash's bridge and counts toward the 10; a
+test deployment confirmed it, with checkout, the paid webhook, the cron
+hook and admin cancel each reaching exactly 10 (log calls included).
+
+Lite allows itself 8 (`SUBREQUEST_BUDGET` in `budget.ts`) and keeps 2
+calls of headroom on every path, whatever the cart size:
 
 - `budget.ts` wraps the context and counts calls. Logging is skipped when
   no call is left, and the stock and checkout code size their batches from
   what remains.
-- Checkout reads products with one `content.list` page (100 entries) when
-  that is cheaper than a `content.get` per line, so a shop with up to 100
-  products prices any cart in one read. In a larger catalog, when the
-  products do not fit in one request, checkout saves the products read so
-  far on the cart (`checkoutPrep`, valid 5 minutes and only for that cart
-  version) and answers `CHECKOUT_CONTINUE`. The storefront kit repeats the
-  request (up to `MAX_CHECKOUT_REQUESTS`). A 20-line cart in a 1,000
-  product catalog takes 4 requests. The 20-line cap stays.
-- Paid and refund webhooks and admin cancels settle as many stock lines as
-  fit and schedule the rest (see Stock ledger).
+- Checkout has room for one product read in the request that creates the
+  order: one `content.list` page (100 entries) covers a shop of up to 100
+  products, so any cart there checks out in one request. Otherwise
+  checkout saves the products read so far on the cart (`checkoutPrep`,
+  valid 5 minutes and only for that cart version) and answers
+  `CHECKOUT_CONTINUE`; the storefront kit repeats the request (up to
+  `MAX_CHECKOUT_REQUESTS`, 8). A 20-line cart takes 2 requests in a
+  146-product catalog and 5 in a 1,000-product one. The 20-line cap stays.
+- Marking an order paid takes 6 calls, so a paid webhook does no stock row
+  writes. It schedules the follow-up tasks (see Stock ledger): one task
+  for up to 5 lines, or slice tasks of 5 products each, which EmDash runs
+  one after another in the next cron tick. A 20-line order settles within
+  2 ticks. A refund or admin cancel of a one-line order still restores
+  stock in the request.
 - Cleanup cancels 3 stale orders per run, the sweep handles 5 orders, the
-  CSV export reads 8 pages, and the settings form writes only changed
-  values.
+  CSV export reads 6 pages (600 orders), Sync writes 5 stock rows per
+  click, and the settings form writes only changed values, 7 per click (a
+  first save of all 9 values takes two clicks; secrets are stored first).
 
 `test/unit/bridge-calls.test.ts` counts calls (including log and cron) at
-1, 5, 10 and 20 lines, with and without stock tracking:
+1, 5, 10 and 20 lines, with and without stock tracking, and asserts at
+most 8 per invocation:
 
-| Path | Calls per request |
+| Path | Calls per invocation |
 | --- | --- |
 | `cart` (GET) | 2 (4 on the first request that schedules cron) |
 | `cart/items` | 4, or 5 for a stock-tracked product |
 | `checkout/session`, catalog up to 100 products | 7, or 8 with tracked lines, in one request |
-| `checkout/session`, 1,000 products, 20 lines | 4 requests, at most 10 each |
-| `stripe/webhook` paid or async succeeded | 7 untracked; 9 or 10 tracked, then follow-up tasks of at most 10 (20 tracked lines: 3 tasks) |
-| `stripe/webhook` full refund | 5 untracked; 8 or 10 tracked, then at most 10 per task (20 lines: 3 tasks) |
-| cron `cleanup`, `stock-sweep`, `stock-*` | at most 10 |
-| admin pages and actions | at most 10 |
-
-Before this, a paid webhook made 12 calls for one tracked line and 69 for
-20, and checkout made 26 at 20 lines.
+| `checkout/session`, 20 lines, 146 / 1,000 products | 2 / 5 requests, at most 8 each |
+| `stripe/webhook` paid or async succeeded | 7 or 8, then stock tasks of at most 8 |
+| `stripe/webhook` full refund | 6 to 8, then stock tasks of at most 8 |
+| `stripe/webhook` replay, early refund (500), delayed payment on hold | 4 to 5 |
+| cron `cleanup`, `stock-sweep`, `stock-*` | at most 8 |
+| admin pages and actions, CSV download | at most 8 |
 
 CPU: the hot paths are a SHA-256 of the token, HMAC verification and small
 JSON work. Unit timings are well under a millisecond.
 
 ## Bundle size
 
-`emdash-plugin bundle` output for 0.2.0: `backend.js` 58.6 KB, total
-66.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
+`emdash-plugin bundle` output for 0.2.0: `backend.js` 59.5 KB, total
+67.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
 is about 22 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
 `bun run size` prints the numbers and fails above a 96 KB working budget
 for `backend.js`. The storefront kit is not part of the bundle.

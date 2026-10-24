@@ -5,7 +5,23 @@ import { addItemHandler } from "../../src/cart-routes";
 import type { LiteOrder } from "../../src/orders";
 import type { StockRow } from "../../src/stock";
 import { makeCtx, product } from "../helpers/fake-ctx";
-import { addToCart, checkout, okStripe, pay, refund, SK, WH } from "../helpers/flow";
+import {
+	addToCart,
+	checkout,
+	okStripe,
+	pay as deliverPaid,
+	refund,
+	runSettleTasks,
+	SK,
+	WH,
+} from "../helpers/flow";
+
+/** Deliver the paid event, then run the stock tasks it queued. */
+async function pay(...args: Parameters<typeof deliverPaid>) {
+	const res = await deliverPaid(...args);
+	await runSettleTasks(args[0]);
+	return res;
+}
 
 const policy = { pluginPagePaths: ["/orders", "/stock", "/settings"] };
 function expectValid(res: unknown) {
@@ -43,7 +59,7 @@ describe("stock ledger", () => {
 		});
 
 		const res = await pay(t, co);
-		expect(res.body).toMatchObject({ outcome: "paid" });
+		expect(res.body).toMatchObject({ outcome: "paid_stock_pending" });
 		expect(await row(t)).toMatchObject({
 			onHand: 1,
 			baseline: 3,
@@ -88,7 +104,7 @@ describe("stock ledger", () => {
 		const b = await checkout(t, await addToCart(t, [["mug", 2]]));
 		await pay(t, a);
 		const res = await pay(t, b);
-		expect(res.body).toMatchObject({ outcome: "paid_stock_shortfall" });
+		expect(res.body).toMatchObject({ outcome: "paid_stock_pending" });
 		expect(await order(t, b.orderId)).toMatchObject({
 			status: "on-hold",
 			paymentStatus: "paid",
@@ -107,7 +123,7 @@ describe("stock ledger", () => {
 	test("backorders allow selling below zero without a hold", async () => {
 		const t = shop({ backorders: "yes", stock_quantity: 1 });
 		const co = await checkout(t, await addToCart(t, [["mug", 3]]));
-		expect((await pay(t, co)).body).toMatchObject({ outcome: "paid" });
+		expect((await pay(t, co)).body).toMatchObject({ outcome: "paid_stock_pending" });
 		expect((await row(t))?.onHand).toBe(-2);
 	});
 

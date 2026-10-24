@@ -27,11 +27,11 @@
  * completes the missing steps exactly once.
  *
  * Subrequest budget (budget.ts): a paid event marks the order paid,
- * clears the cart and takes stock for as many lines as fit in the
- * request; the rest is taken by one-shot cron tasks, a few lines each
- * (settle.ts). The event is recorded once that follow-up task is
- * scheduled. A full refund restores stock the same way. Every webhook
- * request stays within 10 bridge calls, whatever the cart size.
+ * clears the cart and schedules one-shot cron tasks that take the stock
+ * (settle.ts); with the 8-call budget no row write fits after the paid
+ * write. The event is recorded once those tasks are scheduled. A full
+ * refund restores stock the same way, inline for a one-line order. Every
+ * webhook request stays within 8 bridge calls, whatever the cart size.
  *
  * Only `pending` or `failed` orders (or ones on hold for a delayed payment)
  * can become paid. A refund for an order that is not paid yet answers 500

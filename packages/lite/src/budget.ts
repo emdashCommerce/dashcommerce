@@ -8,6 +8,11 @@
  * toward that cap, as does each outbound `ctx.http.fetch` (one bridge call
  * each). Going over fails the invocation part-way.
  *
+ * Lite allows itself 8 of the 10 (SUBREQUEST_BUDGET), keeping 2 calls of
+ * headroom: a real Cloudflare run showed checkout, the webhook, the cron
+ * hook and admin cancel each reaching exactly 10, with no room for
+ * anything the host might add to an invocation in a later EmDash release.
+ *
  * `metered(ctx)` wraps a context so code can ask how many calls are left
  * and size its work to fit: the stock settle pass does as many lines as
  * fit and schedules the rest, and checkout reads as many products as fit
@@ -15,13 +20,21 @@
  * cron task) wraps its context once; wrapping twice is a no-op.
  *
  * `test/unit/bridge-calls.test.ts` counts the calls independently and
- * asserts every path stays within the budget.
+ * asserts every path stays within 8.
  */
 
 import type { PluginContext } from "emdash/plugin";
 
 /** EmDash's default `subrequests` limit for sandboxed plugins on Cloudflare. */
-export const SUBREQUEST_BUDGET = 10;
+export const SANDBOX_SUBREQUEST_CAP = 10;
+
+/**
+ * Calls Lite allows itself per invocation: the cap minus 2 calls of
+ * headroom, for anything the host adds to an invocation that this meter
+ * cannot see, and for drift between EmDash versions.
+ */
+export const HEADROOM = 2;
+export const SUBREQUEST_BUDGET = SANDBOX_SUBREQUEST_CAP - HEADROOM;
 
 interface Meter {
 	limit: number;

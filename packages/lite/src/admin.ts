@@ -7,15 +7,15 @@
  * browser code ships with the plugin.
  *
  * Each interaction is one sandboxed invocation, so each stays within the
- * 10-subrequest budget (budget.ts): pages read at most 4 or 5 times,
- * a cancel restores what stock fits and schedules the rest, Sync writes
- * at most 6 stock rows per click, and saving settings writes only the
- * values that changed.
+ * 8-call budget (budget.ts): pages read at most 4 or 5 times, a cancel
+ * restores what stock fits and schedules the rest, Sync writes what fits
+ * (5 rows) per click, and saving settings writes only the values that
+ * changed, 7 at most per click.
  */
 
 import type { Block, BlockResponse, FormField } from "@emdash-cms/blocks/server";
 import type { PluginContext } from "emdash/plugin";
-import { log, metered } from "./budget";
+import { log, metered, remaining } from "./budget";
 import { ensureCron } from "./cron";
 import { createExportUrl } from "./export";
 import { applyStatus, type LiteOrder, ordersStore, updateOrder } from "./orders";
@@ -618,7 +618,12 @@ async function syncStock(ctx: PluginContext): Promise<BlockResponse> {
 		id: item.id,
 		fields: normalizeProductFields(item.data),
 	}));
-	const { created, reset, remaining } = await syncFromProducts(ctx, products);
+	// Writes that fit: the budget minus the rows read and the page render.
+	const {
+		created,
+		reset,
+		remaining: left,
+	} = await syncFromProducts(ctx, products, Date.now(), Math.max(0, remaining(ctx) - 2));
 	const done =
 		created || reset
 			? `Added ${created}, reset ${reset} from product stock_quantity`
@@ -626,7 +631,7 @@ async function syncStock(ctx: PluginContext): Promise<BlockResponse> {
 	return {
 		...(await renderStock(ctx)),
 		toast: {
-			message: remaining > 0 ? `${done}. ${remaining} more: run Sync again.` : done,
+			message: left > 0 ? `${done}. ${left} more: run Sync again.` : done,
 			type: "success",
 		},
 	};
@@ -809,16 +814,22 @@ export async function saveSettings(
 			toast: { message: "Settings not saved", type: "error" },
 		};
 	}
-	// Write only what changed: one call per value, so a save stays within
-	// the budget (1 read + at most 9 writes) and the page is rendered from
-	// memory instead of a second read.
+	// Write only what changed, one call per value, and render the page from
+	// memory instead of a second read. A first save can change more values
+	// than the budget allows (1 read + 9 writes); then the first ones are
+	// saved (secrets first, they are not shown again) and the form keeps the
+	// rest filled in, so pressing Save again stores them.
 	const stored = await loadSettingsMap(ctx);
 	const changed = writes.filter(([k, v]) => stored.get(k) !== v);
-	const view = () => configFrom((key) => stored.get(key));
+	const now = changed.slice(0, Math.max(0, remaining(ctx)));
+	const deferred = changed.length - now.length;
+	const intended = new Map(writes);
+	const view = () =>
+		configFrom((key) => (deferred > 0 && intended.has(key) ? intended.get(key) : stored.get(key)));
 	try {
 		// Secrets first and one at a time: if EmDash cannot encrypt them
 		// (no EMDASH_ENCRYPTION_KEY), nothing else is half-saved.
-		for (const [k, v] of changed) {
+		for (const [k, v] of now) {
 			await ctx.settings.set(k, v);
 			stored.set(k, v);
 		}
@@ -839,6 +850,12 @@ export async function saveSettings(
 	}
 	return {
 		...(await renderSettings(ctx, view())),
-		toast: { message: "Settings saved", type: "success" },
+		toast:
+			deferred > 0
+				? {
+						message: `Saved ${now.length} of ${changed.length} changes. Press Save again to store the rest.`,
+						type: "info",
+					}
+				: { message: "Settings saved", type: "success" },
 	};
 }

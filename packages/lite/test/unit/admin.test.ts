@@ -99,7 +99,9 @@ describe("Block Kit admin", () => {
 		const json = JSON.stringify(res);
 		expect(json).not.toContain("secretvalue");
 		expect(json).toContain('"has_value":true');
-		expect(json).toContain("https://shop.example/_emdash/api/plugins/dashcommerce-lite/stripe/webhook");
+		expect(json).toContain(
+			"https://shop.example/_emdash/api/plugins/dashcommerce-lite/stripe/webhook",
+		);
 	});
 
 	const goodValues = {
@@ -113,11 +115,19 @@ describe("Block Kit admin", () => {
 
 	test("saving valid settings stores normalized values", async () => {
 		const t = makeCtx();
-		const res = await handleAdmin(t.ctx, {
-			type: "form_submit",
-			action_id: "save_settings",
-			values: goodValues,
-		});
+		const save = () =>
+			handleAdmin(t.ctx, { type: "form_submit", action_id: "save_settings", values: goodValues });
+		// A first save changes 9 values; 7 fit in one request (1 read + 7
+		// writes = the 8-call budget). Secrets go first; the form keeps the
+		// rest filled in for a second Save.
+		const first = await save();
+		expectValid(first);
+		expect(first.toast).toMatchObject({ type: "info" });
+		expect(first.toast?.message).toContain("Saved 7 of 9 changes");
+		expect(t.settings.get("stripeSecretKey")).toBe("sk_test_abcdefgh1234");
+		expect(t.settings.get("stripeWebhookSecret")).toBe("whsec_abcdefgh1234");
+		expect(JSON.stringify(first)).toContain("GB,IE");
+		const res = await save();
 		expectValid(res);
 		expect(res.toast?.type).toBe("success");
 		expect(Object.fromEntries(t.settings)).toEqual({

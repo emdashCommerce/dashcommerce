@@ -7,7 +7,7 @@
  * links to the public `orders/export` raw route with it. The route
  * consumes the token and streams the CSV with a download filename.
  *
- * One export reads at most 800 orders (8 pages of 100), newest first, so
+ * One export reads at most 600 orders (6 pages of 100), newest first, so
  * the download stays within the 10-subrequest sandbox budget (budget.ts).
  * The response sets `X-DashCommerce-Truncated: true` when there were more.
  */
@@ -21,8 +21,9 @@ import { asObject, asString } from "./validate";
 
 export const EXPORT_TTL_MS = 5 * 60 * 1000;
 const PAGE = 100;
-// kv read + kv delete + 8 pages = 10 bridge calls, the sandbox budget.
-const MAX_PAGES = 8;
+// kv read + kv delete + 6 pages = 8 bridge calls, the plugin's budget
+// (budget.ts: the sandbox cap of 10 minus 2 calls of headroom).
+const MAX_PAGES = 6;
 
 interface ExportGrant {
 	status: OrderStatus | null;

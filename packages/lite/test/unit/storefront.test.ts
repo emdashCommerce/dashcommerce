@@ -132,7 +132,7 @@ describe("storefront kit", () => {
 		expect(co.url).toStartWith("https://checkout.stripe.com/");
 		const sent = requests.length - before;
 		expect(sent).toBeGreaterThan(1);
-		expect(sent).toBeLessThanOrEqual(4);
+		expect(sent).toBeLessThanOrEqual(5);
 	});
 
 	test("helpers", () => {

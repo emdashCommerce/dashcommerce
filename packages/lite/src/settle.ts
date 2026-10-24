@@ -3,13 +3,21 @@
  * target ("deducted" after payment, "restored" after a full refund or a
  * cancel), a few lines per invocation.
  *
- * Why: a sandboxed invocation gets 10 subrequests on Cloudflare (see
- * budget.ts), and every stock row write is one. A 20-line order cannot
- * take its stock in the webhook request that marks it paid. So the
- * webhook (or refund, or admin cancel) records the target on the order,
- * settles what fits, and schedules a one-shot cron task for the rest.
- * Each task runs one pass in its own invocation and schedules the next
- * until the order is settled.
+ * Why: Lite allows itself 8 bridge calls per sandboxed invocation (the
+ * Cloudflare cap of 10 minus 2 of headroom, see budget.ts), and every
+ * stock row write is one. Marking an order paid already takes 6, so the
+ * webhook records the target on the order and schedules one-shot cron
+ * tasks for the stock. A refund or admin cancel of a one-line order still
+ * fits in the request.
+ *
+ * Follow-ups: a remainder of up to SLICE_LINES lines goes to one task. A
+ * larger one is split into slice tasks of SLICE_LINES products each
+ * (`stock-<orderId>-<pass>-<n>`, data.products); EmDash runs the tasks due
+ * in a tick one after another, each in its own invocation, so a 20-line
+ * order settles within 2 cron ticks. When the invocation has fewer calls
+ * than slices, the last task is a plain pass that takes what is left and,
+ * if still too much, splits it again. A slice task never schedules more
+ * work unless its own products are not done.
  *
  * One pass, at most 3 + N bridge calls:
  *   order read (skipped when the caller just wrote it), one batched
@@ -51,6 +59,14 @@ import {
 } from "./stock";
 
 export const SETTLE_TASK_PREFIX = "stock-";
+
+/**
+ * Lines one follow-up task can settle on its own: order read, rows
+ * `getMany`, one write per line, order write = 3 + 5 = 8 calls, the whole
+ * budget (budget.ts). Larger remainders are split into slices of this size,
+ * one task each, which EmDash runs one after another in the same cron tick.
+ */
+export const SLICE_LINES = 5;
 
 export const saleKey = (orderId: string) => `${orderId}:sale`;
 export const restoreKey = (orderId: string) => `${orderId}:restore`;
@@ -249,6 +265,8 @@ export async function settleStock(
 		reserve?: number;
 		current?: { value: LiteOrder; revision: string } | undefined;
 		now?: number;
+		/** Settle only these products (a slice task). */
+		only?: readonly string[];
 	} = {},
 ): Promise<SettleResult> {
 	const reserve = opts.reserve ?? 0;
@@ -265,10 +283,14 @@ export async function settleStock(
 	}
 
 	const applied = new Map<string, OrderStockMove>();
-	const pending = pendingLines(current.value);
+	const only = opts.only ? new Set(opts.only) : null;
+	const pending = pendingLines(current.value).filter((i) => !only || only.has(i.productId));
 	// Calls for row work: one getMany, then one per line, then the order write.
 	const free = left() - 2;
-	if (pending.length > 0 && free >= 1) {
+	// Too many lines to finish here: leave the calls for scheduling slice
+	// tasks instead (settleOrSchedule), which finish in one cron tick.
+	const fanOut = !only && pending.length > free;
+	if (pending.length > 0 && free >= 1 && !fanOut) {
 		const take = pending.length <= free ? pending.length : free - 1;
 		const batch = pending.slice(0, Math.max(0, take));
 		if (batch.length > 0) {
@@ -326,26 +348,74 @@ export async function settleStock(
  * Schedule a one-shot settle task for the next cron tick (one bridge
  * call). Each pass uses a new task name: EmDash deletes a one-shot task
  * after it runs, which would drop a re-schedule under the same name.
+ * A slice task (`products`) settles only those products.
  */
 export async function scheduleSettle(
 	ctx: PluginContext,
 	orderId: string,
 	pass: number | "sweep",
 	now = Date.now(),
+	slice?: { index: number; products: string[] },
 ): Promise<boolean> {
 	if (!ctx.cron) return false;
-	await ctx.cron.schedule(`${SETTLE_TASK_PREFIX}${orderId}-${pass}`, {
+	const name = `${SETTLE_TASK_PREFIX}${orderId}-${pass}${slice ? `-${slice.index}` : ""}`;
+	await ctx.cron.schedule(name, {
 		schedule: new Date(now).toISOString(),
-		data: { orderId, pass: typeof pass === "number" ? pass : 0 },
+		data: {
+			orderId,
+			pass: typeof pass === "number" ? pass : 0,
+			...(slice ? { products: slice.products } : {}),
+		},
 	});
 	return true;
 }
 
 /**
- * Settle what fits now; schedule a follow-up task when lines remain.
+ * Schedule the follow-up for the lines still pending, using at most
+ * `calls` bridge calls. Up to SLICE_LINES lines go to one task that also
+ * re-schedules itself if needed. More are split into slice tasks of
+ * SLICE_LINES each; when there are more slices than calls, the last task
+ * is a plain pass that takes whatever is left. Task names derive from the
+ * pass number, so a retried invocation upserts the same tasks.
+ */
+async function scheduleFollowUps(
+	ctx: PluginContext,
+	orderId: string,
+	pass: number,
+	productIds: string[],
+	calls: number,
+): Promise<boolean> {
+	if (productIds.length <= SLICE_LINES || calls <= 1) {
+		return scheduleSettle(ctx, orderId, pass);
+	}
+	const slices: string[][] = [];
+	for (let i = 0; i < productIds.length; i += SLICE_LINES) {
+		slices.push(productIds.slice(i, i + SLICE_LINES));
+	}
+	const sliced = slices.length <= calls ? slices.length : calls - 1;
+	for (let i = 0; i < sliced; i += 1) {
+		if (
+			!(await scheduleSettle(ctx, orderId, pass, Date.now(), {
+				index: i,
+				products: slices[i] as string[],
+			}))
+		) {
+			return false;
+		}
+	}
+	if (sliced < slices.length) return scheduleSettle(ctx, orderId, pass);
+	return true;
+}
+
+/**
+ * Settle what fits now; schedule follow-up tasks when lines remain.
  * Returns true when settled. Throws when lines remain and no follow-up
  * could be scheduled, so the caller fails and is retried (Stripe retries
  * the webhook; EmDash retries a failed one-shot task).
+ *
+ * A slice task that finished its own products returns even when other
+ * lines are pending: their own slice tasks settle them, and the
+ * `stock-sweep` task catches any that were lost.
  */
 export async function settleOrSchedule(
 	ctx: PluginContext,
@@ -355,12 +425,19 @@ export async function settleOrSchedule(
 		current?: { value: LiteOrder; revision: string } | undefined;
 		now?: number;
 		pass?: number;
+		only?: readonly string[];
 	} = {},
 ): Promise<SettleResult> {
 	const reserve = opts.reserve ?? 0;
 	const result = await settleStock(ctx, orderId, opts);
 	if (result.done) return result;
-	if (remaining(ctx) - reserve >= 1 && (await scheduleSettle(ctx, orderId, (opts.pass ?? 0) + 1))) {
+	const left = result.order ? pendingLines(result.order).map((i) => i.productId) : [];
+	if (opts.only && result.order) {
+		const only = new Set(opts.only);
+		if (!left.some((id) => only.has(id))) return result;
+	}
+	const calls = remaining(ctx) - reserve;
+	if (calls >= 1 && (await scheduleFollowUps(ctx, orderId, (opts.pass ?? 0) + 1, left, calls))) {
 		return result;
 	}
 	throw new Error("Stock settle incomplete and no follow-up could be scheduled");
