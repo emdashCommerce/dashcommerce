@@ -3,7 +3,7 @@
 Lite is published to the EmDash plugin registry only (it is `private` on
 npm), so it keeps its own changelog here.
 
-## 0.2.0 (unreleased)
+## 0.2.0
 
 First registry release of the sandboxed store: simple products from
 content, a token cart, Stripe hosted Checkout, a signed Stripe webhook, a
