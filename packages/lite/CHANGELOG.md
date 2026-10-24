@@ -27,6 +27,22 @@ at the new plugin's URL (shown on Lite's Settings page).
 The existing "DashCommerce Setup" listing (slug `dashcommerce`) is a
 separate listing and is not replaced by this release.
 
+### Stock sync covers the whole catalog
+
+Sync on the Stock page used to read only the first 100 published products
+(newest first), so in larger shops older tracked products never got a
+stock row from Sync (seen on a 146-product test shop). Sync now walks the
+whole catalog across clicks, oldest first, one page of 100 products per
+click, and keeps its place in plugin KV (`stock-sync`). The toast says how
+many products were checked so far and asks for another click; when the
+last page is done it says "Checked all N products" and the walk resets.
+Each click stays within 8 calls and writes up to 3 rows.
+
+The settings toast now says "Saved 7 of 8 changed settings (1 already
+matched)" when a submitted value equals the stored one, instead of
+"Saved 7 of 8 changes", which read like a miscount when 9 fields were
+submitted.
+
 ### Headroom under the sandbox cap
 
 Lite now uses at most 8 of the 10 subrequests per sandboxed invocation,
@@ -41,7 +57,7 @@ checkout, the webhook, the cron hook and admin cancel each at exactly 10).
   run in the same tick.
 - Checkout needs a second request (`CHECKOUT_CONTINUE`) sooner in catalogs
   over 100 products; the storefront kit now retries up to 8 times.
-- The CSV export reads up to 600 orders, Sync writes 5 stock rows per
+- The CSV export reads up to 600 orders, Sync writes 3 stock rows per
   click, and a first settings save of all 9 values takes two clicks.
 
 ### Sandbox request budget

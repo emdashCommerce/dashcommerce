@@ -437,6 +437,40 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		}
 	});
 
+	it("syncs stock across a 146-product catalog, oldest first, one page per click", async () => {
+		const { h, productId } = await setup();
+		// The mug and the next 19 are the oldest products, so a newest-first
+		// first page of 100 never reaches them (the Cloudflare test shop).
+		const tracked = [productId];
+		for (let i = 1; i < 146; i += 1) {
+			const item = await h.fixtures.content("products", {
+				slug: `p${i}`,
+				status: "published",
+				data: {
+					title: `P${i}`,
+					type: "simple",
+					prices: { USD: { amount: 500 } },
+					...(i < 20 ? { manage_stock: true, stock_quantity: i } : {}),
+				},
+			});
+			if (i < 20) tracked.push(item.id);
+		}
+		const toasts: string[] = [];
+		for (let i = 0; i < 20 && !toasts.at(-1)?.startsWith("Checked all"); i += 1) {
+			const res = await h.admin.act("/stock", "sync_stock");
+			toasts.push(res.toast?.message ?? "");
+		}
+		expect(toasts).toContain(
+			"Checked 100 products so far (added 20, reset 0). Run Sync again to check the rest.",
+		);
+		expect(toasts.at(-1)).toBe(
+			"Checked all 146 products: added 20, reset 0 from product stock_quantity.",
+		);
+		for (const [i, id] of tracked.entries()) {
+			expect(await h.inspect.storage.get("stock", id)).toMatchObject({ onHand: i === 0 ? 5 : i });
+		}
+	}, 60_000);
+
 	it("explains a missing EMDASH_ENCRYPTION_KEY instead of failing", async () => {
 		const { h } = await setup();
 		const res = await h.admin.submit("/settings", "save_settings", {

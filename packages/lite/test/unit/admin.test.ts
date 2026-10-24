@@ -123,7 +123,9 @@ describe("Block Kit admin", () => {
 		const first = await save();
 		expectValid(first);
 		expect(first.toast).toMatchObject({ type: "info" });
-		expect(first.toast?.message).toContain("Saved 7 of 9 changes");
+		expect(first.toast?.message).toBe(
+			"Saved 7 of 9 changed settings. Press Save again to store the rest.",
+		);
 		expect(t.settings.get("stripeSecretKey")).toBe("sk_test_abcdefgh1234");
 		expect(t.settings.get("stripeWebhookSecret")).toBe("whsec_abcdefgh1234");
 		expect(JSON.stringify(first)).toContain("GB,IE");
@@ -141,6 +143,22 @@ describe("Block Kit admin", () => {
 			flatTaxPercent: 0,
 			automaticTax: false,
 		});
+	});
+
+	test("a value already stored is not counted as a change", async () => {
+		// The Cloudflare test's "Saved 7 of 8" after editing 9 fields: one
+		// submitted value (the secret key, set earlier) already matched.
+		const t = makeCtx({ settings: { stripeSecretKey: "sk_test_abcdefgh1234" } });
+		const first = await handleAdmin(t.ctx, {
+			type: "form_submit",
+			action_id: "save_settings",
+			values: { ...goodValues, flatShipping: "4.99", flatTaxPercent: "8.25" },
+		});
+		expectValid(first);
+		expect(first.toast?.message).toBe(
+			"Saved 7 of 8 changed settings (1 already matched). Press Save again to store the rest.",
+		);
+		expect(t.settings.get("stripeWebhookSecret")).toBe("whsec_abcdefgh1234");
 	});
 
 	test("an empty secret field keeps the stored secret", async () => {

@@ -169,7 +169,7 @@ describe("stock ledger", () => {
 
 		const synced = await handleAdmin(t.ctx, { type: "block_action", action_id: "sync_stock" });
 		expectValid(synced);
-		expect(synced.toast?.message).toContain("Added 1");
+		expect(synced.toast?.message).toContain("added 1");
 		expect(await row(t)).toMatchObject({ onHand: 3, baseline: 3, lastChange: { reason: "seed" } });
 
 		const form = await handleAdmin(t.ctx, {
