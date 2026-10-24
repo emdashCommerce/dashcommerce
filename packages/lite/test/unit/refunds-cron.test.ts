@@ -73,10 +73,13 @@ describe("charge.refunded", () => {
 		expect((await get(t, co.orderId)).refundedAmount).toBe(3000);
 	});
 
-	test("refunds for unpaid or unknown orders change nothing", async () => {
+	test("refunds for unpaid orders are retried; unknown orders change nothing", async () => {
 		const t = shop();
 		const co = await checkout(t, await addToCart(t, [["p1", 1]]));
-		expect((await refund(t, co.orderId, 1500, 1500)).body).toMatchObject({ outcome: "unchanged" });
+		const early = await refund(t, co.orderId, 1500, 1500);
+		expect(early.status).toBe(500);
+		expect(early.body).toMatchObject({ error: "retry_later", reason: "refund_before_paid" });
+		expect(await get(t, co.orderId)).toMatchObject({ paymentStatus: "pending" });
 		expect((await refund(t, "nope", 1500, 1500, { metadata: false })).body).toMatchObject({
 			outcome: "order_not_found",
 		});

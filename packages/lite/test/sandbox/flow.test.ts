@@ -173,10 +173,15 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			customerEmail: "buyer@example.com",
 			stock: "deducted",
 		});
-		// Stock ledger: 5 on the product, 2 sold. Written with storage updateIf/compareAndSet.
+		// Stock ledger: 5 on the product, 2 sold, written with compareAndSet,
+		// plus the per-order move that makes retries idempotent.
 		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({
 			onHand: 3,
 			baseline: 5,
+		});
+		expect(await h.inspect.storage.get("stock_moves", `${co.orderId}:${productId}`)).toMatchObject({
+			state: "deducted",
+			quantity: 2,
 		});
 
 		// Order status for the success page.
@@ -232,6 +237,26 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			stock: "restored",
 		});
 		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 5 });
+		expect(await h.inspect.storage.get("stock_moves", `${co.orderId}:${productId}`)).toMatchObject({
+			state: "restored",
+		});
+
+		// Replaying the paid event under a new id leaves the refunded order alone.
+		const replayPayload = payload.replace("evt_sbx_1", "evt_sbx_replay");
+		const replay = await h.actions.routes.request("stripe/webhook", {
+			method: "POST",
+			headers: {
+				"stripe-signature": await sign(replayPayload, WH, t),
+				"content-type": "application/json",
+			},
+			rawBody: replayPayload,
+		});
+		expect(await replay.json()).toMatchObject({ outcome: "unchanged" });
+		expect(await h.inspect.storage.get("orders", co.orderId)).toMatchObject({
+			status: "refunded",
+			paymentStatus: "refunded",
+		});
+		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 5 });
 
 		// CSV export: the Orders page mints a one-time link to a raw route.
 		const exp = await h.admin.act("/orders", "export_csv", { value: "all" });
@@ -276,6 +301,21 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			createdAt: "2020-01-01T00:00:00.000Z",
 			updatedAt: "2020-01-01T00:00:00.000Z",
 		});
+		// An old order waiting for a bank debit to clear.
+		await h.fixtures.plugin.storage("orders", "async1", {
+			orderNumber: "DCL-ASYNC",
+			orderKey: "k",
+			cartId: "y",
+			status: "on-hold",
+			paymentStatus: "pending",
+			awaitingAsyncPayment: true,
+			currency: "USD",
+			items: [{ productId, title: "Mug", quantity: 1 }],
+			subtotal: { currency: "USD", amount: 1200 },
+			total: { currency: "USD", amount: 1200 },
+			createdAt: "2020-01-01T00:00:00.000Z",
+			updatedAt: "2020-01-01T00:00:00.000Z",
+		});
 		await h.transport.invokeHook("cron", {
 			name: "cleanup",
 			scheduledAt: new Date().toISOString(),
@@ -284,6 +324,10 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		expect(await h.inspect.storage.get("orders", "stale1")).toMatchObject({
 			status: "cancelled",
 			cancelReason: "stale",
+		});
+		expect(await h.inspect.storage.get("orders", "async1")).toMatchObject({
+			status: "on-hold",
+			awaitingAsyncPayment: true,
 		});
 	});
 

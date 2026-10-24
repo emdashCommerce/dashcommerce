@@ -17,9 +17,10 @@
  * place: the product entry (a reset) or Lite's Stock page (an adjustment).
  *
  * Stock is decremented when Stripe confirms payment, and restored when a
- * paid order is fully refunded or cancelled. Decrements use storage
- * `updateIf` with a numeric delta, which the host applies in one SQL
- * statement, so concurrent payments cannot lose updates.
+ * paid order is fully refunded or cancelled. Order stock changes use
+ * compare-and-set on the row (retried on conflict), so concurrent payments
+ * cannot lose updates, and each one is recorded as a `stock_moves` entry
+ * keyed `${orderId}:${productId}`, so retries apply it exactly once.
  */
 
 import type { PluginContext } from "emdash/plugin";
@@ -33,6 +34,8 @@ export interface StockRow {
 	baseline: number;
 	updatedAt: string;
 	lastChange?: { delta: number; reason: StockReason; orderId?: string; at: string };
+	/** Keys of the last few order moves applied to this row (see StockMove). */
+	moves?: string[];
 }
 
 export type StockReason = "sale" | "refund" | "cancel" | "adjust" | "reset" | "seed";
@@ -94,8 +97,108 @@ export interface StockShortfall {
 }
 
 /**
- * Take the items of a paid order out of stock. Returns lines that went
- * below zero for products that do not allow backorders.
+ * Per-order, per-product stock movement, kept in the `stock_moves`
+ * collection under `${orderId}:${productId}`. It makes stock changes
+ * idempotent across webhook retries and admin double-clicks:
+ *
+ *   absent    nothing taken yet
+ *   deducted  the sale was taken out of stock (`onHandAfter` keeps the
+ *             level right after, so a retry can still report a shortfall)
+ *   restored  the sale was put back (refund or cancel)
+ *
+ * The stock row change and the move are two writes. To make a crash
+ * between them safe, the stock row also keeps the last few move keys it
+ * applied (`moves`), written in the same compare-and-set as `onHand`. A
+ * retry that finds its key there knows the row already has the change and
+ * only writes the move.
+ */
+export interface StockMove {
+	orderId: string;
+	productId: string;
+	quantity: number;
+	state: "deducted" | "restored";
+	onHandAfter: number;
+	deductedAt: string;
+	restoredAt?: string;
+	reason?: "refund" | "cancel";
+}
+
+export type StockMovesStore = {
+	getMany(ids: string[]): Promise<Map<string, StockMove>>;
+	compareAndSet(
+		id: string,
+		expectedRevision: string | null,
+		data: StockMove,
+	): Promise<{ applied: boolean }>;
+	updateIf(
+		id: string,
+		args: { where: Record<string, unknown>; set?: Partial<StockMove> },
+	): Promise<{ applied: true; data: StockMove } | { applied: false }>;
+};
+
+export function stockMovesStore(ctx: PluginContext): StockMovesStore {
+	return (ctx.storage as unknown as { stock_moves: StockMovesStore }).stock_moves;
+}
+
+export const moveId = (orderId: string, productId: string) => `${orderId}:${productId}`;
+
+/** How many applied move keys a stock row remembers. */
+export const ROW_MOVE_MEMORY = 50;
+const ROW_ATTEMPTS = 8;
+
+/**
+ * Apply `delta` to one stock row exactly once for `key`, with
+ * compare-and-set. Returns the on-hand level after the change (or the
+ * current level when the row already had it), or null when there is no
+ * row and `create` is not given.
+ */
+async function applyRowMove(
+	store: StockStore,
+	productId: string,
+	key: string,
+	delta: number,
+	change: StockRow["lastChange"],
+	at: string,
+	create?: { title: string; baseline: number },
+): Promise<number | null> {
+	for (let i = 0; i < ROW_ATTEMPTS; i += 1) {
+		const current = await store.getVersioned(productId);
+		const row = current?.value;
+		if (row?.moves?.includes(key)) return row.onHand;
+		let next: StockRow;
+		if (!row || (create && row.baseline !== create.baseline)) {
+			// No row yet, or the merchant changed stock_quantity on the product
+			// since the row was written: the product's value is the start.
+			if (!create) return null;
+			next = {
+				productId,
+				title: create.title,
+				onHand: create.baseline + delta,
+				baseline: create.baseline,
+				updatedAt: at,
+				lastChange: change,
+				moves: [...(row?.moves ?? []), key].slice(-ROW_MOVE_MEMORY),
+			};
+		} else {
+			next = {
+				...row,
+				onHand: row.onHand + delta,
+				updatedAt: at,
+				lastChange: change,
+				moves: [...(row.moves ?? []), key].slice(-ROW_MOVE_MEMORY),
+			};
+		}
+		const res = await store.compareAndSet(productId, current?.revision ?? null, next);
+		if (res.applied) return next.onHand;
+	}
+	throw new Error("Stock update conflicted repeatedly");
+}
+
+/**
+ * Take the items of a paid order out of stock. Idempotent: lines that
+ * already have a `deducted` (or `restored`) move are not taken again, so
+ * a retried webhook completes only the missing lines. Returns lines that
+ * went below zero for products that do not allow backorders.
  */
 export async function deductStock(
 	ctx: PluginContext,
@@ -106,57 +209,52 @@ export async function deductStock(
 	const tracked = items.filter((i) => i.stock);
 	if (tracked.length === 0) return [];
 	const store = stockStore(ctx);
+	const movesStore = stockMovesStore(ctx);
 	const at = new Date(now).toISOString();
-	const rows = await store.getMany(tracked.map((i) => i.productId));
+	const moves = await movesStore.getMany(tracked.map((i) => moveId(orderId, i.productId)));
 	const shortfalls: StockShortfall[] = [];
 	for (const item of tracked) {
-		const baseline = item.stock?.baseline as number;
-		const lastChange = { delta: -item.quantity, reason: "sale" as const, orderId, at };
-		const fresh: StockRow = {
-			productId: item.productId,
-			title: item.title,
-			onHand: baseline - item.quantity,
-			baseline,
-			updatedAt: at,
-			lastChange,
-		};
-		let row = rows.get(item.productId);
-		let onHand: number | undefined;
-		if (!row) {
-			// First sale of this product: create the row from the product's
-			// stock_quantity. A concurrent sale may create it first; then fall
-			// through to the delta update below.
-			const created = await store.compareAndSet(item.productId, null, fresh);
-			if (created.applied) onHand = fresh.onHand;
-			else row = (await store.get(item.productId)) ?? undefined;
+		const id = moveId(orderId, item.productId);
+		let move = moves.get(id);
+		if (!move) {
+			const baseline = item.stock?.baseline as number;
+			const onHand = (await applyRowMove(
+				store,
+				item.productId,
+				`${orderId}:sale`,
+				-item.quantity,
+				{ delta: -item.quantity, reason: "sale", orderId, at },
+				at,
+				{ title: item.title, baseline },
+			)) as number;
+			move = {
+				orderId,
+				productId: item.productId,
+				quantity: item.quantity,
+				state: "deducted",
+				onHandAfter: onHand,
+				deductedAt: at,
+			};
+			// A concurrent delivery may have written the move first; the row
+			// key above already kept the stock change to one.
+			await movesStore.compareAndSet(id, null, move);
 		}
-		if (onHand === undefined && row && row.baseline !== baseline) {
-			// The merchant changed stock_quantity on the product since the row
-			// was written: the product's value wins.
-			await store.put(item.productId, fresh);
-			onHand = fresh.onHand;
-		}
-		if (onHand === undefined) {
-			const res = await store.updateIf(item.productId, {
-				where: {},
-				set: { updatedAt: at, lastChange },
-				delta: { onHand: { dec: item.quantity } },
-			});
-			if (!res.applied) throw new Error("Stock row disappeared during update");
-			onHand = res.data.onHand;
-		}
-		if (onHand < 0 && !item.stock?.backorders) {
+		if (move.state === "deducted" && move.onHandAfter < 0 && !item.stock?.backorders) {
 			shortfalls.push({
 				productId: item.productId,
 				title: item.title,
-				short: Math.min(item.quantity, -onHand),
+				short: Math.min(item.quantity, -move.onHandAfter),
 			});
 		}
 	}
 	return shortfalls;
 }
 
-/** Put the items of a refunded or cancelled order back into stock. */
+/**
+ * Put the items of a refunded or cancelled order back into stock.
+ * Idempotent: only lines with a `deducted` move are restored, once. Lines
+ * that were never taken (no move) are left alone.
+ */
 export async function restoreStock(
 	ctx: PluginContext,
 	orderId: string,
@@ -164,18 +262,31 @@ export async function restoreStock(
 	reason: "refund" | "cancel",
 	now = Date.now(),
 ): Promise<void> {
+	const tracked = items.filter((i) => i.stock);
+	if (tracked.length === 0) return;
 	const store = stockStore(ctx);
+	const movesStore = stockMovesStore(ctx);
 	const at = new Date(now).toISOString();
-	for (const item of items) {
-		if (!item.stock) continue;
-		const res = await store.updateIf(item.productId, {
-			where: {},
-			set: { updatedAt: at, lastChange: { delta: item.quantity, reason, orderId, at } },
-			delta: { onHand: { inc: item.quantity } },
-		});
-		if (!res.applied) {
+	const moves = await movesStore.getMany(tracked.map((i) => moveId(orderId, i.productId)));
+	for (const item of tracked) {
+		const id = moveId(orderId, item.productId);
+		const move = moves.get(id);
+		if (move?.state !== "deducted") continue;
+		const onHand = await applyRowMove(
+			store,
+			item.productId,
+			`${orderId}:restore`,
+			move.quantity,
+			{ delta: move.quantity, reason, orderId, at },
+			at,
+		);
+		if (onHand === null) {
 			ctx.log.warn("No stock row to restore", { productId: item.productId, orderId });
 		}
+		await movesStore.updateIf(id, {
+			where: { state: "deducted" },
+			set: { state: "restored", restoredAt: at, reason },
+		});
 	}
 }
 
@@ -233,6 +344,7 @@ export async function syncFromProducts(
 			baseline: qty,
 			updatedAt: at,
 			lastChange: { delta: row ? qty - row.onHand : qty, reason: row ? "reset" : "seed", at },
+			...(row?.moves ? { moves: row.moves } : {}),
 		};
 		if (row) {
 			await store.put(p.id, next);

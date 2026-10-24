@@ -10,7 +10,10 @@
  *     Checkout Session expires after 24 hours and Stripe then sends
  *     `checkout.session.expired`; this catches orders whose expiry event
  *     never arrived. Each cancel is one guarded `updateIf`, so an order
- *     that was paid in the meantime is left alone.
+ *     that was paid in the meantime is left alone. Orders waiting for a
+ *     delayed payment method (ACH, SEPA debit) are `on-hold`, not
+ *     `pending`, so they are never picked up here: Stripe settles those
+ *     with `async_payment_succeeded` or `_failed`, which can take days.
  *   - deletes up to 100 processed Stripe event ids older than 30 days.
  *     Stripe retries a webhook for at most 3 days, so older ids are no
  *     longer needed for de-duplication.

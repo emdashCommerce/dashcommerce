@@ -60,8 +60,24 @@ export interface LiteOrder {
 	/** Cumulative refunded amount from `charge.refunded`, minor units. */
 	refundedAmount?: number;
 	refundedAt?: string;
-	/** Stock state for tracked items: taken on payment, put back on full refund or cancel. */
+	/**
+	 * Stock state for tracked items: taken on payment, put back on full
+	 * refund or cancel. This is the target state; the per-line
+	 * `stock_moves` ledger records what was actually applied (stock.ts).
+	 */
 	stock?: "deducted" | "restored";
+	/**
+	 * Set once the paid side effects (stock taken, cart cleared) are done.
+	 * A retried webhook finishes them while this is unset.
+	 */
+	paidEffectsAt?: string;
+	/**
+	 * Checkout finished with a delayed payment method (ACH, SEPA debit and
+	 * similar): Stripe sends `checkout.session.async_payment_succeeded` or
+	 * `_failed` later. The order is `on-hold` + `pending` meanwhile, which
+	 * the stale-order cleanup leaves alone.
+	 */
+	awaitingAsyncPayment?: boolean;
 	/** Tracked items that sold beyond the stock on hand. */
 	stockShortfall?: Array<{ productId: string; title: string; short: number }>;
 	/** Why the order was cancelled, when the plugin cancelled it. */
@@ -140,7 +156,10 @@ export async function updateOrder(
 export function applyStatus(order: LiteOrder, to: OrderStatus): LiteOrder | null {
 	if (order.status === to) return null;
 	if (!canTransition(order.status, to)) return null;
-	const next: LiteOrder = { ...order, status: to };
+	// Unpaid while a bank payment clears: the merchant can only cancel.
+	if (isAwaitingAsyncPayment(order) && to !== "cancelled") return null;
+	const { awaitingAsyncPayment: _awaiting, ...rest } = order;
+	const next: LiteOrder = { ...rest, status: to };
 	if (to === "cancelled") {
 		next.cancelReason = "admin";
 		// A cancelled paid order gives its stock back.
@@ -149,9 +168,13 @@ export function applyStatus(order: LiteOrder, to: OrderStatus): LiteOrder | null
 	return next;
 }
 
-/** True when moving `before` to `after` should put stock back. */
-export function stockToRestore(before: LiteOrder, after: LiteOrder): boolean {
-	return before.stock === "deducted" && after.stock === "restored";
+/** On hold until Stripe reports the result of a delayed payment method. */
+export function isAwaitingAsyncPayment(order: LiteOrder): boolean {
+	return (
+		order.awaitingAsyncPayment === true &&
+		order.status === "on-hold" &&
+		order.paymentStatus === "pending"
+	);
 }
 
 export function fromStripeAddress(

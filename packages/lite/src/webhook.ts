@@ -9,25 +9,34 @@
  * The route uses `response: "raw"` so it can answer 400 for a bad signature
  * and 500 when processing fails (Stripe then retries). Handled events:
  *
- *   checkout.session.completed              paid -> mark paid, take stock
- *   checkout.session.async_payment_succeeded       -> mark paid, take stock
- *   checkout.session.async_payment_failed          -> mark failed
- *   checkout.session.expired                       -> cancel pending order
- *   charge.refunded                                -> record refund; a full
- *                                                     refund restores stock
+ *   checkout.session.completed            paid -> mark paid, take stock
+ *                                       unpaid -> on hold, awaiting a delayed
+ *                                                 payment (ACH, SEPA debit)
+ *   checkout.session.async_payment_succeeded     -> mark paid, take stock
+ *   checkout.session.async_payment_failed        -> mark failed
+ *   checkout.session.expired                     -> cancel pending order
+ *   charge.refunded                              -> record refund; a full
+ *                                                   refund restores stock
  *
- * Every processed event id is recorded in `stripe_events`; a repeated
- * delivery is acknowledged without side effects. Order writes use
- * compare-and-set, so concurrent duplicate deliveries are also safe.
+ * An event id is recorded in `stripe_events` only after all of its side
+ * effects succeeded; a repeated delivery of a recorded id is acknowledged
+ * without side effects. Until then a retry re-runs the event: order writes
+ * are compare-and-set transitions, and the stock and cart steps are
+ * idempotent (per-line `stock_moves` ledger, `paidEffectsAt`), so a retry
+ * after a failure part-way completes the missing steps exactly once.
+ *
+ * Only `pending` or `failed` orders (or ones on hold for a delayed payment)
+ * can become paid. A refund for an order that is not paid yet answers 500
+ * without recording the event, so Stripe delivers it again later.
  */
 
 import type { PluginContext } from "emdash/plugin";
 import { cartsStore } from "./cart";
 import {
 	fromStripeAddress,
+	isAwaitingAsyncPayment,
 	type LiteOrder,
 	ordersStore,
-	stockToRestore,
 	updateOrder,
 } from "./orders";
 import {
@@ -73,6 +82,18 @@ type EventsStore = {
 	exists(id: string): Promise<boolean>;
 	put(id: string, data: Record<string, unknown>): Promise<void>;
 };
+
+/**
+ * Thrown when an event cannot be applied yet but will be later (for
+ * example a refund that arrives before the payment). The webhook answers
+ * 500 and does not record the event, so Stripe retries it.
+ */
+export class RetryLater extends Error {
+	constructor(readonly reason: string) {
+		super(reason);
+		this.name = "RetryLater";
+	}
+}
 
 export const HANDLED_EVENTS = [
 	"checkout.session.completed",
@@ -134,6 +155,13 @@ export async function handleStripeWebhook(
 						now,
 					);
 	} catch (err) {
+		if (err instanceof RetryLater) {
+			ctx.log.info("Stripe event deferred; Stripe will retry", {
+				type: event.type,
+				reason: err.reason,
+			});
+			return { status: 500, body: { error: "retry_later", reason: err.reason } };
+		}
 		ctx.log.error("Stripe webhook processing failed", {
 			type: event.type,
 			message: err instanceof Error ? err.message : "unknown",
@@ -160,6 +188,16 @@ async function processSessionEvent(
 
 	const sessionMatches = (o: LiteOrder) => !o.stripeSessionId || o.stripeSessionId === session.id;
 
+	if (type === "checkout.session.completed" && session.payment_status === "unpaid") {
+		// Delayed payment method: the shopper finished Checkout, the money
+		// arrives later with async_payment_succeeded or _failed.
+		const { order, written } = await updateOrder(store, orderId, (o) =>
+			sessionMatches(o) ? markAwaitingAsyncPayment(o, session) : null,
+		);
+		if (!order) return "order_not_found";
+		return written || isAwaitingAsyncPayment(order) ? "awaiting_async_payment" : "unchanged";
+	}
+
 	if (
 		type === "checkout.session.completed" ||
 		type === "checkout.session.async_payment_succeeded"
@@ -172,33 +210,36 @@ async function processSessionEvent(
 			ctx.log.warn("Stripe session references an unknown order", { orderId });
 			return "order_not_found";
 		}
-		if (!written) return "unchanged";
-
-		// Payment confirmed: take the items out of stock, then empty the cart.
-		let outcome = order.amountMismatch ? "paid_amount_mismatch" : "paid";
-		if (order.stock === "deducted") {
-			const shortfalls = await deductStock(ctx, orderId, order.items, now);
-			if (shortfalls.length > 0) {
-				await updateOrder(store, orderId, (o) => ({
-					...o,
-					status: "on-hold",
-					stockShortfall: shortfalls,
-				}));
-				ctx.log.warn("Paid order sold more than the stock on hand", { orderId });
-				outcome = "paid_stock_shortfall";
+		if (!written) {
+			// Already paid by this session: a retry finishes side effects a
+			// failed earlier attempt left undone. Anything else is a no-op.
+			const paidBySession = Boolean(order.paidAt) && order.stripeSessionId === session.id;
+			if (!paidBySession) {
+				if (sessionMatches(order) && !order.paidAt) {
+					ctx.log.warn("Payment for an order that can no longer be paid", {
+						orderId,
+						status: order.status,
+					});
+					return "not_payable";
+				}
+				return "unchanged";
 			}
+			if (order.paidEffectsAt) return "unchanged";
 		}
-		await cartsStore(ctx).delete(order.cartId);
-		return outcome;
+		const shortfalls = await completePaidEffects(ctx, orderId, order, now);
+		if (shortfalls.length > 0) return "paid_stock_shortfall";
+		return order.amountMismatch ? "paid_amount_mismatch" : "paid";
 	}
 
 	if (type === "checkout.session.async_payment_failed") {
-		const { order } = await updateOrder(store, orderId, (o) =>
-			sessionMatches(o) && o.paymentStatus === "pending"
-				? { ...o, status: "failed", paymentStatus: "failed" }
-				: null,
-		);
-		return order ? "failed" : "order_not_found";
+		const { order, written } = await updateOrder(store, orderId, (o) => {
+			if (!sessionMatches(o) || o.paymentStatus !== "pending") return null;
+			if (o.status !== "pending" && !isAwaitingAsyncPayment(o)) return null;
+			const { awaitingAsyncPayment: _awaiting, ...rest } = o;
+			return { ...rest, status: "failed", paymentStatus: "failed" };
+		});
+		if (!order) return "order_not_found";
+		return written ? "failed" : "unchanged";
 	}
 
 	// checkout.session.expired
@@ -211,18 +252,80 @@ async function processSessionEvent(
 }
 
 /**
- * Pure transition to "paid". Returns null when the order is already paid
- * (idempotent). A charged amount that differs from the order total puts
- * the order on hold for the merchant instead of marking it processing.
- * With Stripe Tax, the expected amount is the order total plus the tax
- * Stripe reports in `total_details.amount_tax`.
+ * Take a newly paid order's items out of stock and clear its cart, then
+ * set `paidEffectsAt`. Each step is idempotent, so this is safe to run
+ * again after a failure part-way. Returns stock shortfalls.
+ */
+async function completePaidEffects(
+	ctx: PluginContext,
+	orderId: string,
+	order: LiteOrder,
+	now: number,
+) {
+	const shortfalls =
+		order.stock === "deducted" ? await deductStock(ctx, orderId, order.items, now) : [];
+	if (shortfalls.length > 0) {
+		ctx.log.warn("Paid order sold more than the stock on hand", { orderId });
+	}
+	await cartsStore(ctx).delete(order.cartId);
+	await updateOrder(ordersStore(ctx), orderId, (o) =>
+		o.paidEffectsAt
+			? null
+			: {
+					...o,
+					paidEffectsAt: new Date(now).toISOString(),
+					...(shortfalls.length > 0
+						? {
+								stockShortfall: shortfalls,
+								status: o.status === "processing" ? ("on-hold" as const) : o.status,
+							}
+						: {}),
+				},
+	);
+	return shortfalls;
+}
+
+/** True when Stripe may move this order to paid. */
+export function isPayable(order: LiteOrder): boolean {
+	if (order.paymentStatus !== "pending" && order.paymentStatus !== "failed") return false;
+	return order.status === "pending" || order.status === "failed" || isAwaitingAsyncPayment(order);
+}
+
+/**
+ * Pure transition to "awaiting a delayed payment". Only from a pending
+ * order; returns null otherwise (idempotent).
+ */
+export function markAwaitingAsyncPayment(
+	order: LiteOrder,
+	session: SessionWithExtras,
+): LiteOrder | null {
+	if (order.status !== "pending" || order.paymentStatus !== "pending") return null;
+	const email = session.customer_details?.email ?? order.customerEmail;
+	return {
+		...order,
+		status: "on-hold",
+		awaitingAsyncPayment: true,
+		stripeSessionId: session.id,
+		...(session.payment_intent ? { stripePaymentIntentId: String(session.payment_intent) } : {}),
+		...(email ? { customerEmail: email.toLowerCase() } : {}),
+	};
+}
+
+/**
+ * Pure transition to "paid". Only `pending` or `failed` orders (or ones on
+ * hold for a delayed payment) can become paid; everything else returns
+ * null, so a replayed event never moves a refunded, cancelled, on-hold or
+ * already paid order. A charged amount that differs from the order total
+ * puts the order on hold for the merchant instead of marking it
+ * processing. With Stripe Tax, the expected amount is the order total plus
+ * the tax Stripe reports in `total_details.amount_tax`.
  */
 export function markPaid(
 	order: LiteOrder,
 	session: SessionWithExtras,
 	now: number,
 ): LiteOrder | null {
-	if (order.paymentStatus === "paid") return null;
+	if (!isPayable(order)) return null;
 	const receivedCurrency = (session.currency ?? "").toUpperCase();
 	const receivedAmount = session.amount_total ?? -1;
 	const stripeTax = order.automaticTax ? (session.total_details?.amount_tax ?? 0) : 0;
@@ -235,8 +338,9 @@ export function markPaid(
 	const address = fromStripeAddress(shipping?.name, shipping?.address);
 	const tracked = order.items.some((i) => i.stock);
 
+	const { awaitingAsyncPayment: _awaiting, ...rest } = order;
 	const next: LiteOrder = {
-		...order,
+		...rest,
 		status: mismatch ? "on-hold" : "processing",
 		paymentStatus: "paid",
 		paidAt: new Date(now).toISOString(),
@@ -275,14 +379,20 @@ async function processChargeRefunded(
 	}
 	if (!orderId) return "order_not_found";
 	const refunded = typeof charge.amount_refunded === "number" ? charge.amount_refunded : 0;
-	const { order, previous, written } = await updateOrder(store, orderId, (o) =>
+	const { order, written } = await updateOrder(store, orderId, (o) =>
 		applyRefund(o, refunded, charge, now),
 	);
 	if (!order) return "order_not_found";
-	if (!written) return "unchanged";
-	if (previous && stockToRestore(previous, order)) {
+	if (order.paymentStatus === "pending" || order.paymentStatus === "failed") {
+		// Stripe can deliver charge.refunded before the payment event. Do not
+		// drop it: answer 500 without recording it, so Stripe retries.
+		throw new RetryLater("refund_before_paid");
+	}
+	// Idempotent: also finishes a restore that failed on an earlier attempt.
+	if (order.stock === "restored") {
 		await restoreStock(ctx, orderId, order.items, "refund", now);
 	}
+	if (!written) return "unchanged";
 	return order.paymentStatus === "refunded" ? "refunded" : "partially_refunded";
 }
 

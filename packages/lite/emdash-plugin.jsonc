@@ -43,6 +43,11 @@
 		"stock": {
 			"indexes": ["title", "updatedAt"]
 		},
+		// One row per order and product (`${orderId}:${productId}`): makes
+		// stock changes from webhooks and admin actions idempotent.
+		"stock_moves": {
+			"indexes": ["orderId", "state"]
+		},
 		"stripe_events": {
 			"indexes": ["type", "createdAt"]
 		}

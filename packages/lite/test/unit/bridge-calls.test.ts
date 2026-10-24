@@ -10,7 +10,7 @@ import { CART_HEADER } from "../../src/cart";
 import { addItemHandler, getCartHandler } from "../../src/cart-routes";
 import { createCheckoutHandler } from "../../src/checkout";
 import { makeCtx, product } from "../helpers/fake-ctx";
-import { addToCart, okStripe, SK, WH } from "../helpers/flow";
+import { addToCart, checkout, okStripe, pay, SK, WH } from "../helpers/flow";
 
 function shop() {
 	return makeCtx({
@@ -47,5 +47,17 @@ describe("bridge calls per request", () => {
 		expect(res).toMatchObject({ ok: true });
 		// settings 1 + cart 1 + content 3 + stock getMany 1 + order put 2 + Stripe 1
 		expect(t.calls.count).toBe(9);
+	});
+
+	test("paid webhook is 8, plus 1 + 3 per stock-tracked line", async () => {
+		const t = shop();
+		const plain = await checkout(t, await addToCart(t, [["a", 1]]));
+		t.calls.count = 0;
+		await pay(t, plain);
+		expect(t.calls.count).toBe(8);
+		const tracked = await checkout(t, await addToCart(t, [["c", 1]]));
+		t.calls.count = 0;
+		await pay(t, tracked);
+		expect(t.calls.count).toBe(12);
 	});
 });

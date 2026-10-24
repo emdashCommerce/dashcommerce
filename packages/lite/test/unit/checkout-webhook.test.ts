@@ -249,7 +249,12 @@ describe("stripe/webhook", () => {
 			t,
 			sessionEvent("checkout.session.completed", t.orderId, { payment_status: "unpaid" }),
 		);
-		expect(pending.body).toMatchObject({ outcome: "awaiting_payment" });
+		expect(pending.body).toMatchObject({ outcome: "awaiting_async_payment" });
+		expect(await t.orders.get(t.orderId)).toMatchObject({
+			status: "on-hold",
+			paymentStatus: "pending",
+			awaitingAsyncPayment: true,
+		});
 		const failed = await deliver(
 			t,
 			sessionEvent("checkout.session.async_payment_failed", t.orderId, {}, "evt_f"),

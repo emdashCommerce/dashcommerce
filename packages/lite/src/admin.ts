@@ -10,7 +10,7 @@
 import type { Block, BlockResponse, FormField } from "@emdash-cms/blocks/server";
 import type { PluginContext } from "emdash/plugin";
 import { createExportUrl } from "./export";
-import { applyStatus, type LiteOrder, ordersStore, stockToRestore, updateOrder } from "./orders";
+import { applyStatus, type LiteOrder, ordersStore, updateOrder } from "./orders";
 import { PRODUCTS_COLLECTION } from "./products";
 import {
 	formatAmount,
@@ -323,6 +323,14 @@ function orderBlocks(id: string, o: LiteOrder): Block[] {
 			description: `Stripe charged ${o.amountMismatch.received.amount} ${o.amountMismatch.received.currency}; the order expected ${money(o.amountMismatch.expected)}. Check the payment in Stripe before fulfilling.`,
 		});
 	}
+	if (o.awaitingAsyncPayment && o.paymentStatus === "pending" && o.status === "on-hold") {
+		blocks.push({
+			type: "banner",
+			title: "Waiting for payment",
+			description:
+				"The shopper paid with a delayed method such as a bank debit. Stripe confirms or fails the payment within a few days; do not fulfil until then.",
+		});
+	}
 	if (o.stockShortfall?.length) {
 		blocks.push({
 			type: "banner",
@@ -411,11 +419,11 @@ async function setStatus(ctx: PluginContext, value: string): Promise<BlockRespon
 	if (sep <= 0 || !ADMIN_STATUSES.includes(to)) {
 		return { blocks: [], toast: { message: "Unknown action", type: "error" } };
 	}
-	const { order, previous, written } = await updateOrder(ordersStore(ctx), id, (o) =>
-		applyStatus(o, to),
-	);
+	const { order, written } = await updateOrder(ordersStore(ctx), id, (o) => applyStatus(o, to));
 	if (!order) return renderOrder(ctx, id);
-	if (written && previous && stockToRestore(previous, order)) {
+	// Idempotent per line (stock_moves), so a repeated click also finishes
+	// a restore that failed part-way.
+	if (order.stock === "restored" && order.status === "cancelled") {
 		await restoreStock(ctx, id, order.items, "cancel");
 	}
 	return {

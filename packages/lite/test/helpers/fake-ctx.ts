@@ -294,6 +294,7 @@ export function makeCtx(
 		orders: collections.orders as MemoryCollection,
 		carts: collections.carts as MemoryCollection,
 		stock: collections.stock as MemoryCollection,
+		stockMoves: collections.stock_moves as MemoryCollection,
 		stripeEvents: collections.stripe_events as MemoryCollection,
 		products,
 		httpCalls,

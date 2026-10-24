@@ -111,7 +111,14 @@ only. The plugin does not request `content:write`, so it cannot change
 collection instead, one row per tracked product:
 
 ```ts
-{ productId, title, onHand, baseline, updatedAt, lastChange }
+{ productId, title, onHand, baseline, updatedAt, lastChange, moves }
+```
+
+and one `stock_moves` row per order and tracked product, keyed
+`${orderId}:${productId}`:
+
+```ts
+{ orderId, productId, quantity, state: "deducted" | "restored", onHandAfter, deductedAt, restoredAt?, reason? }
 ```
 
 - A product is tracked when `manage_stock` is set on the entry.
@@ -123,16 +130,27 @@ collection instead, one row per tracked product:
   the product is how a merchant restocks.
 - Cart and checkout check availability (`INSUFFICIENT_STOCK`,
   `OUT_OF_STOCK`) but do not reserve stock. Checkout makes no ledger writes.
-- Stock is deducted when the webhook marks the order paid, with
-  `updateIf(..., { delta: { onHand: { dec } } })`, which is atomic. A row is
-  created with `compareAndSet(id, null, row)` so two first deductions
-  cannot both create it.
+- Stock is deducted when the webhook marks the order paid. Each line is a
+  `getVersioned` plus `compareAndSet` on the stock row (retried on
+  conflict, so concurrent sales cannot lose updates), then a
+  `compareAndSet(id, null, move)` that creates the `stock_moves` row. A
+  line that already has a move is skipped, so a retried webhook takes each
+  line exactly once and completes only the lines a failed attempt missed.
+- The row write and the move write are two calls. A crash between them is
+  covered by `moves` on the stock row: the last 50 move keys
+  (`<orderId>:sale`, `<orderId>:restore`) applied to that row, written in
+  the same compare-and-set as `onHand`. A retry that finds its key there
+  only records the move.
 - If stock ran out between checkout and payment and the product does not
   allow backorders, the order still records the payment but goes `on-hold`
   with a `stockShortfall` list, and the admin shows a banner.
 - Cancelling a paid order from the admin, or a full refund, restores the
-  deducted quantities once (`order.stock` moves from `deducted` to
-  `restored`).
+  deducted quantities once: `order.stock` moves from `deducted` to
+  `restored`, and each `deducted` move is put back and set to `restored`
+  (`updateIf` guarded on `state`). Lines that were never taken have no
+  move and are left alone. Restores are re-run on every refund event and
+  admin cancel click for an order whose `stock` is `restored`, so a
+  restore that failed part-way is completed by the next delivery or click.
 - The Stock admin page lists tracked products, syncs rows from content, and
   sets `onHand` by hand.
 
@@ -160,15 +178,28 @@ collection instead, one row per tracked product:
 1. Verifies the signature over the exact raw body with core's Web Crypto
    `verifyStripeSignature()` (HMAC-SHA256, 5 minute tolerance).
 2. Ignores event types it does not handle. Acknowledges an event id it has
-   already processed (`stripe_events` collection) without side effects.
+   already processed (`stripe_events` collection) without side effects. An
+   event id is recorded only after all of its side effects succeeded; if
+   anything throws, the webhook answers 500 and Stripe retries.
 3. `checkout.session.completed` with `payment_status=paid`, or
    `checkout.session.async_payment_succeeded`: marks the order `paid` and
    `processing`, stores the PaymentIntent id, amount paid, lowercased email,
-   shipping address and `livemode`, deducts stock, and deletes the cart. If
-   Stripe's `amount_total` or currency does not match the order (plus Stripe
-   Tax when enabled), the order goes `on-hold` with an `amountMismatch`
-   record for the merchant.
-4. `checkout.session.async_payment_failed` marks the order failed.
+   shipping address and `livemode`, deducts stock, deletes the cart, and
+   sets `paidEffectsAt`. If Stripe's `amount_total` or currency does not
+   match the order (plus Stripe Tax when enabled), the order goes `on-hold`
+   with an `amountMismatch` record for the merchant. Only a `pending` or
+   `failed` order, or one on hold for a delayed payment, can become paid: a
+   replayed event never moves a refunded, cancelled, on-hold or already paid
+   order. When the order is already paid by this session but
+   `paidEffectsAt` is unset (an earlier attempt failed part-way), the stock
+   and cart steps run again; both are idempotent.
+4. `checkout.session.completed` with `payment_status=unpaid` is a delayed
+   payment method (ACH, SEPA debit and similar). The order goes `on-hold`
+   with `awaitingAsyncPayment: true` and `paymentStatus` stays `pending`.
+   The cleanup cron only cancels `pending` orders, so it leaves these alone
+   while the payment clears, which can take days. The merchant can only
+   cancel such an order. `async_payment_succeeded` then marks it paid and
+   takes stock; `async_payment_failed` marks it `failed`.
    `checkout.session.expired` cancels a still-pending order
    (`cancelReason: "session_expired"`).
 5. `charge.refunded`: finds the order by `metadata.orderId`, or by the
@@ -176,7 +207,9 @@ collection instead, one row per tracked product:
    is idempotent and order of delivery does not matter. A partial refund sets
    `partially-refunded`. A full refund sets `refunded`, moves the order to
    `refunded` and restores stock. A charge whose PaymentIntent does not match
-   the order is ignored.
+   the order is ignored. A refund for an order that is not paid yet (Stripe
+   does not guarantee delivery order) answers 500 without recording the
+   event, so Stripe delivers it again after the payment event.
 6. Order writes use `getVersioned` plus `compareAndSet`, so two concurrent
    deliveries of the same event cannot both apply.
 
@@ -215,7 +248,8 @@ Settings, all optional:
 - cancels up to 10 orders still `pending` after 25 hours
   (`cancelReason: "stale"`; Checkout Sessions expire after 24 hours, so
   these are sessions whose expiry webhook never arrived), using `updateIf`
-  so a payment that lands at the same moment wins,
+  so a payment that lands at the same moment wins. Orders waiting for a
+  delayed payment are `on-hold`, so they are not touched,
 - deletes up to 100 `stripe_events` ids older than 30 days.
 
 Batches keep each run inside the per-invocation limits. A backlog clears
@@ -374,6 +408,7 @@ On Cloudflare each sandboxed call gets 50 ms CPU and 10 subrequests.
   | `cart` (GET) | 2 (settings, cart) |
   | `cart/items` | 4, or 5 for a stock-tracked product |
   | `checkout/session` | 6 + one content read per line (9 for 3 lines, 26 at the 20-line cap), plus the Stripe call |
+  | `stripe/webhook` (paid) | 8 (settings, event check, order read + write, cart delete, `paidEffectsAt` read + write, event record), plus 1 + 3 per stock-tracked line (move `getMany`; per line stock read, stock write, move write). 12 for one tracked line, 69 at 20 tracked lines |
 
   If bridge calls count, checkout needs a lower line cap or a batched
   content read (`content.list` with an id filter).
