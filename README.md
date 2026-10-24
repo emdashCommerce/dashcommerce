@@ -7,7 +7,7 @@
 
 **WooCommerce-class commerce for [EmDash CMS](https://github.com/emdash-cms/emdash)** — the Astro-native, Cloudflare-powered WordPress successor.
 
-Full-featured ecommerce in one plugin: products, cart, checkout, orders, subscriptions, multi-vendor marketplace, and more. Runs on Cloudflare Workers or Node.js (Railway, Render, etc.). Typed end-to-end. Sandbox-safe. MIT licensed.
+Full-featured ecommerce in one plugin: products, cart, checkout, orders, subscriptions, multi-vendor marketplace, and more. Runs on Cloudflare Workers or Node.js (Railway, Render, etc.). Typed end-to-end. MIT licensed.
 
 ## Get Started in 60 Seconds
 
@@ -23,11 +23,12 @@ Scaffolds a complete storefront with EmDash + DashCommerce, demo products, and S
 
 ## Current Release
 
-**v0.2.2** on npm — peer **EmDash `>=0.37.0 <0.38.0 || >=1.1.0 <1.4.0`**. 0.37.x installs stay valid; EmDash 1.1 to 1.3 installs pass peer checks. Skip `emdash@1.0.0` (wrong codebase on npm) and untested 0.38–0.42 until peers widen.
+**v0.3.2** on npm, peer **EmDash `>=0.37.0 <0.38.0 || >=1.1.0 <1.4.0`**. 0.37.x installs stay valid; EmDash 1.1 to 1.3 installs pass peer checks. Skip `emdash@1.0.0` (wrong codebase on npm) and untested 0.38 to 0.42 until peers widen.
 
 | Package | Version | EmDash Compatibility |
 |---|---|---|
-| [`@dashcommerce/core`](https://www.npmjs.com/package/@dashcommerce/core) | 0.2.2 | EmDash 0.37.x or 1.1+ |
+| [`@dashcommerce/core`](https://www.npmjs.com/package/@dashcommerce/core) | 0.3.2 | EmDash 0.37.x or 1.1+ |
+| [DashCommerce Lite](https://plugins.emdashcms.com/plugins/@dashcommerce.bsky.social/dashcommerce-lite) (`dashcommerce-lite`, EmDash plugin registry) | 0.2.0 | EmDash 1.3+ |
 | `@dashcommerce/create` | track latest | Scaffolds from `emdashCommerce/starter` |
 
 Stay on **0.1.x** if you need EmDash 0.28.x — that line remains on npm and is not bricked by 0.2.x.
@@ -36,7 +37,12 @@ The v1.0 feature roadmap is code-complete. SemVer: `0.x` may include minor break
 
 ### Discoverability
 
-EmDash’s default plugin discovery is the [Atmosphere registry](https://docs.emdashcms.com/plugins/registry/) ([plugins.emdashcms.com](https://plugins.emdashcms.com/)). Full `@dashcommerce/core` is a **native** npm plugin (~1.9 MB unpacked) and exceeds the sandboxed registry size cap (256 KB), so listing requires a **thin registry package that links to npm** (same pattern as other native plugins). Tracked in [#33](https://github.com/emdashCommerce/dashcommerce/issues/33). Until then: `npm create @dashcommerce@latest`.
+EmDash's default plugin discovery is the [Atmosphere registry](https://docs.emdashcms.com/plugins/registry/) ([plugins.emdashcms.com](https://plugins.emdashcms.com/)). There are two ways to run DashCommerce:
+
+- **DashCommerce Lite** is in the registry as [`dashcommerce-lite`](https://plugins.emdashcms.com/plugins/@dashcommerce.bsky.social/dashcommerce-lite). It is a sandboxed plugin you install from the EmDash admin, with no npm step: simple products from your content, a cart, Stripe hosted Checkout, stock tracking, refunds, and pages for orders, stock and settings. On Cloudflare it needs the **Workers Paid** plan, because EmDash runs sandboxed plugins in Worker Loaders. Source and setup: [`packages/lite`](./packages/lite).
+- **Full DashCommerce** is `@dashcommerce/core` on npm, a native plugin (too large for the registry's 256 KB sandbox cap) with subscriptions, variable products, Connect marketplaces and the full admin. Start with `npm create @dashcommerce@latest`. The [DashCommerce Setup](https://plugins.emdashcms.com/plugins/@dashcommerce.bsky.social/dashcommerce) registry listing shows these install steps inside your admin.
+
+**Do not install Lite alongside `@dashcommerce/core`.** Each runs its own cart, checkout, orders and Stripe webhook. Pick one.
 
 ## FAQ
 
@@ -54,7 +60,7 @@ If you want a full store on Astro + EmDash with Stripe, use DashCommerce. If you
 - **Modern Auth**: Passkey support via EmDash's built-in auth system
 - **Stripe Native**: Hosted Checkout, Payment Element, Subscriptions, Connect for multi-vendor
 - **Type-Safe**: End-to-end TypeScript, from admin UI to storefront islands
-- **Sandbox-Safe**: No Node.js built-ins — runs in EmDash's hardened plugin sandbox
+- **Sandboxed option**: DashCommerce Lite runs in EmDash's plugin sandbox and installs from the plugin registry
 - **Open Source**: MIT core; extensible plugin architecture
 
 ## Feature Highlights
