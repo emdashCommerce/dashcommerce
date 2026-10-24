@@ -176,7 +176,20 @@ them).
   recurring `stock-sweep` task (every 15 minutes) re-schedules any order
   still marked `stockPending`, in case a follow-up task was lost.
 - The Stock admin page lists tracked products, syncs rows from content, and
-  sets `onHand` by hand.
+  sets `onHand` by hand. Sync walks the whole catalog across clicks: each
+  click reads one page of 100 published products, oldest first, and writes
+  the rows that fit (3 per click). The place in the walk (a `content.list`
+  cursor plus running totals) is kept in plugin KV under `stock-sync`, so
+  the next click continues from there; the page is read again until all
+  its rows are written. The toast reports how many products were checked
+  so far (the content API returns no total), and the KV entry is deleted
+  when the last page is done, so the next Sync starts a new walk. A walk
+  left for more than 24 hours, or a cursor the host rejects, starts over.
+  Oldest first means products created during a walk sort last and are
+  still reached; a product edited on a page already checked is reset by
+  the next walk or at its next deduction (baseline rule above). Sync is
+  not needed for correctness: rows are also created at the first
+  deduction.
 
 ## Checkout and webhook
 
@@ -459,9 +472,12 @@ calls of headroom on every path, whatever the cart size:
   2 ticks. A refund or admin cancel of a one-line order still restores
   stock in the request.
 - Cleanup cancels 3 stale orders per run, the sweep handles 5 orders, the
-  CSV export reads 6 pages (600 orders), Sync writes 5 stock rows per
-  click, and the settings form writes only changed values, 7 per click (a
-  first save of all 9 values takes two clicks; secrets are stored first).
+  CSV export reads 6 pages (600 orders), Sync reads one page of 100
+  products and writes 3 stock rows per click (KV read, list, row read, 3
+  writes, KV write, page render), and the settings form writes only
+  changed values, 7 per click (a first save of all 9 values takes two
+  clicks; secrets are stored first). Values equal to what is stored are
+  not written or counted, and the toast says how many already matched.
 
 `test/unit/bridge-calls.test.ts` counts calls (including log and cron) at
 1, 5, 10 and 20 lines, with and without stock tracking, and asserts at
@@ -477,6 +493,7 @@ most 8 per invocation:
 | `stripe/webhook` full refund | 6 to 8, then stock tasks of at most 8 |
 | `stripe/webhook` replay, early refund (500), delayed payment on hold | 4 to 5 |
 | cron `cleanup`, `stock-sweep`, `stock-*` | at most 8 |
+| admin Sync, 146 / 1,000 products | at most 8 per click, until the walk ends |
 | admin pages and actions, CSV download | at most 8 |
 
 CPU: the hot paths are a SHA-256 of the token, HMAC verification and small
@@ -484,8 +501,8 @@ JSON work. Unit timings are well under a millisecond.
 
 ## Bundle size
 
-`emdash-plugin bundle` output for 0.2.0: `backend.js` 59.5 KB, total
-67.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
+`emdash-plugin bundle` output for 0.2.0: `backend.js` 60.6 KB, total
+68.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
 is about 22 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
 `bun run size` prints the numbers and fails above a 96 KB working budget
 for `backend.js`. The storefront kit is not part of the bundle.

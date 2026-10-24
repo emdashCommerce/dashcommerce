@@ -201,6 +201,11 @@ export function makeCtx(
 		]),
 	) as Record<string, MemoryCollection>;
 	const products = new Map((opts.products ?? []).map((p) => [p.id, p]));
+	// Creation order for content.list (a product re-set under the same id
+	// keeps its place, a new id is newest).
+	const createdSeq = new Map<string, number>();
+	let seq = 0;
+	for (const id of products.keys()) createdSeq.set(id, seq++);
 	const httpCalls: HttpCall[] = [];
 	const logs: Array<{ level: string; msg: string; data?: unknown }> = [];
 	const cronTasks = new Map<string, { schedule: string; data?: Record<string, unknown> }>();
@@ -254,20 +259,46 @@ export function makeCtx(
 				const p = products.get(id);
 				return p ? toItem(p) : null;
 			},
+			// Like EmDash: ordered by createdAt (insertion order here), newest
+			// first unless `orderBy: { createdAt: "asc" }`. The cursor names
+			// the last item's position, so items added or removed elsewhere do
+			// not shift it. A cursor that does not parse throws.
 			list: async (
 				_collection: string,
-				o: { where?: { status?: string }; limit?: number; cursor?: string } = {},
+				o: {
+					where?: { status?: string };
+					limit?: number;
+					cursor?: string;
+					orderBy?: Record<string, "asc" | "desc">;
+				} = {},
 			) => {
+				for (const id of products.keys()) if (!createdSeq.has(id)) createdSeq.set(id, seq++);
+				const asc = o.orderBy?.createdAt === "asc";
 				const all = [...products.values()]
 					.filter((p) => !o.where?.status || (p.status ?? "published") === o.where.status)
-					.map(toItem);
+					.sort((a, b) => {
+						const d = (createdSeq.get(a.id) ?? 0) - (createdSeq.get(b.id) ?? 0);
+						return asc ? d : -d;
+					});
 				const limit = Math.max(1, Math.min(o.limit ?? 50, 100));
-				const start = o.cursor ? Number(o.cursor) : 0;
-				const hasMore = all.length > start + limit;
+				let rest = all;
+				if (o.cursor) {
+					const after = Number(o.cursor.replace(/^seq:/, ""));
+					if (!o.cursor.startsWith("seq:") || !Number.isFinite(after)) {
+						throw new Error("InvalidCursorError: cursor does not parse");
+					}
+					rest = all.filter((p) => {
+						const n = createdSeq.get(p.id) ?? 0;
+						return asc ? n > after : n < after;
+					});
+				}
+				const page = rest.slice(0, limit);
+				const hasMore = rest.length > limit;
+				const last = page[page.length - 1];
 				return {
-					items: all.slice(start, start + limit),
+					items: page.map(toItem),
 					hasMore,
-					...(hasMore ? { cursor: String(start + limit) } : {}),
+					...(hasMore && last ? { cursor: `seq:${createdSeq.get(last.id)}` } : {}),
 				};
 			},
 		}),

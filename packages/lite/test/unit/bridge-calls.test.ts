@@ -335,8 +335,8 @@ describe("admin actions, other webhooks and the CSV export", () => {
 				createdAt: new Date(2020, 0, 1, 0, i).toISOString(),
 			});
 		}
-		// 29 rows to create: each sync click writes what fits.
-		for (let i = 0; i < 7; i += 1) {
+		// 29 rows to create: each sync click writes what fits (3).
+		for (let i = 0; i < 10; i += 1) {
 			await counted({ type: "block_action", action_id: "sync_stock" });
 		}
 		expect(t.stock.rows.size).toBe(30);

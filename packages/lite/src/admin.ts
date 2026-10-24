@@ -8,9 +8,9 @@
  *
  * Each interaction is one sandboxed invocation, so each stays within the
  * 8-call budget (budget.ts): pages read at most 4 or 5 times, a cancel
- * restores what stock fits and schedules the rest, Sync writes what fits
- * (5 rows) per click, and saving settings writes only the values that
- * changed, 7 at most per click.
+ * restores what stock fits and schedules the rest, Sync checks one page
+ * of 100 products and writes what fits (3 rows) per click, and saving
+ * settings writes only the values that changed, 7 at most per click.
  */
 
 import type { Block, BlockResponse, FormField } from "@emdash-cms/blocks/server";
@@ -606,35 +606,111 @@ async function saveStock(
 	};
 }
 
-async function syncStock(ctx: PluginContext): Promise<BlockResponse> {
+/** KV key holding an unfinished catalog walk of the Stock page's Sync. */
+export const SYNC_STATE_KEY = "stock-sync";
+/** A walk older than this starts over instead of continuing. */
+export const SYNC_STATE_TTL_MS = 24 * 60 * 60 * 1000;
+const SYNC_PAGE = 100;
+
+interface SyncState {
+	/** content.list cursor of the next page; absent for the first page. */
+	cursor?: string;
+	/** Products on fully checked pages. */
+	checked: number;
+	created: number;
+	reset: number;
+	startedAt: string;
+}
+
+function readSyncState(raw: unknown, now: number): SyncState | null {
+	if (!raw || typeof raw !== "object") return null;
+	const s = raw as Partial<SyncState>;
+	if (typeof s.startedAt !== "string" || !(now - Date.parse(s.startedAt) < SYNC_STATE_TTL_MS)) {
+		return null;
+	}
+	const n = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
+	return {
+		...(typeof s.cursor === "string" && s.cursor ? { cursor: s.cursor } : {}),
+		checked: n(s.checked),
+		created: n(s.created),
+		reset: n(s.reset),
+		startedAt: s.startedAt,
+	};
+}
+
+/**
+ * Sync stock rows from the products collection, one page of 100 products
+ * per click, oldest first. The walk's position is kept in KV
+ * (SYNC_STATE_KEY) so the next click continues where this one stopped;
+ * products created during the walk sort last, so they are reached too.
+ * A page whose rows do not all fit in one click is read again by the next
+ * click (rows already written are up to date by then and skipped). The
+ * state is deleted when the last page is done.
+ *
+ * Bridge calls: KV read 1, product page 1, rows `getMany` 1, one guarded
+ * write per row that fits, KV write or delete 1, page render 1. At most 8.
+ */
+async function syncStock(ctx: PluginContext, now = Date.now()): Promise<BlockResponse> {
 	if (!ctx.content) {
 		return { ...(await renderStock(ctx)), toast: { message: "No content access", type: "error" } };
 	}
-	const list = await ctx.content.list(PRODUCTS_COLLECTION, {
-		limit: 100,
-		where: { status: "published" },
+	const fresh = (): SyncState => ({
+		checked: 0,
+		created: 0,
+		reset: 0,
+		startedAt: new Date(now).toISOString(),
 	});
+	let state = readSyncState(await ctx.kv.get(SYNC_STATE_KEY), now) ?? fresh();
+	const listPage = (cursor?: string) =>
+		(ctx.content as NonNullable<PluginContext["content"]>).list(PRODUCTS_COLLECTION, {
+			limit: SYNC_PAGE,
+			where: { status: "published" },
+			orderBy: { createdAt: "asc" },
+			...(cursor ? { cursor } : {}),
+		});
+	let list: Awaited<ReturnType<typeof listPage>>;
+	try {
+		list = await listPage(state.cursor);
+	} catch (err) {
+		// A cursor the host no longer accepts: start the walk over.
+		if (!state.cursor) throw err;
+		state = fresh();
+		list = await listPage();
+	}
 	const products = list.items.map((item) => ({
 		id: item.id,
 		fields: normalizeProductFields(item.data),
 	}));
-	// Writes that fit: the budget minus the rows read and the page render.
+	// Writes that fit: the budget minus the rows read, the KV write and the
+	// page render.
 	const {
 		created,
 		reset,
 		remaining: left,
-	} = await syncFromProducts(ctx, products, Date.now(), Math.max(0, remaining(ctx) - 2));
-	const done =
-		created || reset
-			? `Added ${created}, reset ${reset} from product stock_quantity`
-			: "Stock is up to date";
-	return {
-		...(await renderStock(ctx)),
-		toast: {
-			message: left > 0 ? `${done}. ${left} more: run Sync again.` : done,
-			type: "success",
-		},
-	};
+	} = await syncFromProducts(ctx, products, now, Math.max(0, remaining(ctx) - 3));
+	state.created += created;
+	state.reset += reset;
+
+	let message: string;
+	if (left > 0) {
+		// This page is not done: the next click reads it again.
+		await ctx.kv.set(SYNC_STATE_KEY, state);
+		message = `Checking products ${state.checked + 1} to ${state.checked + products.length}: ${left} stock rows still to update. Run Sync again.`;
+	} else {
+		state.checked += products.length;
+		if (list.hasMore && list.cursor) {
+			state.cursor = list.cursor;
+			await ctx.kv.set(SYNC_STATE_KEY, state);
+			message = `Checked ${state.checked} products so far (added ${state.created}, reset ${state.reset}). Run Sync again to check the rest.`;
+		} else {
+			await ctx.kv.delete(SYNC_STATE_KEY);
+			message =
+				state.created || state.reset
+					? `Checked all ${state.checked} products: added ${state.created}, reset ${state.reset} from product stock_quantity.`
+					: `Checked all ${state.checked} products. Stock is up to date.`;
+		}
+	}
+	return { ...(await renderStock(ctx)), toast: { message, type: "success" } };
 }
 
 // ── Settings ────────────────────────────────────────────────────────────
@@ -823,6 +899,9 @@ export async function saveSettings(
 	const changed = writes.filter(([k, v]) => stored.get(k) !== v);
 	const now = changed.slice(0, Math.max(0, remaining(ctx)));
 	const deferred = changed.length - now.length;
+	// Values equal to what is stored are not written and not counted, so
+	// the toast says how many matched (a re-entered secret, say).
+	const unchanged = writes.length - changed.length;
 	const intended = new Map(writes);
 	const view = () =>
 		configFrom((key) => (deferred > 0 && intended.has(key) ? intended.get(key) : stored.get(key)));
@@ -853,7 +932,9 @@ export async function saveSettings(
 		toast:
 			deferred > 0
 				? {
-						message: `Saved ${now.length} of ${changed.length} changes. Press Save again to store the rest.`,
+						message: `Saved ${now.length} of ${changed.length} changed settings${
+							unchanged > 0 ? ` (${unchanged} already matched)` : ""
+						}. Press Save again to store the rest.`,
 						type: "info",
 					}
 				: { message: "Settings saved", type: "success" },
