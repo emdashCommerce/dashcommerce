@@ -42,6 +42,11 @@
 			"binding": "SESSION"
 		}
 	]
+	// Sandboxed plugins (DashCommerce Lite, DASHCOMMERCE_EDITION=sandboxed, or
+	// any plugin installed from the EmDash registry) run in Dynamic Workers.
+	// That needs the Workers Paid plan and this binding; add a comma after the
+	// kv_namespaces block above and uncomment:
+	// "worker_loaders": [{ "binding": "LOADER" }]
 	// Secrets (not in this file — set via `wrangler secret put`):
 	//   EMDASH_AUTH_SECRET      — session/token signing (generate with `openssl rand -hex 32`)
 	//   EMDASH_PREVIEW_SECRET   — draft content preview signing

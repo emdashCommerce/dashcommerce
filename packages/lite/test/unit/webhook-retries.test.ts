@@ -44,8 +44,9 @@ function failNext(col: MemoryCollection, method: string, times = 1, skip = 0) {
 const onHand = (t: Shop, id: string) =>
 	(t.stock.rows.get(id)?.data as { onHand: number } | undefined)?.onHand;
 const order = async (t: Shop, id: string) => (await t.orders.get(id)) as unknown as LiteOrder;
+/** This order's recorded stock move for a product (the per-order, per-product ledger). */
 const moveState = (t: Shop, orderId: string, productId: string) =>
-	(t.stockMoves.rows.get(`${orderId}:${productId}`)?.data as { state: string } | undefined)?.state;
+	(t.orders.rows.get(orderId)?.data as LiteOrder | undefined)?.stockMoves?.[productId]?.state;
 
 async function checkedOut(t: Shop, lines: Array<[string, number]> = [["s1", 3]]) {
 	const co = await checkout(t, await addToCart(t, lines));
@@ -60,9 +61,9 @@ describe("webhook retries take stock exactly once", () => {
 		const first = await pay(t, co, {});
 		expect(first.status).toBe(500);
 		expect(t.stripeEvents.rows.size).toBe(0); // not recorded as done
-		expect(await order(t, co.orderId)).toMatchObject({ paymentStatus: "paid" });
+		expect(await order(t, co.orderId)).toMatchObject({ paymentStatus: "paid", stockPending: 1 });
 		expect((await order(t, co.orderId)).paidEffectsAt).toBeUndefined();
-		expect(onHand(t, "s1")).toBe(7);
+		expect(onHand(t, "s1")).toBeUndefined(); // the cart is cleared before stock is taken
 
 		// The order already reads paid, but the retry still finishes the job.
 		const retry = await pay(t, co, {});
@@ -70,6 +71,7 @@ describe("webhook retries take stock exactly once", () => {
 		expect(onHand(t, "s1")).toBe(7);
 		const o = await order(t, co.orderId);
 		expect(o.paidEffectsAt).toBeString();
+		expect(o.stockPending).toBeUndefined();
 		expect(t.carts.rows.has(o.cartId)).toBe(false);
 	});
 
@@ -89,19 +91,19 @@ describe("webhook retries take stock exactly once", () => {
 			currency: "usd",
 			payment_intent: `pi_${co.orderId}`,
 		};
-		// Crash between the second line's stock row write and its move record.
-		failNext(t.stockMoves, "compareAndSet", 1, 1);
+		// Crash after both stock rows were written, before the order records them.
+		failNext(t.orders, "compareAndSet", 1, 1);
 		const first = await deliver(t, "checkout.session.completed", session, "evt_pay");
 		expect(first.status).toBe(500);
 		expect(await t.stripeEvents.exists("evt_pay")).toBe(false);
 		expect(onHand(t, "s1")).toBe(7);
-		expect(onHand(t, "s2")).toBe(3); // row written, move not recorded
+		expect(onHand(t, "s2")).toBe(3); // rows written, moves not recorded
 		expect(moveState(t, co.orderId, "s2")).toBeUndefined();
 
 		const retry = await deliver(t, "checkout.session.completed", session, "evt_pay");
 		expect(retry.status).toBe(200);
 		expect(retry.body).toMatchObject({ outcome: "paid" });
-		expect(onHand(t, "s1")).toBe(7);
+		expect(onHand(t, "s1")).toBe(7); // the row's move key stops a second deduction
 		expect(onHand(t, "s2")).toBe(3);
 		expect(moveState(t, co.orderId, "s1")).toBe("deducted");
 		expect(moveState(t, co.orderId, "s2")).toBe("deducted");
@@ -124,7 +126,7 @@ describe("webhook retries take stock exactly once", () => {
 	test("a throw before any stock was taken: the retry takes it", async () => {
 		const t = shop();
 		const co = await checkedOut(t);
-		failNext(t.stock, "getVersioned");
+		failNext(t.stock, "getMany");
 		expect((await pay(t, co, {})).status).toBe(500);
 		expect(onHand(t, "s1")).toBeUndefined();
 		const retry = await pay(t, co, {});
@@ -153,7 +155,8 @@ describe("webhook retries take stock exactly once", () => {
 		const co = await checkedOut(t);
 		await pay(t, co);
 		expect(onHand(t, "s1")).toBe(7);
-		failNext(t.stockMoves, "updateIf"); // after the row was restored
+		// After the row was restored, before the order records it.
+		failNext(t.orders, "compareAndSet", 1, 1);
 		const first = await refund(t, co.orderId, co.total, co.total, { id: "evt_ref" });
 		expect(first.status).toBe(500);
 		expect(await t.stripeEvents.exists("evt_ref")).toBe(false);
@@ -161,12 +164,15 @@ describe("webhook retries take stock exactly once", () => {
 		expect(await order(t, co.orderId)).toMatchObject({
 			paymentStatus: "refunded",
 			stock: "restored",
+			stockPending: 1,
 		});
+		expect(moveState(t, co.orderId, "s1")).toBe("deducted");
 
 		const retry = await refund(t, co.orderId, co.total, co.total, { id: "evt_ref" });
 		expect(retry.status).toBe(200);
 		expect(onHand(t, "s1")).toBe(10);
 		expect(moveState(t, co.orderId, "s1")).toBe("restored");
+		expect((await order(t, co.orderId)).stockPending).toBeUndefined();
 		// Another refund event for the same charge changes nothing.
 		await refund(t, co.orderId, co.total, co.total, { id: "evt_ref2" });
 		expect(onHand(t, "s1")).toBe(10);
@@ -176,7 +182,7 @@ describe("webhook retries take stock exactly once", () => {
 		const t = shop();
 		const co = await checkedOut(t);
 		await pay(t, co);
-		failNext(t.stock, "getVersioned");
+		failNext(t.stock, "getMany");
 		expect((await refund(t, co.orderId, co.total, co.total, { id: "evt_r" })).status).toBe(500);
 		expect(onHand(t, "s1")).toBe(7);
 		expect((await refund(t, co.orderId, co.total, co.total, { id: "evt_r" })).status).toBe(200);
@@ -193,7 +199,7 @@ describe("webhook retries take stock exactly once", () => {
 				action_id: "set_status",
 				value: `${co.orderId}:cancelled`,
 			});
-		failNext(t.stock, "compareAndSet");
+		failNext(t.stock, "updateIf");
 		await expect(cancel()).rejects.toThrow("boom");
 		expect(await order(t, co.orderId)).toMatchObject({ status: "cancelled", stock: "restored" });
 		expect(onHand(t, "s1")).toBe(7);

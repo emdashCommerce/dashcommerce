@@ -21,6 +21,8 @@ export const DEFAULT_BASE = "/_emdash/api/plugins/dashcommerce-lite";
 export const STORAGE_KEY = "dashcommerce-cart";
 export const CART_HEADER = "X-DashCommerce-Cart";
 export const CART_EVENT = "dashcommerce:cart";
+/** Most `checkout/session` requests one checkout() makes (see CHECKOUT_CONTINUE). */
+export const MAX_CHECKOUT_REQUESTS = 6;
 
 export class DashCommerceError extends Error {
 	/**
@@ -150,9 +152,19 @@ export function createClient(options = {}) {
 		 * Start Stripe Checkout. Resolves to `{ url, orderId, orderKey, orderNumber }`.
 		 * Throws `CART_CHANGED` (with the corrected cart in `details.cart`)
 		 * when prices, shipping or tax changed since the cart was built.
+		 * Repeats the request while the server answers `CHECKOUT_CONTINUE`.
 		 */
 		async checkout({ email } = {}) {
-			return call("checkout/session", { body: email ? { email } : {} });
+			// A large cart can take a few requests: the server answers
+			// CHECKOUT_CONTINUE while it is still reading products, to stay
+			// within its per-request limits. Send the request again.
+			for (let attempt = 1; ; attempt += 1) {
+				try {
+					return await call("checkout/session", { body: email ? { email } : {} });
+				} catch (err) {
+					if (err?.code !== "CHECKOUT_CONTINUE" || attempt >= MAX_CHECKOUT_REQUESTS) throw err;
+				}
+			}
 		},
 
 		/** Start Checkout and send the browser to Stripe. */

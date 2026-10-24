@@ -117,15 +117,20 @@ only. The plugin does not request `content:write`, so it cannot change
 collection instead, one row per tracked product:
 
 ```ts
-{ productId, title, onHand, baseline, updatedAt, lastChange, moves }
+{ productId, title, onHand, baseline, rev, updatedAt, lastChange, moves }
 ```
 
-and one `stock_moves` row per order and tracked product, keyed
-`${orderId}:${productId}`:
+Each order records what it did to stock in `order.stockMoves`, keyed by
+product id:
 
 ```ts
-{ orderId, productId, quantity, state: "deducted" | "restored", onHandAfter, deductedAt, restoredAt?, reason? }
+{ quantity, state: "deducted" | "restored" | "skipped", onHandAfter?, deductedAt?, restoredAt?, reason? }
 ```
+
+`order.stock` is the target (`deducted` once paid, `restored` after a
+cancel or full refund) and `order.stockPending: 1` marks an order whose
+lines have not all reached it yet (indexed, so the sweep below can find
+them).
 
 - A product is tracked when `manage_stock` is set on the entry.
 - `baseline` is the entry's `stock_quantity` when the row was created or
@@ -136,27 +141,36 @@ and one `stock_moves` row per order and tracked product, keyed
   the product is how a merchant restocks.
 - Cart and checkout check availability (`INSUFFICIENT_STOCK`,
   `OUT_OF_STOCK`) but do not reserve stock. Checkout makes no ledger writes.
-- Stock is deducted when the webhook marks the order paid. Each line is a
-  `getVersioned` plus `compareAndSet` on the stock row (retried on
-  conflict, so concurrent sales cannot lose updates), then a
-  `compareAndSet(id, null, move)` that creates the `stock_moves` row. A
-  line that already has a move is skipped, so a retried webhook takes each
-  line exactly once and completes only the lines a failed attempt missed.
-- The row write and the move write are two calls. A crash between them is
+- Settling (`settle.ts`) moves each pending line toward the target: one
+  `getMany` for the rows, then one write per line. A missing row is created
+  with `compareAndSet(id, null, ...)`. An existing row is written with
+  `updateIf` guarded on its `rev` (bumped on every write), so a concurrent
+  change makes the write miss instead of losing an update; the line stays
+  pending for the next pass. The order is then written once with
+  `compareAndSet` (re-read and merged on conflict), which records all the
+  moves of the pass atomically.
+- The row write and the order write are two calls. A crash between them is
   covered by `moves` on the stock row: the last 50 move keys
   (`<orderId>:sale`, `<orderId>:restore`) applied to that row, written in
-  the same compare-and-set as `onHand`. A retry that finds its key there
-  only records the move.
-- If stock ran out between checkout and payment and the product does not
-  allow backorders, the order still records the payment but goes `on-hold`
-  with a `stockShortfall` list, and the admin shows a banner.
-- Cancelling a paid order from the admin, or a full refund, restores the
-  deducted quantities once: `order.stock` moves from `deducted` to
-  `restored`, and each `deducted` move is put back and set to `restored`
-  (`updateIf` guarded on `state`). Lines that were never taken have no
-  move and are left alone. Restores are re-run on every refund event and
-  admin cancel click for an order whose `stock` is `restored`, so a
-  restore that failed part-way is completed by the next delivery or click.
+  the same guarded write as `onHand`. A later pass that finds its key there
+  only records the move. So a retried webhook or task takes or restores
+  each line exactly once.
+- When every line is deducted, the pass sets `paidEffectsAt`. If stock ran
+  out between checkout and payment and the product does not allow
+  backorders, the order still records the payment but goes `on-hold` with a
+  `stockShortfall` list, and the admin shows a banner.
+- Cancelling a paid order from the admin, or a full refund, sets the target
+  to `restored`. Each deducted line is put back once. A line that was never
+  taken (no move on the order and no sale key on the row) is recorded as
+  `skipped`. A refund or cancel that lands while a large order's deduction
+  is still running therefore converges to all stock back.
+- Work that does not fit in the request that started it (see Cloudflare
+  limits) continues in one-shot cron tasks named
+  `stock-<orderId>-<pass>`, each scheduled by the pass before it. A new
+  name per pass is needed because EmDash deletes a one-shot task by id
+  after it runs. A task that throws is retried by EmDash with backoff. The
+  recurring `stock-sweep` task (every 15 minutes) re-schedules any order
+  still marked `stockPending`, in case a follow-up task was lost.
 - The Stock admin page lists tracked products, syncs rows from content, and
   sets `onHand` by hand.
 
@@ -177,7 +191,7 @@ and one `stock_moves` row per order and tracked product, keyed
    The order id and the idempotency key (`dc_checkout_<hash>`) derive from
    the cart id and the cart's `updatedAt`, which increases on every cart
    write. A double submit of the same cart reuses the pending order (the
-   order is created with `compareAndSet(id, null, …)`), sends an identical
+   order is created with `compareAndSet(id, null, ...)`), sends an identical
    request, and Stripe replays the same session. If the earlier attempt
    for that cart version failed or was cancelled, checkout touches the cart
    and starts a new attempt. A shipping address is collected only when the
@@ -192,13 +206,17 @@ and one `stock_moves` row per order and tracked product, keyed
    `verifyStripeSignature()` (HMAC-SHA256, 5 minute tolerance).
 2. Ignores event types it does not handle. Acknowledges an event id it has
    already processed (`stripe_events` collection) without side effects. An
-   event id is recorded only after all of its side effects succeeded; if
-   anything throws, the webhook answers 500 and Stripe retries.
+   event id is recorded only after all of its side effects succeeded, or
+   were handed to a scheduled follow-up task; if anything throws (including
+   failing to schedule that task), the webhook answers 500 and Stripe
+   retries.
 3. `checkout.session.completed` with `payment_status=paid`, or
    `checkout.session.async_payment_succeeded`: marks the order `paid` and
    `processing`, stores the PaymentIntent id, amount paid, lowercased email,
-   shipping address and `livemode`, deducts stock, deletes the cart, and
-   sets `paidEffectsAt`. If Stripe's `amount_total` or currency does not
+   shipping address and `livemode`, deletes the cart, and settles stock
+   (see Stock ledger), which sets `paidEffectsAt` once every tracked line is
+   deducted. Lines that do not fit in the request continue in cron tasks;
+   the outcome is then `paid_stock_pending`. If Stripe's `amount_total` or currency does not
    match the order (plus Stripe Tax when enabled), the order goes `on-hold`
    with an `amountMismatch` record for the merchant. Only a `pending` or
    `failed` order, or one on hold for a delayed payment, can become paid: a
@@ -253,11 +271,15 @@ Settings, all optional:
 
 ## Cleanup cron
 
-`plugin:install` and `plugin:activate` schedule task `cleanup` at
-`@hourly`. Each run:
+`plugin:install` and `plugin:activate` schedule task `cleanup` at `@hourly`
+and `stock-sweep` every 15 minutes. A plugin listed in the site config
+(`sandboxed: [...]`) never gets those hooks, so the cart routes and admin
+pages also check a `cronVersion` setting they already read and, when it is
+missing or old, schedule both tasks (an upsert by name, so repeating it is
+harmless) and record the version. `cleanup` runs:
 
 - deletes up to 100 expired carts (`expiresAt` index),
-- cancels up to 10 orders still `pending` after 25 hours
+- cancels up to 3 orders still `pending` after 25 hours
   (`cancelReason: "stale"`; Checkout Sessions expire after 24 hours, so
   these are sessions whose expiry webhook never arrived), using `updateIf`
   so a payment that lands at the same moment wins. Orders waiting for a
@@ -282,8 +304,8 @@ CSV export: private plugin routes need the `X-EmDash-Request` header, which
 a plain download link cannot send. The Export button writes a single-use
 grant to KV (`export:<sha256(token)>`, 5 minute TTL) and shows a "Download
 CSV" link to the public raw route `orders/export?token=...`. A used,
-expired or unknown token gets 403. The export reads at most 1,000 orders
-(10 pages of 100) and sets `x-dashcommerce-truncated: true` when there were
+expired or unknown token gets 403. The export reads at most 800 orders
+(8 pages of 100, to stay within the request budget) and sets `x-dashcommerce-truncated: true` when there were
 more. Cells that start with `=`, `+`, `-`, `@`, tab or carriage return are
 prefixed with `'` so spreadsheets do not run them as formulas.
 
@@ -405,30 +427,54 @@ been run in a browser test.
 
 ## Cloudflare limits
 
-On Cloudflare each sandboxed call gets 50 ms CPU and 10 subrequests.
+Sandboxed plugins run in Dynamic Workers (Worker Loader), which need the
+Workers Paid plan. Each sandboxed invocation gets 50 ms CPU and 10
+subrequests. Every `ctx.*` call (storage, content, settings, kv, cron, log
+and `http.fetch`) is an RPC to EmDash's bridge, and the code assumes each
+counts toward the 10. Lite keeps every request path at 10 or fewer
+regardless of cart size:
 
-- CPU: the hot paths are a SHA-256 of the token, HMAC verification and
-  small JSON work. Unit timings are well under a millisecond.
-- Subrequests: the only `fetch` is one Stripe call per checkout. It is not
-  yet confirmed whether bridge calls (`ctx.kv`, `ctx.content`,
-  `ctx.storage`, `ctx.settings`) count toward the 10, and that check on a
-  real Cloudflare deployment is still open. The code keeps bridge calls low
-  and `test/unit/bridge-calls.test.ts` pins the counts:
+- `budget.ts` wraps the context and counts calls. Logging is skipped when
+  no call is left, and the stock and checkout code size their batches from
+  what remains.
+- Checkout reads products with one `content.list` page (100 entries) when
+  that is cheaper than a `content.get` per line, so a shop with up to 100
+  products prices any cart in one read. In a larger catalog, when the
+  products do not fit in one request, checkout saves the products read so
+  far on the cart (`checkoutPrep`, valid 5 minutes and only for that cart
+  version) and answers `CHECKOUT_CONTINUE`. The storefront kit repeats the
+  request (up to `MAX_CHECKOUT_REQUESTS`). A 20-line cart in a 1,000
+  product catalog takes 4 requests. The 20-line cap stays.
+- Paid and refund webhooks and admin cancels settle as many stock lines as
+  fit and schedule the rest (see Stock ledger).
+- Cleanup cancels 3 stale orders per run, the sweep handles 5 orders, the
+  CSV export reads 8 pages, and the settings form writes only changed
+  values.
 
-  | Route | Bridge calls |
-  | --- | --- |
-  | `cart` (GET) | 2 (settings, cart) |
-  | `cart/items` | 4, or 5 for a stock-tracked product |
-  | `checkout/session` | 6 + one content read per line (9 for 3 lines, 26 at the 20-line cap), plus the Stripe call |
-  | `stripe/webhook` (paid) | 8 (settings, event check, order read + write, cart delete, `paidEffectsAt` read + write, event record), plus 1 + 3 per stock-tracked line (move `getMany`; per line stock read, stock write, move write). 12 for one tracked line, 69 at 20 tracked lines |
+`test/unit/bridge-calls.test.ts` counts calls (including log and cron) at
+1, 5, 10 and 20 lines, with and without stock tracking:
 
-  If bridge calls count, checkout needs a lower line cap or a batched
-  content read (`content.list` with an id filter).
+| Path | Calls per request |
+| --- | --- |
+| `cart` (GET) | 2 (4 on the first request that schedules cron) |
+| `cart/items` | 4, or 5 for a stock-tracked product |
+| `checkout/session`, catalog up to 100 products | 7, or 8 with tracked lines, in one request |
+| `checkout/session`, 1,000 products, 20 lines | 4 requests, at most 10 each |
+| `stripe/webhook` paid or async succeeded | 7 untracked; 9 or 10 tracked, then follow-up tasks of at most 10 (20 tracked lines: 3 tasks) |
+| `stripe/webhook` full refund | 5 untracked; 8 or 10 tracked, then at most 10 per task (20 lines: 3 tasks) |
+| cron `cleanup`, `stock-sweep`, `stock-*` | at most 10 |
+| admin pages and actions | at most 10 |
+
+Before this, a paid webhook made 12 calls for one tracked line and 69 for
+20, and checkout made 26 at 20 lines.
+
+CPU: the hot paths are a SHA-256 of the token, HMAC verification and small
+JSON work. Unit timings are well under a millisecond.
 
 ## Bundle size
 
-`emdash-plugin bundle` output for 0.2.0: `backend.js` 52.7 KB, total
-60.1 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
-is about 19 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
+`emdash-plugin bundle` output for 0.2.0: `backend.js` 58.6 KB, total
+66.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
+is about 22 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
 `bun run size` prints the numbers and fails above a 96 KB working budget
 for `backend.js`. The storefront kit is not part of the bundle.

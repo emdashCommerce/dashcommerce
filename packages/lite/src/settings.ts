@@ -32,11 +32,18 @@ export interface LiteConfig {
 	flatTaxPercent: number;
 	/** Let Stripe Tax add tax on the hosted Checkout page. Excludes flat tax. */
 	automaticTax: boolean;
+	/** Internal: which set of cron tasks this site has scheduled (cron.ts). */
+	cronVersion: unknown;
+}
+
+/** Every stored setting, in one bridge call. */
+export async function loadSettingsMap(ctx: PluginContext): Promise<Map<string, unknown>> {
+	const entries = await ctx.settings.list();
+	return new Map(entries.map((e) => [e.key, e.value]));
 }
 
 export async function loadConfig(ctx: PluginContext): Promise<LiteConfig> {
-	const entries = await ctx.settings.list();
-	const values = new Map(entries.map((e) => [e.key, e.value]));
+	const values = await loadSettingsMap(ctx);
 	return configFrom((key) => values.get(key));
 }
 
@@ -57,6 +64,7 @@ export function configFrom(get: (key: string) => unknown): LiteConfig {
 			typeof shipping === "number" && Number.isInteger(shipping) && shipping > 0 ? shipping : 0,
 		flatTaxPercent: parsePercent(get("flatTaxPercent")) ?? 0,
 		automaticTax: get("automaticTax") === true,
+		cronVersion: get("cronVersion"),
 	};
 }
 

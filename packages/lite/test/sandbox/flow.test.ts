@@ -173,13 +173,13 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			customerEmail: "buyer@example.com",
 			stock: "deducted",
 		});
-		// Stock ledger: 5 on the product, 2 sold, written with compareAndSet,
-		// plus the per-order move that makes retries idempotent.
+		// Stock ledger: 5 on the product, 2 sold, written with a guarded
+		// updateIf, plus the per-order, per-product move on the order.
 		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({
 			onHand: 3,
 			baseline: 5,
 		});
-		expect(await h.inspect.storage.get("stock_moves", `${co.orderId}:${productId}`)).toMatchObject({
+		expect((order?.stockMoves as Record<string, unknown> | undefined)?.[productId]).toMatchObject({
 			state: "deducted",
 			quantity: 2,
 		});
@@ -237,9 +237,10 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			stock: "restored",
 		});
 		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 5 });
-		expect(await h.inspect.storage.get("stock_moves", `${co.orderId}:${productId}`)).toMatchObject({
-			state: "restored",
-		});
+		const afterRefund = await h.inspect.storage.get<Record<string, unknown>>("orders", co.orderId);
+		expect(
+			(afterRefund?.stockMoves as Record<string, unknown> | undefined)?.[productId],
+		).toMatchObject({ state: "restored" });
 
 		// Replaying the paid event under a new id leaves the refunded order alone.
 		const replayPayload = payload.replace("evt_sbx_1", "evt_sbx_replay");
@@ -329,6 +330,103 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			status: "on-hold",
 			awaitingAsyncPayment: true,
 		});
+	});
+
+	it("takes stock for a large order in follow-up cron tasks", async () => {
+		const { h, productId } = await setup();
+		await h.fixtures.plugin.setting("stripeSecretKey", SK);
+		await h.fixtures.plugin.setting("stripeWebhookSecret", WH);
+		const ids = [productId];
+		for (let i = 0; i < 5; i += 1) {
+			const item = await h.fixtures.content("products", {
+				slug: `cup-${i}`,
+				status: "published",
+				data: {
+					title: `Cup ${i}`,
+					type: "simple",
+					prices: { USD: { amount: 500 } },
+					sku: `CUP${i}`,
+					stock_status: "instock",
+					backorders: "no",
+					manage_stock: true,
+					stock_quantity: 9,
+				},
+			});
+			ids.push(item.id);
+		}
+		let token: string | undefined;
+		for (const id of ids) {
+			const res = await call(h, "cart/items", {
+				method: "POST",
+				headers: token ? { [HEADER]: token } : {},
+				body: { productId: id, quantity: 1 },
+			});
+			token = (res.body.data as { token: string }).token;
+		}
+		const headers = { [HEADER]: token as string };
+		// No install or activate hook ran: the cart route scheduled the
+		// recurring tasks itself.
+		expect(JSON.stringify(await h.inspect.scheduledTasks())).toContain("stock-sweep");
+
+		await h.http.respond(
+			"https://api.stripe.com/v1/checkout/sessions",
+			new Response(
+				JSON.stringify({
+					id: "cs_test_big",
+					object: "checkout.session",
+					url: "https://checkout.stripe.com/c/pay/cs_test_big",
+				}),
+				{ headers: { "content-type": "application/json" } },
+			),
+		);
+		const checkout = await call(h, "checkout/session", { method: "POST", headers, body: {} });
+		const co = checkout.body.data as { ok: boolean; orderId: string };
+		expect(co.ok).toBe(true);
+		const total = 1200 + 5 * 500;
+		const payload = JSON.stringify({
+			id: "evt_big",
+			type: "checkout.session.completed",
+			data: {
+				object: {
+					id: "cs_test_big",
+					object: "checkout.session",
+					client_reference_id: co.orderId,
+					metadata: { orderId: co.orderId },
+					payment_status: "paid",
+					amount_total: total,
+					currency: "usd",
+					payment_intent: "pi_big",
+				},
+			},
+		});
+		const t = Math.floor(Date.now() / 1000);
+		const res = await h.actions.routes.request("stripe/webhook", {
+			method: "POST",
+			headers: {
+				"stripe-signature": await sign(payload, WH, t),
+				"content-type": "application/json",
+			},
+			rawBody: payload,
+		});
+		expect(await res.json()).toMatchObject({ outcome: "paid_stock_pending" });
+		expect(await h.inspect.storage.get("orders", co.orderId)).toMatchObject({
+			paymentStatus: "paid",
+			stockPending: 1,
+		});
+
+		for (let i = 0; i < 5; i += 1) {
+			h.scheduled.setTime(new Date(Date.now() + (i + 1) * 61_000));
+			await h.scheduled.run();
+			const o = await h.inspect.storage.get<Record<string, unknown>>("orders", co.orderId);
+			if (o?.paidEffectsAt) break;
+		}
+		const done = await h.inspect.storage.get<Record<string, unknown>>("orders", co.orderId);
+		expect(done?.paidEffectsAt).toBeTruthy();
+		expect(done?.stockPending).toBeUndefined();
+		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 4 });
+		for (const id of ids.slice(1)) {
+			expect(await h.inspect.storage.get("stock", id)).toMatchObject({ onHand: 8 });
+		}
 	});
 
 	it("explains a missing EMDASH_ENCRYPTION_KEY instead of failing", async () => {

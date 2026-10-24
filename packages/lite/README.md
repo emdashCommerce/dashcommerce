@@ -19,6 +19,14 @@ See `DESIGN.md` for the architecture, routes and limits, and
 
 ## Setup
 
+On Cloudflare, sandboxed plugins such as Lite run in Dynamic Workers
+(Worker Loader), which need the **Workers Paid** plan and a
+`worker_loaders` binding in `wrangler.jsonc`
+(`"worker_loaders": [{ "binding": "LOADER" }]`). Each request a sandboxed
+plugin handles may make at most 10 subrequests; Lite stays within that by
+batching reads and by finishing stock updates for large orders in
+follow-up cron tasks (see `DESIGN.md`, Cloudflare limits).
+
 1. Install DashCommerce Lite (`dashcommerce-lite`) from the plugin
    registry and approve its access: read content, and network requests to
    `api.stripe.com`. Requires EmDash 1.3 or later. Do not also install the

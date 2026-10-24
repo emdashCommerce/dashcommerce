@@ -7,11 +7,13 @@
  * links to the public `orders/export` raw route with it. The route
  * consumes the token and streams the CSV with a download filename.
  *
- * One export reads at most 1,000 orders (10 pages of 100), newest first.
+ * One export reads at most 800 orders (8 pages of 100), newest first, so
+ * the download stays within the 10-subrequest sandbox budget (budget.ts).
  * The response sets `X-DashCommerce-Truncated: true` when there were more.
  */
 
 import type { PluginContext } from "emdash/plugin";
+import { metered } from "./budget";
 import { mintToken, sha256Hex } from "./cart";
 import { type LiteOrder, ordersStore } from "./orders";
 import { minorUnitsFactor, type Money, type OrderStatus } from "./shared";
@@ -19,7 +21,8 @@ import { asObject, asString } from "./validate";
 
 export const EXPORT_TTL_MS = 5 * 60 * 1000;
 const PAGE = 100;
-const MAX_PAGES = 10;
+// kv read + kv delete + 8 pages = 10 bridge calls, the sandbox budget.
+const MAX_PAGES = 8;
 
 interface ExportGrant {
 	status: OrderStatus | null;
@@ -48,10 +51,11 @@ export interface RawResult {
 }
 
 export async function handleExport(
-	ctx: PluginContext,
+	rawCtx: PluginContext,
 	input: unknown,
 	now = Date.now(),
 ): Promise<RawResult> {
+	const ctx = metered(rawCtx);
 	const token = asString(asObject(input).token, 64);
 	const denied: RawResult = {
 		status: 403,
