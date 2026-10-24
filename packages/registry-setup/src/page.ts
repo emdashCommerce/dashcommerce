@@ -14,7 +14,6 @@ export const LINKS = {
 	patches:
 		"https://github.com/emdashCommerce/dashcommerce/blob/main/packages/core/patches/README.md",
 	npm: "https://www.npmjs.com/package/@dashcommerce/core",
-	registryIssue: "https://github.com/emdashCommerce/dashcommerce/issues/33",
 } as const;
 
 const ASTRO_CONFIG = `// astro.config.mjs
@@ -185,12 +184,11 @@ export function renderSetupPage(): BlockResponse {
 			{ type: "divider" },
 			{
 				type: "section",
-				text: "A sandboxed version of DashCommerce that installs straight from this registry is in progress. Until it ships, this page is the registry entry. It asks for no permissions and makes no network requests, and you can uninstall it once your store is running.",
-				accessory: {
-					type: "link",
-					label: "Follow progress",
-					target: { kind: "external", url: LINKS.registryIssue },
-				},
+				text: "A sandboxed option with no npm step, DashCommerce Lite, is available in the EmDash plugin registry (slug dashcommerce-lite). Full DashCommerce stays on npm as @dashcommerce/core. Don't install Lite alongside core.",
+			},
+			{
+				type: "context",
+				text: "This page asks for no permissions and makes no network requests, and you can uninstall it once your store is running.",
 			},
 		],
 	};
