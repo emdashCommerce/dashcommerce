@@ -121,10 +121,14 @@ export async function saveCart(
 	config: LiteConfig,
 	now = Date.now(),
 ): Promise<CartState> {
-	const next: CartState = { ...priceCart(cart, config), updatedAt: new Date(now).toISOString() };
+	// `updatedAt` strictly increases on every write: checkout derives its
+	// order id and Stripe idempotency key from it (see checkout.ts).
+	const previous = Date.parse(cart.updatedAt);
+	const at = Number.isFinite(previous) && previous >= now ? previous + 1 : now;
+	const next: CartState = { ...priceCart(cart, config), updatedAt: new Date(at).toISOString() };
 	await cartsStore(ctx).put(cart.sessionId, {
 		cart: next,
-		expiresAt: new Date(now + CART_TTL_MS).toISOString(),
+		expiresAt: new Date(at + CART_TTL_MS).toISOString(),
 	});
 	return next;
 }

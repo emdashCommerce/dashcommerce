@@ -45,7 +45,7 @@ describe("bridge calls per request", () => {
 		t.calls.count = 0;
 		const res = await createCheckoutHandler(t.ctx, { [CART_HEADER]: token }, {});
 		expect(res).toMatchObject({ ok: true });
-		// settings 1 + cart 1 + content 3 + stock getMany 1 + order put 2 + Stripe 1
+		// settings 1 + cart 1 + content 3 + stock getMany 1 + order create and update 2 + Stripe 1
 		expect(t.calls.count).toBe(9);
 	});
 

@@ -112,6 +112,28 @@ describe("Stripe Tax", () => {
 });
 
 describe("amount and percent parsing", () => {
+	test("with Stripe Tax, the flat shipping rate carries tax_behavior", async () => {
+		const t = shop({ flatShipping: 499, automaticTax: true });
+		await checkout(t, await addToCart(t, [["mug", 1]]));
+		const f = form(t);
+		expect(f.get("automatic_tax[enabled]")).toBe("true");
+		expect(f.get("line_items[0][price_data][tax_behavior]")).toBe("exclusive");
+		expect(f.get("shipping_options[0][shipping_rate_data][tax_behavior]")).toBe("exclusive");
+
+		const flat = shop({ flatShipping: 499 });
+		await checkout(flat, await addToCart(flat, [["mug", 1]]));
+		expect(form(flat).get("shipping_options[0][shipping_rate_data][tax_behavior]")).toBeNull();
+	});
+
+	test("checkout reads digital or physical from the product, not the cart line", async () => {
+		const t = shop({ shippingCountries: "US" });
+		const token = await addToCart(t, [["ebook", 1]]);
+		// The product became physical after it was added to the cart.
+		t.products.set("ebook", product("ebook", { prices: { USD: { amount: 1000 } } }));
+		await checkout(t, token);
+		expect(form(t).get("shipping_address_collection[allowed_countries][0]")).toBe("US");
+	});
+
 	test("amounts follow the currency's minor units", () => {
 		expect(parseAmount("4.99", "USD")).toBe(499);
 		expect(parseAmount("", "USD")).toBe(0);

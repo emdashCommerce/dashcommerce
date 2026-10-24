@@ -12,11 +12,30 @@
  * line, stock ledger 1 (only when a line tracks stock), order writes 2,
  * plus the Stripe request. That is 6 + lines, or 26 at the 20-line cap.
  * See DESIGN.md, "Cloudflare limits".
+ *
+ * Double submits: the order id and the Stripe idempotency key derive from
+ * the cart id and the cart's `updatedAt`, so checking out the same cart
+ * twice reuses the pending order and Stripe replays the same session. Any
+ * cart change gives a new attempt.
  */
 
 import type { PluginContext } from "emdash/plugin";
-import { cartIdForToken, loadCart, priceCart, readToken, saveCart, toCartView } from "./cart";
-import { type LiteOrder, type LiteOrderItem, newOrderNumber, ordersStore } from "./orders";
+import {
+	cartIdForToken,
+	loadCart,
+	priceCart,
+	readToken,
+	saveCart,
+	sha256Hex,
+	toCartView,
+} from "./cart";
+import {
+	isAwaitingAsyncPayment,
+	type LiteOrder,
+	type LiteOrderItem,
+	newOrderNumber,
+	ordersStore,
+} from "./orders";
 import { evaluateProduct, type LoadedProduct, loadProduct } from "./products";
 import { buildReturnUrl, loadConfig } from "./settings";
 import {
@@ -32,6 +51,12 @@ import { isTracked, type StockRow, stockStore } from "./stock";
 import { asEmail, asObject, fail } from "./validate";
 
 export const STRIPE_METADATA_SOURCE = "dashcommerce";
+
+/** Order id and Stripe idempotency key for one checkout of one cart version. */
+export async function checkoutAttempt(cartId: string, cartUpdatedAt: string) {
+	const hash = await sha256Hex(`checkout:${cartId}:${cartUpdatedAt}`);
+	return { orderId: hash.slice(0, 32), idempotencyKey: `dc_checkout_${hash.slice(0, 48)}` };
+}
 
 export async function createCheckoutHandler(
 	ctx: PluginContext,
@@ -83,7 +108,9 @@ export async function createCheckoutHandler(
 		}
 		const p = priced.product;
 		const lineSubtotal = money(p.unitPrice.currency, p.unitPrice.amount * line.quantity);
-		items.push({ ...line, title: p.title, unitPrice: p.unitPrice, lineSubtotal });
+		// Digital or physical comes from the product, not the stored cart line.
+		const isDigital = Boolean(p.fields.isVirtual || p.fields.isDownloadable);
+		items.push({ ...line, title: p.title, unitPrice: p.unitPrice, lineSubtotal, isDigital });
 		orderItems.push({
 			productId: p.id,
 			title: p.title,
@@ -106,12 +133,11 @@ export async function createCheckoutHandler(
 	}
 	if (repriced.total.amount <= 0) return fail("INVALID_TOTAL", "Order total must be positive");
 
-	const orderId = randomId();
-	const orderKey = randomId();
+	let { orderId, idempotencyKey } = await checkoutAttempt(cartId, cart.updatedAt);
 	const now = new Date().toISOString();
-	const order: LiteOrder = {
+	const fresh: LiteOrder = {
 		orderNumber: newOrderNumber(),
-		orderKey,
+		orderKey: randomId(),
 		cartId,
 		status: "pending",
 		paymentStatus: "pending",
@@ -127,7 +153,26 @@ export async function createCheckoutHandler(
 		updatedAt: now,
 	};
 	const orders = ordersStore(ctx);
-	await orders.put(orderId, order);
+	let order = fresh;
+	if (!(await orders.compareAndSet(orderId, null, fresh)).applied) {
+		const existing = await orders.get(orderId);
+		if (existing && existing.status === "pending" && existing.paymentStatus === "pending") {
+			// Same cart, same version: a double submit. Reuse the order so the
+			// Stripe request is identical and Stripe replays the same session.
+			order = existing;
+		} else if (existing && (existing.paidAt || isAwaitingAsyncPayment(existing))) {
+			return fail("CHECKOUT_COMPLETE", "This cart was already checked out");
+		} else {
+			// The earlier attempt for this cart version failed or was
+			// cancelled: touch the cart to start a new attempt.
+			const touched = await saveCart(ctx, repriced, config);
+			({ orderId, idempotencyKey } = await checkoutAttempt(cartId, touched.updatedAt));
+			if (!(await orders.compareAndSet(orderId, null, fresh)).applied) {
+				return fail("CHECKOUT_FAILED", "Could not start checkout");
+			}
+		}
+	}
+	const orderKey = order.orderKey;
 
 	const vars = { ORDER_ID: orderId, ORDER_KEY: orderKey };
 	const metadata = { orderId, orderNumber: order.orderNumber, source: STRIPE_METADATA_SOURCE };
@@ -170,6 +215,7 @@ export async function createCheckoutHandler(
 							displayName: "Shipping",
 							amount: repriced.shippingTotal.amount,
 							currency: repriced.currency,
+							...(config.automaticTax ? { taxBehavior: "exclusive" as const } : {}),
 						},
 					],
 				}
@@ -184,7 +230,7 @@ export async function createCheckoutHandler(
 			ctx as unknown as Parameters<typeof createCheckoutSession>[0],
 			sessionInput,
 			{ secretKey },
-			`dc_checkout_${orderId}`,
+			idempotencyKey,
 		);
 		if (!session.url) throw new Error("Stripe returned no Checkout URL");
 		await orders.put(orderId, { ...order, stripeSessionId: session.id });

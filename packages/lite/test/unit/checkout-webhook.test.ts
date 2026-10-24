@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CART_HEADER, cartIdForToken } from "../../src/cart";
 import { addItemHandler } from "../../src/cart-routes";
-import { createCheckoutHandler } from "../../src/checkout";
+import { checkoutAttempt, createCheckoutHandler } from "../../src/checkout";
 import type { LiteOrder } from "../../src/orders";
 import { handleStripeWebhook, markPaid } from "../../src/webhook";
 import { type HttpCall, makeCtx, product, stripeSignature } from "../helpers/fake-ctx";
@@ -59,7 +59,10 @@ describe("checkout/session", () => {
 		const call = t.httpCalls[0] as HttpCall;
 		expect(call.url).toBe("https://api.stripe.com/v1/checkout/sessions");
 		expect(call.headers.Authorization).toBe(`Bearer ${SK}`);
-		expect(call.headers["Idempotency-Key"]).toBe(`dc_checkout_${res.orderId}`);
+		const cart = (await t.carts.get(order.cartId)) as { cart: { updatedAt: string } };
+		const attempt = await checkoutAttempt(order.cartId, cart.cart.updatedAt);
+		expect(res.orderId).toBe(attempt.orderId);
+		expect(call.headers["Idempotency-Key"]).toBe(attempt.idempotencyKey);
 		const form = new URLSearchParams(call.body);
 		expect(form.get("mode")).toBe("payment");
 		expect(form.get("line_items[0][price_data][unit_amount]")).toBe("1500");

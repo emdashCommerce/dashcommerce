@@ -166,10 +166,16 @@ and one `stock_moves` row per order and tracked product, keyed
    with the new cart so the shopper can review it.
 3. Writes a `pending` order, then creates a Checkout Session with core's
    `createCheckoutSession()` (`mode=payment`, `client_reference_id` and
-   `metadata.orderId` set to the order id, `metadata.source=dashcommerce`,
-   idempotency key `dc_checkout_<orderId>`). A shipping address is
-   collected only when the cart has a physical item and shipping countries
-   are configured.
+   `metadata.orderId` set to the order id, `metadata.source=dashcommerce`).
+   The order id and the idempotency key (`dc_checkout_<hash>`) derive from
+   the cart id and the cart's `updatedAt`, which increases on every cart
+   write. A double submit of the same cart reuses the pending order (the
+   order is created with `compareAndSet(id, null, …)`), sends an identical
+   request, and Stripe replays the same session. If the earlier attempt
+   for that cart version failed or was cancelled, checkout touches the cart
+   and starts a new attempt. A shipping address is collected only when the
+   cart has a physical item (read from the product, not the cart line) and
+   shipping countries are configured.
 4. Returns `{ url, orderId, orderKey, orderNumber }`. The storefront
    redirects to `url`.
 
@@ -235,9 +241,8 @@ Settings, all optional:
   items `tax_behavior=exclusive`) and hides the flat rate. The cart shows
   "calculated at checkout". The webhook adds Stripe's
   `total_details.amount_tax` to the expected total and records it on the
-  order. Stripe Tax must be set up on the Stripe account, and because core
-  cannot set `tax_behavior` on shipping rates, the account needs a default
-  tax behavior for shipping.
+  order. Stripe Tax must be set up on the Stripe account. The flat shipping
+  rate is sent with `tax_behavior=exclusive` as well.
 
 ## Cleanup cron
 

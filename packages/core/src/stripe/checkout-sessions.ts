@@ -59,6 +59,8 @@ export interface CheckoutShippingOption {
 	deliveryDays?: { minimum: number; maximum?: number };
 	/** Copied onto the resulting shipping_rate so we can reconcile on the webhook. */
 	metadata?: Record<string, string>;
+	/** Needed with Stripe Tax (`automatic_tax`) unless the account sets a default. */
+	taxBehavior?: "inclusive" | "exclusive";
 }
 
 export interface CreateCheckoutSessionInput {
@@ -198,6 +200,7 @@ export async function createCheckoutSession(
 		params[`${base}[display_name]`] = opt.displayName;
 		params[`${base}[fixed_amount][amount]`] = opt.amount;
 		params[`${base}[fixed_amount][currency]`] = opt.currency.toLowerCase();
+		if (opt.taxBehavior) params[`${base}[tax_behavior]`] = opt.taxBehavior;
 		if (opt.deliveryDays) {
 			params[`${base}[delivery_estimate][minimum][unit]`] = "business_day";
 			params[`${base}[delivery_estimate][minimum][value]`] = opt.deliveryDays.minimum;
