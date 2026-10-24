@@ -1,4 +1,4 @@
-# DashCommerce (sandboxed)
+# DashCommerce Lite
 
 The registry build of DashCommerce for EmDash, listed as `dashcommerce-lite`.
 Simple products from the `products` collection, a token-based cart, Stripe

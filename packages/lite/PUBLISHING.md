@@ -24,11 +24,16 @@ listing.
   Lite releases. Sites that installed it do not get Lite as an update.
 - The first publish creates the `dashcommerce-lite` package profile from
   `emdash-plugin.jsonc` (name, description, keywords, license, author,
-  security contact). The first release is 0.2.0, the version in
-  `package.json`.
+  security contact, and the `sections` copy in `listing/`). The first
+  release is 0.2.0, the version in `package.json`.
+- Versioning: Lite is in the changesets workspace, so a Lite changeset
+  bumps `package.json` through the Version Packages PR. 0.2.0 has never
+  been published, so the changesets from #55 and #56 were folded into the
+  0.2.0 entry of `CHANGELOG.md` instead of making the first release
+  0.2.1. Add a changeset again for changes after 0.2.0.
 - The trust contract: `content:read`, `network:request` to
-  `api.stripe.com`, and five storage collections (`orders`, `carts`,
-  `stock`, `stock_moves`, `stripe_events`). Sites approve it on install.
+  `api.stripe.com`, and four storage collections (`orders`, `carts`,
+  `stock`, `stripe_events`). Sites approve it on install.
 - Releases are immutable. Every publish needs a new `version` in
   `package.json`. Bump the minor (0.x) or major (1.x and later) whenever
   `capabilities`, `allowedHosts` or `storage` change.
@@ -68,11 +73,18 @@ Then confirm the new listing shows the profile from the manifest:
 bunx emdash-plugin info dashcommerce.bsky.social dashcommerce-lite
 ```
 
-- Name: DashCommerce
-- Description: Sell products from your EmDash content with a cart, Stripe
-  Checkout, stock tracking, refunds, flat tax and shipping, and CSV order
-  export. (138 characters; the registry cap is 140.)
+- Name: DashCommerce Lite
+- Description: Sell products from your EmDash content: a cart, Stripe
+  Checkout, stock tracking, refunds, tax and shipping, and an orders
+  admin. (128 characters; the registry cap is 140.)
 - Keywords: commerce, ecommerce, stripe, cart, checkout
+- Long description and installation sections: `listing/description.md`
+  and `listing/installation.md` (each capped at 2,000 characters;
+  `bun run validate` checks this).
+- Screenshots: the five 1920x1080 PNGs in `listing/screenshots/`, uploaded
+  to the PDS as listing images. Do not move them to a top-level
+  `screenshots/` folder: `emdash-plugin bundle` copies that folder into
+  the plugin tarball, where the 128 KB per file cap applies.
 
 Later profile edits use `bunx emdash-plugin update-package --manifest
 ./emdash-plugin.jsonc` (dry run first, then `--yes`). Do not run it against
@@ -88,7 +100,11 @@ the `dashcommerce` (Setup) listing.
 
 ## Before the first public release
 
-- Screenshots for the listing (orders page, order detail, settings).
-- A run against a real Cloudflare deployment to confirm checkout stays
-  inside the subrequest limit (see DESIGN.md, "Cloudflare limits").
-- An end-to-end payment with Stripe test keys and a real webhook endpoint.
+- [x] Screenshots for the listing (`listing/screenshots/`, captured from
+  the Cloudflare test deployment).
+- [x] A run against a real Cloudflare deployment (Workers Paid) to confirm
+  every request stays inside the subrequest limit (see DESIGN.md,
+  "Cloudflare limits").
+- [x] An end-to-end payment with Stripe test keys and a real webhook
+  endpoint.
+- [ ] Merge this listing prep, then publish 0.2.0 from `main`.
