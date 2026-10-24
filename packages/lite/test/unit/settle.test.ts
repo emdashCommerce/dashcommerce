@@ -18,6 +18,7 @@ import {
 	pay,
 	refund,
 	runSettleTasks,
+	runSettleTicks,
 	SK,
 	WH,
 } from "../helpers/flow";
@@ -51,16 +52,21 @@ async function paidOrder(t: Shop, ids: string[]) {
 }
 
 describe("deferred stock settle", () => {
-	test("a 12-line paid order: webhook takes 1 line, tasks take the rest", async () => {
+	test("a 12-line paid order: the webhook queues the stock work, tasks take it", async () => {
 		const { t, ids } = shop(12);
 		const { co, res } = await paidOrder(t, ids);
 		expect(res.body).toMatchObject({ outcome: "paid_stock_pending" });
 		expect(order(t, co.orderId)).toMatchObject({ paymentStatus: "paid", stockPending: 1 });
 		expect(order(t, co.orderId).paidEffectsAt).toBeUndefined();
-		expect(ids.filter((id) => onHand(t, id) === 8)).toHaveLength(1);
-		expect([...t.cronTasks.keys()]).toEqual([`stock-${co.orderId}-1`]);
+		// Marking paid leaves no room for row work inside the 8-call budget.
+		expect(ids.filter((id) => onHand(t, id) === 8)).toHaveLength(0);
+		// 12 lines: the webhook has room for two tasks, a 5-line slice and a
+		// plain pass for the rest.
+		expect([...t.cronTasks.keys()]).toEqual([`stock-${co.orderId}-1-0`, `stock-${co.orderId}-1`]);
 
-		await runSettleTasks(t);
+		const { counts, ticks } = await runSettleTicks(t);
+		expect(ticks).toBe(2);
+		for (const c of counts) expect(c).toBeLessThanOrEqual(8);
 		for (const id of ids) expect(onHand(t, id)).toBe(8);
 		const o = order(t, co.orderId);
 		expect(o.stockPending).toBeUndefined();
@@ -114,6 +120,7 @@ describe("deferred stock settle", () => {
 	test("a stock row write that loses a race is retried by the next pass", async () => {
 		const { t, ids } = shop(3);
 		const { co } = await paidOrder(t, ids.slice(0, 1));
+		await runSettleTasks(t);
 		expect(onHand(t, ids[0] as string)).toBe(8);
 		// Another order changes the row between this pass's read and write.
 		const co2 = await checkout(t, await addToCart(t, [[ids[0] as string, 1]]));
@@ -134,6 +141,10 @@ describe("deferred stock settle", () => {
 		};
 		const res = await pay(t, co2);
 		expect(res.body).toMatchObject({ outcome: "paid_stock_pending" });
+		await runSettleTasks(t, 1); // this pass loses the race
+		expect(raced).toBe(true);
+		expect(onHand(t, ids[0] as string)).toBe(3); // only the other change
+		expect(order(t, co2.orderId).stockPending).toBe(1);
 		stock.updateIf = original;
 		await runSettleTasks(t);
 		expect(onHand(t, ids[0] as string)).toBe(2); // 10 - 2 - 5 - 1

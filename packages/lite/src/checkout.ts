@@ -8,18 +8,17 @@
  * URL. The storefront redirects the shopper there. Payment is confirmed
  * only by the signed webhook, which also takes the items out of stock.
  *
- * Subrequest budget (budget.ts): a request makes at most 10 bridge calls.
+ * Subrequest budget (budget.ts): a request makes at most 8 bridge calls.
  * Settings 1, cart 1, then the product reads, then stock ledger 1, order
  * lookup 1, order create 1, the Stripe request 1 and the order update 1.
- * That leaves 3 calls for products: up to 3 `content.get`, or one
+ * That leaves 1 call for products: one `content.get`, or one
  * `content.list` page that covers a shop of up to 100 published products
- * (products.ts). When a large cart in a large shop needs more reads, the
- * request reads as many as fit (up to 7), stores them on the cart record
- * (`checkoutPrep`, trusted for 5 minutes and only for this cart version)
- * and answers `CHECKOUT_CONTINUE`; the storefront kit sends the request
- * again and the next one picks up where it stopped. A 20-line cart needs
- * at most 4 requests in the worst case, and 1 in a shop of up to 100
- * products.
+ * (products.ts). When a cart needs more reads, the request reads as many
+ * as fit (up to 5), stores them on the cart record (`checkoutPrep`,
+ * trusted for 5 minutes and only for this cart version) and answers
+ * `CHECKOUT_CONTINUE`; the storefront kit sends the request again and the
+ * next one picks up where it stopped. A 20-line cart needs at most 5
+ * requests in the worst case, and 1 in a shop of up to 100 products.
  *
  * Double submits: the order id and the Stripe idempotency key derive from
  * the cart id and the cart's `updatedAt`, so checking out the same cart

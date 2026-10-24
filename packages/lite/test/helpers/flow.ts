@@ -115,11 +115,25 @@ export async function refund(
  * throws stays for a retry. Returns the bridge calls of each invocation.
  */
 export async function runSettleTasks(t: T, maxRounds = 50): Promise<number[]> {
+	return (await runSettleTicks(t, maxRounds)).counts;
+}
+
+/**
+ * Like runSettleTasks, and also reports how many cron ticks it took: one
+ * round runs every task that was due at its start, as one EmDash tick does
+ * (tasks scheduled during a tick run on the next one).
+ */
+export async function runSettleTicks(
+	t: T,
+	maxRounds = 50,
+): Promise<{ counts: number[]; ticks: number }> {
 	const { handleCron } = await import("../../src/cron");
 	const counts: number[] = [];
+	let ticks = 0;
 	for (let round = 0; round < maxRounds; round += 1) {
 		const due = [...t.cronTasks.entries()].filter(([name]) => name.startsWith("stock-"));
 		if (due.length === 0) break;
+		ticks += 1;
 		for (const [name, task] of due) {
 			const before = t.calls.count;
 			let failed = false;
@@ -135,7 +149,7 @@ export async function runSettleTasks(t: T, maxRounds = 50): Promise<number[]> {
 			if (!failed) t.cronTasks.delete(name);
 		}
 	}
-	return counts;
+	return { counts, ticks };
 }
 
 /** Bridge calls made by one invocation. */

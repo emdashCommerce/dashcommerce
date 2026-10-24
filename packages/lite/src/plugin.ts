@@ -13,8 +13,9 @@
  * `stock-*` tasks finish stock changes that do not fit in one request
  * (settle.ts).
  *
- * Every route, hook and cron task stays within the 10-subrequest budget
- * of a sandboxed invocation on Cloudflare (budget.ts).
+ * Every route, hook and cron task stays within 8 bridge calls, 2 under
+ * the 10-subrequest cap of a sandboxed invocation on Cloudflare
+ * (budget.ts).
  */
 
 import { pluginResponse, pluginRoute, type SandboxedPlugin } from "emdash/plugin";

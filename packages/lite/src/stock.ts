@@ -154,7 +154,7 @@ export async function setOnHand(
 }
 
 /** Most rows one sync click writes, so the admin request stays in budget. */
-export const SYNC_WRITE_LIMIT = 6;
+export const SYNC_WRITE_LIMIT = 5;
 
 /**
  * Admin: make sure every tracked product has a ledger row, and reset rows

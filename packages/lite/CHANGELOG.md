@@ -27,6 +27,23 @@ at the new plugin's URL (shown on Lite's Settings page).
 The existing "DashCommerce Setup" listing (slug `dashcommerce`) is a
 separate listing and is not replaced by this release.
 
+### Headroom under the sandbox cap
+
+Lite now uses at most 8 of the 10 subrequests per sandboxed invocation,
+keeping 2 calls of headroom on every path (a test deployment showed
+checkout, the webhook, the cron hook and admin cancel each at exactly 10).
+
+- A paid webhook no longer writes stock rows itself: it marks the order
+  paid, clears the cart and queues the stock tasks (outcome
+  `paid_stock_pending`). Stock for a paid order is taken on the next cron
+  tick, so about a minute after payment; a 20-line order settles within 2
+  ticks, because remainders over 5 lines are split into slice tasks that
+  run in the same tick.
+- Checkout needs a second request (`CHECKOUT_CONTINUE`) sooner in catalogs
+  over 100 products; the storefront kit now retries up to 8 times.
+- The CSV export reads up to 600 orders, Sync writes 5 stock rows per
+  click, and a first settings save of all 9 values takes two clicks.
+
 ### Sandbox request budget
 
 Every request path stays within the sandbox limit of 10 subrequests
@@ -45,7 +62,7 @@ Every request path stays within the sandbox limit of 10 subrequests
   rows carry a `rev` used to guard writes.
 - The cleanup and sweep tasks are now also scheduled when Lite is loaded
   from the site config, where the install and activate hooks never run.
-- Cleanup cancels 3 stale orders per run; the CSV export reads up to 800
+- Cleanup cancels 3 stale orders per run; the CSV export reads up to 600
   orders.
 - Sandboxed plugins on Cloudflare need the Workers Paid plan (Dynamic
   Workers).

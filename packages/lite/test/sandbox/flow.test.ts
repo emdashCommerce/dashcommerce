@@ -164,7 +164,11 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			rawBody: payload,
 		});
 		expect(good.status).toBe(200);
-		expect(await good.json()).toMatchObject({ received: true, outcome: "paid" });
+		// Marking paid uses the request's budget; the stock is taken by a
+		// one-shot cron task on the next tick.
+		expect(await good.json()).toMatchObject({ received: true, outcome: "paid_stock_pending" });
+		h.scheduled.setTime(new Date(Date.now() + 61_000));
+		await h.scheduled.run();
 
 		const order = await h.inspect.storage.get<Record<string, unknown>>("orders", co.orderId);
 		expect(order).toMatchObject({
@@ -236,6 +240,10 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			refundedAmount: 2400,
 			stock: "restored",
 		});
+		// This charge has no metadata, so the order is found by its
+		// PaymentIntent (one more call) and the restore runs in a cron task.
+		h.scheduled.setTime(new Date(Date.now() + 122_000));
+		await h.scheduled.run();
 		expect(await h.inspect.storage.get("stock", productId)).toMatchObject({ onHand: 5 });
 		const afterRefund = await h.inspect.storage.get<Record<string, unknown>>("orders", co.orderId);
 		expect(
@@ -457,7 +465,17 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 			cancelUrl: "/cart",
 			shippingCountries: "",
 		});
-		expect(res.toast?.type).toBe("success");
+		// A first save changes 9 values and stores 7 (secrets first); the
+		// second Save stores the rest.
+		expect(res.toast?.type).toBe("info");
+		const again = await h.admin.submit("/settings", "save_settings", {
+			stripeSecretKey: "",
+			currency: "usd",
+			successUrl: "/thanks",
+			cancelUrl: "/cart",
+			shippingCountries: "",
+		});
+		expect(again.toast?.type).toBe("success");
 		const raw = JSON.stringify(await h.inspect.settings.raw("stripeSecretKey"));
 		expect(raw).toContain('"$emdash":"plugin-setting"');
 		expect(raw).not.toContain(SK);

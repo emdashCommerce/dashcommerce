@@ -1,6 +1,6 @@
 /**
  * Cron tasks. Each run is one sandboxed invocation, so each stays within
- * the 10-subrequest budget (budget.ts).
+ * the 8-call budget (budget.ts).
  *
  * `cleanup` (hourly):
  *   - deletes up to 100 expired carts (query on `expiresAt` + deleteMany),
@@ -101,10 +101,14 @@ export async function handleCron(event: CronEvent, rawCtx: PluginContext): Promi
 		return;
 	}
 	if (event.name.startsWith(SETTLE_TASK_PREFIX)) {
-		const data = (event.data ?? {}) as { orderId?: unknown; pass?: unknown };
+		const data = (event.data ?? {}) as { orderId?: unknown; pass?: unknown; products?: unknown };
 		if (typeof data.orderId !== "string" || data.orderId.length === 0) return;
 		const pass = typeof data.pass === "number" && data.pass >= 0 ? data.pass : 0;
-		await settleOrSchedule(ctx, data.orderId, { pass });
+		const only =
+			Array.isArray(data.products) && data.products.every((p) => typeof p === "string")
+				? (data.products as string[])
+				: undefined;
+		await settleOrSchedule(ctx, data.orderId, { pass, ...(only ? { only } : {}) });
 	}
 }
 

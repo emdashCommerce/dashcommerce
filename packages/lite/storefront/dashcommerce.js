@@ -22,7 +22,7 @@ export const STORAGE_KEY = "dashcommerce-cart";
 export const CART_HEADER = "X-DashCommerce-Cart";
 export const CART_EVENT = "dashcommerce:cart";
 /** Most `checkout/session` requests one checkout() makes (see CHECKOUT_CONTINUE). */
-export const MAX_CHECKOUT_REQUESTS = 6;
+export const MAX_CHECKOUT_REQUESTS = 8;
 
 export class DashCommerceError extends Error {
 	/**
