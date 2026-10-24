@@ -15,6 +15,22 @@ import {
 	type StripeSessionAddress,
 } from "./shared";
 
+/** What happened to one tracked line's stock (see settle.ts). */
+export interface OrderStockMove {
+	quantity: number;
+	/**
+	 * deducted  taken out of stock
+	 * restored  taken, then put back (refund or cancel)
+	 * skipped   never taken: the order was refunded or cancelled first
+	 */
+	state: "deducted" | "restored" | "skipped";
+	/** Stock level right after the deduction, to report shortfalls. */
+	onHandAfter?: number;
+	deductedAt?: string;
+	restoredAt?: string;
+	reason?: "refund" | "cancel";
+}
+
 export interface LiteOrderItem {
 	productId: string;
 	title: string;
@@ -62,13 +78,26 @@ export interface LiteOrder {
 	refundedAt?: string;
 	/**
 	 * Stock state for tracked items: taken on payment, put back on full
-	 * refund or cancel. This is the target state; the per-line
-	 * `stock_moves` ledger records what was actually applied (stock.ts).
+	 * refund or cancel. This is the target state; `stockMoves` records what
+	 * was actually applied, per product (settle.ts).
 	 */
 	stock?: "deducted" | "restored";
 	/**
+	 * Stock ledger for this order, one entry per tracked product (the
+	 * order-and-product key the old `stock_moves` rows used). Written only
+	 * with compare-and-set on the order, after the stock row change it
+	 * records.
+	 */
+	stockMoves?: Record<string, OrderStockMove>;
+	/**
+	 * 1 while `stockMoves` does not match `stock` yet: a settle task is
+	 * still taking or restoring stock. Indexed, so the sweep task can find
+	 * orders whose follow-up task was lost.
+	 */
+	stockPending?: 1;
+	/**
 	 * Set once the paid side effects (stock taken, cart cleared) are done.
-	 * A retried webhook finishes them while this is unset.
+	 * A retried webhook or a settle task finishes them while this is unset.
 	 */
 	paidEffectsAt?: string;
 	/**
@@ -98,13 +127,14 @@ export interface LiteOrder {
 
 export type OrdersStore = {
 	get(id: string): Promise<LiteOrder | null>;
+	getMany(ids: string[]): Promise<Map<string, LiteOrder>>;
 	put(id: string, data: LiteOrder): Promise<void>;
 	getVersioned(id: string): Promise<{ value: LiteOrder; revision: string } | null>;
 	compareAndSet(
 		id: string,
 		expectedRevision: string | null,
 		data: LiteOrder,
-	): Promise<{ applied: boolean }>;
+	): Promise<{ applied: true; revision: string } | { applied: false }>;
 	updateIf(
 		id: string,
 		args: { where: Record<string, unknown>; set?: Partial<LiteOrder> },
@@ -137,17 +167,30 @@ export async function updateOrder(
 	id: string,
 	mutate: (order: LiteOrder) => LiteOrder | null,
 	attempts = 3,
-): Promise<{ order: LiteOrder | null; previous: LiteOrder | null; written: boolean }> {
+): Promise<{
+	order: LiteOrder | null;
+	previous: LiteOrder | null;
+	written: boolean;
+	/** Revision of `order` as stored, for a follow-up compare-and-set. */
+	revision?: string;
+}> {
 	for (let i = 0; i < attempts; i += 1) {
 		const current = await store.getVersioned(id);
 		if (!current) return { order: null, previous: null, written: false };
 		const next = mutate(current.value);
-		if (!next) return { order: current.value, previous: current.value, written: false };
-		const res = await store.compareAndSet(id, current.revision, {
-			...next,
-			updatedAt: new Date().toISOString(),
-		});
-		if (res.applied) return { order: next, previous: current.value, written: true };
+		if (!next) {
+			return {
+				order: current.value,
+				previous: current.value,
+				written: false,
+				revision: current.revision,
+			};
+		}
+		const stored = { ...next, updatedAt: new Date().toISOString() };
+		const res = await store.compareAndSet(id, current.revision, stored);
+		if (res.applied) {
+			return { order: stored, previous: current.value, written: true, revision: res.revision };
+		}
 	}
 	throw new Error("Order update conflicted repeatedly");
 }
@@ -163,7 +206,10 @@ export function applyStatus(order: LiteOrder, to: OrderStatus): LiteOrder | null
 	if (to === "cancelled") {
 		next.cancelReason = "admin";
 		// A cancelled paid order gives its stock back.
-		if (order.stock === "deducted") next.stock = "restored";
+		if (order.stock === "deducted") {
+			next.stock = "restored";
+			next.stockPending = 1;
+		}
 	}
 	return next;
 }

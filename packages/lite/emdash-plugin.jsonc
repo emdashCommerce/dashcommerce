@@ -35,6 +35,8 @@
 				"orderNumber",
 				"customerEmail",
 				"stripePaymentIntentId",
+				// Orders whose stock change is still running in cron tasks.
+				"stockPending",
 				["status", "createdAt"]
 			],
 			"uniqueIndexes": ["stripeSessionId"]
@@ -42,13 +44,9 @@
 		"carts": {
 			"indexes": ["expiresAt"]
 		},
+		// One row per tracked product. `rev` guards every write (settle.ts).
 		"stock": {
-			"indexes": ["title", "updatedAt"]
-		},
-		// One row per order and product (`${orderId}:${productId}`): makes
-		// stock changes from webhooks and admin actions idempotent.
-		"stock_moves": {
-			"indexes": ["orderId", "state"]
+			"indexes": ["title", "updatedAt", "rev"]
 		},
 		"stripe_events": {
 			"indexes": ["type", "createdAt"]

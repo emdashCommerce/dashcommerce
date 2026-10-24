@@ -19,7 +19,7 @@
 
 import type { PluginContext } from "emdash/plugin";
 import type { LiteConfig } from "./settings";
-import { type CartState, money, newCart, recalculate } from "./shared";
+import { type CartState, money, newCart, type ProductFields, recalculate } from "./shared";
 
 export const CART_HEADER = "x-dashcommerce-cart";
 export const CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -31,6 +31,15 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 export interface StoredCart {
 	cart: CartState;
 	expiresAt: string;
+	/**
+	 * Products checkout already read from content for this cart version,
+	 * when a large cart needed more than one checkout request (see
+	 * checkout.ts). Trusted for `PREP_TTL_MS` and only for `cartUpdatedAt`.
+	 */
+	checkoutPrep?: {
+		cartUpdatedAt: string;
+		products: Record<string, { fields: ProductFields; at: string }>;
+	};
 }
 
 export type CartsStore = {
@@ -80,13 +89,22 @@ export async function loadCart(
 	cartId: string,
 	now = Date.now(),
 ): Promise<CartState | null> {
+	return (await loadStoredCart(ctx, cartId, now))?.cart ?? null;
+}
+
+/** The stored cart record (cart plus checkout prep), or null when absent or expired. */
+export async function loadStoredCart(
+	ctx: PluginContext,
+	cartId: string,
+	now = Date.now(),
+): Promise<StoredCart | null> {
 	const stored = await cartsStore(ctx).get(cartId);
 	if (!stored?.cart) return null;
 	if (Date.parse(stored.expiresAt) <= now) {
 		await cartsStore(ctx).delete(cartId);
 		return null;
 	}
-	return stored.cart;
+	return stored;
 }
 
 /**

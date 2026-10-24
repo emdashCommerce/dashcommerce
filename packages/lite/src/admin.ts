@@ -5,10 +5,18 @@
  * EmDash posts `page_load`, `block_action` and `form_submit` interactions
  * to the private `admin` route and renders the blocks we return. No
  * browser code ships with the plugin.
+ *
+ * Each interaction is one sandboxed invocation, so each stays within the
+ * 10-subrequest budget (budget.ts): pages read at most 4 or 5 times,
+ * a cancel restores what stock fits and schedules the rest, Sync writes
+ * at most 6 stock rows per click, and saving settings writes only the
+ * values that changed.
  */
 
 import type { Block, BlockResponse, FormField } from "@emdash-cms/blocks/server";
 import type { PluginContext } from "emdash/plugin";
+import { log, metered } from "./budget";
+import { ensureCron } from "./cron";
 import { createExportUrl } from "./export";
 import { applyStatus, type LiteOrder, ordersStore, updateOrder } from "./orders";
 import { PRODUCTS_COLLECTION } from "./products";
@@ -17,14 +25,18 @@ import {
 	isStripeSecretKey,
 	isStripeWebhookSecret,
 	isValidReturnUrl,
+	configFrom,
+	type LiteConfig,
 	loadConfig,
+	loadSettingsMap,
 	normalizeCurrency,
 	parseAmount,
 	parseCountries,
 	parsePercent,
 } from "./settings";
 import { format, type Money, normalizeProductFields, type OrderStatus } from "./shared";
-import { restoreStock, setOnHand, stockStore, syncFromProducts } from "./stock";
+import { pendingLines, settleOrSchedule } from "./settle";
+import { setOnHand, stockStore, syncFromProducts } from "./stock";
 import { asInt, asObject, asString } from "./validate";
 import { HANDLED_EVENTS } from "./webhook";
 
@@ -43,13 +55,18 @@ const ALL_STATUSES: OrderStatus[] = [
 export const RECENT_ORDERS_WIDGET = "recent-orders";
 const MAX_STOCK = 1_000_000;
 
-export async function handleAdmin(ctx: PluginContext, input: unknown): Promise<BlockResponse> {
+export async function handleAdmin(rawCtx: PluginContext, input: unknown): Promise<BlockResponse> {
+	const ctx = metered(rawCtx);
 	const interaction = asObject(input);
 	const type = interaction.type;
 
 	if (type === "page_load") {
 		const page = asString(interaction.page) ?? "/orders";
-		if (page === "/settings") return renderSettings(ctx);
+		// Schedules the cleanup tasks on sites where the install hook did
+		// not run (see cron.ts). Settings is read once and reused.
+		const config = await loadConfig(ctx);
+		await ensureCron(ctx, config.cronVersion);
+		if (page === "/settings") return renderSettings(ctx, config);
 		if (page === "/stock") return renderStock(ctx);
 		if (page === `widget:${RECENT_ORDERS_WIDGET}`) return renderRecentOrdersWidget(ctx);
 		return renderOrders(ctx);
@@ -419,15 +436,25 @@ async function setStatus(ctx: PluginContext, value: string): Promise<BlockRespon
 	if (sep <= 0 || !ADMIN_STATUSES.includes(to)) {
 		return { blocks: [], toast: { message: "Unknown action", type: "error" } };
 	}
-	const { order, written } = await updateOrder(ordersStore(ctx), id, (o) => applyStatus(o, to));
+	const { order, written, revision } = await updateOrder(
+		ordersStore(ctx),
+		id,
+		(o) => applyStatus(o, to),
+		2,
+	);
 	if (!order) return renderOrder(ctx, id);
-	// Idempotent per line (stock_moves), so a repeated click also finishes
+	// Puts back what fits now and schedules the rest (settle.ts).
+	// Idempotent per order and product, so a repeated click also finishes
 	// a restore that failed part-way.
-	if (order.stock === "restored" && order.status === "cancelled") {
-		await restoreStock(ctx, id, order.items, "cancel");
+	let shown = order;
+	if (order.stock === "restored" && pendingLines(order).length > 0) {
+		const settled = await settleOrSchedule(ctx, id, {
+			current: revision ? { value: order, revision } : undefined,
+		});
+		shown = settled.order ?? order;
 	}
 	return {
-		blocks: orderBlocks(id, order),
+		blocks: orderBlocks(id, shown),
 		toast: written
 			? { message: `Order marked ${to}`, type: "success" }
 			: { message: `Cannot move a ${order.status} order to ${to}`, type: "error" },
@@ -591,14 +618,15 @@ async function syncStock(ctx: PluginContext): Promise<BlockResponse> {
 		id: item.id,
 		fields: normalizeProductFields(item.data),
 	}));
-	const { created, reset } = await syncFromProducts(ctx, products);
+	const { created, reset, remaining } = await syncFromProducts(ctx, products);
+	const done =
+		created || reset
+			? `Added ${created}, reset ${reset} from product stock_quantity`
+			: "Stock is up to date";
 	return {
 		...(await renderStock(ctx)),
 		toast: {
-			message:
-				created || reset
-					? `Added ${created}, reset ${reset} from product stock_quantity`
-					: "Stock is up to date",
+			message: remaining > 0 ? `${done}. ${remaining} more: run Sync again.` : done,
 			type: "success",
 		},
 	};
@@ -606,8 +634,11 @@ async function syncStock(ctx: PluginContext): Promise<BlockResponse> {
 
 // ── Settings ────────────────────────────────────────────────────────────
 
-export async function renderSettings(ctx: PluginContext): Promise<BlockResponse> {
-	const config = await loadConfig(ctx);
+export async function renderSettings(
+	ctx: PluginContext,
+	loaded?: LiteConfig,
+): Promise<BlockResponse> {
+	const config = loaded ?? (await loadConfig(ctx));
 	const sk = config.stripeSecretKey;
 	const wh = config.stripeWebhookSecret;
 	const webhookUrl = `${ctx.site.url.replace(/\/+$/, "")}/_emdash/api/plugins/${ctx.plugin.id}/stripe/webhook`;
@@ -778,14 +809,23 @@ export async function saveSettings(
 			toast: { message: "Settings not saved", type: "error" },
 		};
 	}
+	// Write only what changed: one call per value, so a save stays within
+	// the budget (1 read + at most 9 writes) and the page is rendered from
+	// memory instead of a second read.
+	const stored = await loadSettingsMap(ctx);
+	const changed = writes.filter(([k, v]) => stored.get(k) !== v);
+	const view = () => configFrom((key) => stored.get(key));
 	try {
 		// Secrets first and one at a time: if EmDash cannot encrypt them
 		// (no EMDASH_ENCRYPTION_KEY), nothing else is half-saved.
-		for (const [k, v] of writes) await ctx.settings.set(k, v);
+		for (const [k, v] of changed) {
+			await ctx.settings.set(k, v);
+			stored.set(k, v);
+		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "";
-		ctx.log.error("Saving settings failed", { message });
-		const page = await renderSettings(ctx);
+		log(ctx, "error", "Saving settings failed", { message });
+		const page = await renderSettings(ctx, view());
 		const description = message.includes("EMDASH_ENCRYPTION_KEY")
 			? "EmDash needs EMDASH_ENCRYPTION_KEY set on the site to store the Stripe secrets."
 			: "Saving failed. Try again.";
@@ -797,5 +837,8 @@ export async function saveSettings(
 			toast: { message: "Settings not saved", type: "error" },
 		};
 	}
-	return { ...(await renderSettings(ctx)), toast: { message: "Settings saved", type: "success" } };
+	return {
+		...(await renderSettings(ctx, view())),
+		toast: { message: "Settings saved", type: "success" },
+	};
 }

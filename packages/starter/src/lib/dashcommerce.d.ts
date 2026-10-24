@@ -2,6 +2,7 @@ export declare const DEFAULT_BASE: string;
 export declare const STORAGE_KEY: string;
 export declare const CART_HEADER: string;
 export declare const CART_EVENT: "dashcommerce:cart";
+export declare const MAX_CHECKOUT_REQUESTS: number;
 
 export interface Money {
 	currency: string;

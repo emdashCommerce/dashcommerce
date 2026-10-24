@@ -9,6 +9,7 @@
  */
 
 import type { PluginContext } from "emdash/plugin";
+import { metered } from "./budget";
 import {
 	CART_HEADER,
 	cartIdForToken,
@@ -22,6 +23,7 @@ import {
 	saveCart,
 	toCartView,
 } from "./cart";
+import { ensureCron } from "./cron";
 import { priceProduct } from "./products";
 import { type LiteConfig, loadConfig } from "./settings";
 import { type CartLineItem, type CartState, money, randomId } from "./shared";
@@ -45,6 +47,9 @@ async function resolveCart(
 	opts: { create: boolean },
 ): Promise<{ config: LiteConfig; resolved: Resolved | null }> {
 	const config = await loadConfig(ctx);
+	// Schedules the cleanup tasks once on sites where the install hook did
+	// not run (see cron.ts). No extra call once scheduled.
+	await ensureCron(ctx, config.cronVersion);
 	const currency = config.currency;
 	const token = readToken(headers);
 	if (token) {
@@ -70,7 +75,8 @@ async function resolveCart(
 	};
 }
 
-export async function getCartHandler(ctx: PluginContext, headers: Headers) {
+export async function getCartHandler(rawCtx: PluginContext, headers: Headers) {
+	const ctx = metered(rawCtx);
 	const { config, resolved } = await resolveCart(ctx, headers, { create: false });
 	if (!resolved) {
 		return {
@@ -86,7 +92,8 @@ export async function getCartHandler(ctx: PluginContext, headers: Headers) {
 	};
 }
 
-export async function addItemHandler(ctx: PluginContext, headers: Headers, input: unknown) {
+export async function addItemHandler(rawCtx: PluginContext, headers: Headers, input: unknown) {
+	const ctx = metered(rawCtx);
 	const body = asObject(input);
 	const productId = asId(body.productId);
 	if (!productId) return fail("INVALID_INPUT", "productId is required");
@@ -133,7 +140,8 @@ export async function addItemHandler(ctx: PluginContext, headers: Headers, input
 	return { ok: true as const, token, cart: toCartView(saved, config) };
 }
 
-export async function updateItemHandler(ctx: PluginContext, headers: Headers, input: unknown) {
+export async function updateItemHandler(rawCtx: PluginContext, headers: Headers, input: unknown) {
+	const ctx = metered(rawCtx);
 	const body = asObject(input);
 	const lineId = asId(body.lineId);
 	const quantity = asInt(body.quantity, 0, MAX_QUANTITY);
@@ -161,7 +169,8 @@ export async function updateItemHandler(ctx: PluginContext, headers: Headers, in
 	return { ok: true as const, token, cart: toCartView(saved, config) };
 }
 
-export async function clearCartHandler(ctx: PluginContext, headers: Headers) {
+export async function clearCartHandler(rawCtx: PluginContext, headers: Headers) {
+	const ctx = metered(rawCtx);
 	const { config, resolved } = await resolveCart(ctx, headers, { create: false });
 	if (!resolved) {
 		return {

@@ -20,10 +20,12 @@ import { okStripe, pay, SK, WH } from "../helpers/flow";
 
 type Route = { handler: (routeCtx: unknown, ctx: unknown) => Promise<unknown> };
 
-function harness() {
+function harness(
+	products = [product("mug"), product("few", { manage_stock: 1, stock_quantity: 1 })],
+) {
 	const t = makeCtx({
 		settings: { stripeSecretKey: SK, stripeWebhookSecret: WH },
-		products: [product("mug"), product("few", { manage_stock: 1, stock_quantity: 1 })],
+		products,
 		stripe: okStripe,
 	});
 	const requests: Array<{ url: string; headers: Record<string, string> }> = [];
@@ -119,6 +121,18 @@ describe("storefront kit", () => {
 
 		const wrongKey = await shop.getOrder(co.orderId, "nope").catch((e) => e);
 		expect(wrongKey.code).toBe("ORDER_NOT_FOUND");
+	});
+
+	test("checkout repeats the request while the server answers CHECKOUT_CONTINUE", async () => {
+		const products = Array.from({ length: 1000 }, (_, i) => product(`p${i}`));
+		const { shop, requests } = harness(products);
+		for (let i = 0; i < 20; i += 1) await shop.addItem(`p${i * 50}`, 1);
+		const before = requests.length;
+		const co = await shop.checkout();
+		expect(co.url).toStartWith("https://checkout.stripe.com/");
+		const sent = requests.length - before;
+		expect(sent).toBeGreaterThan(1);
+		expect(sent).toBeLessThanOrEqual(4);
 	});
 
 	test("helpers", () => {

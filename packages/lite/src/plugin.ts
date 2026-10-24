@@ -7,12 +7,19 @@
  * Storefront routes are public, take the cart token in the
  * `X-DashCommerce-Cart` header, and return JSON. See DESIGN.md.
  *
- * Hooks: an hourly `cleanup` cron task is scheduled on install and on
- * activate (see cron.ts).
+ * Hooks: the recurring cron tasks (`cleanup`, `stock-sweep`) are
+ * scheduled on install and on activate, and lazily by the cart routes and
+ * admin pages when those hooks did not run (see cron.ts). One-shot
+ * `stock-*` tasks finish stock changes that do not fit in one request
+ * (settle.ts).
+ *
+ * Every route, hook and cron task stays within the 10-subrequest budget
+ * of a sandboxed invocation on Cloudflare (budget.ts).
  */
 
 import { pluginResponse, pluginRoute, type SandboxedPlugin } from "emdash/plugin";
 import { handleAdmin } from "./admin";
+import { metered } from "./budget";
 import {
 	addItemHandler,
 	CART_HEADER,
@@ -85,7 +92,7 @@ const plugin: SandboxedPlugin = {
 				const id = asId(q.id);
 				const key = asString(q.key, 64);
 				if (!id || !key) return fail("INVALID_INPUT", "id and key are required");
-				const order = await ordersStore(ctx).get(id);
+				const order = await ordersStore(metered(ctx)).get(id);
 				if (!order || !safeEqual(order.orderKey, key)) {
 					return fail("ORDER_NOT_FOUND", "Order not found");
 				}

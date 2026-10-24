@@ -17,14 +17,14 @@
  * place: the product entry (a reset) or Lite's Stock page (an adjustment).
  *
  * Stock is decremented when Stripe confirms payment, and restored when a
- * paid order is fully refunded or cancelled. Order stock changes use
- * compare-and-set on the row (retried on conflict), so concurrent payments
- * cannot lose updates, and each one is recorded as a `stock_moves` entry
- * keyed `${orderId}:${productId}`, so retries apply it exactly once.
+ * paid order is fully refunded or cancelled. Those order stock changes run
+ * in settle.ts: each row write is guarded on the row's `rev` (a
+ * compare-and-set in one bridge call), so concurrent payments cannot lose
+ * updates, and is recorded per order and product, so retries apply it
+ * exactly once.
  */
 
 import type { PluginContext } from "emdash/plugin";
-import type { LiteOrderItem } from "./orders";
 import type { ProductFields } from "./shared";
 
 export interface StockRow {
@@ -34,8 +34,19 @@ export interface StockRow {
 	baseline: number;
 	updatedAt: string;
 	lastChange?: { delta: number; reason: StockReason; orderId?: string; at: string };
-	/** Keys of the last few order moves applied to this row (see StockMove). */
+	/**
+	 * Keys of the last few order moves applied to this row
+	 * (`${orderId}:sale`, `${orderId}:restore`), written in the same guarded
+	 * write as `onHand`. A row is per product, so a key is effectively
+	 * per order and product (see settle.ts).
+	 */
 	moves?: string[];
+	/**
+	 * Write counter. Every write sets `rev + 1` and is guarded on the `rev`
+	 * it read (`updateIf({ where: { rev } })`), which makes each row write a
+	 * compare-and-set in one bridge call.
+	 */
+	rev?: number;
 }
 
 export type StockReason = "sale" | "refund" | "cancel" | "adjust" | "reset" | "seed";
@@ -96,201 +107,32 @@ export interface StockShortfall {
 	short: number;
 }
 
-/**
- * Per-order, per-product stock movement, kept in the `stock_moves`
- * collection under `${orderId}:${productId}`. It makes stock changes
- * idempotent across webhook retries and admin double-clicks:
- *
- *   absent    nothing taken yet
- *   deducted  the sale was taken out of stock (`onHandAfter` keeps the
- *             level right after, so a retry can still report a shortfall)
- *   restored  the sale was put back (refund or cancel)
- *
- * The stock row change and the move are two writes. To make a crash
- * between them safe, the stock row also keeps the last few move keys it
- * applied (`moves`), written in the same compare-and-set as `onHand`. A
- * retry that finds its key there knows the row already has the change and
- * only writes the move.
- */
-export interface StockMove {
-	orderId: string;
-	productId: string;
-	quantity: number;
-	state: "deducted" | "restored";
-	onHandAfter: number;
-	deductedAt: string;
-	restoredAt?: string;
-	reason?: "refund" | "cancel";
-}
-
-export type StockMovesStore = {
-	getMany(ids: string[]): Promise<Map<string, StockMove>>;
-	compareAndSet(
-		id: string,
-		expectedRevision: string | null,
-		data: StockMove,
-	): Promise<{ applied: boolean }>;
-	updateIf(
-		id: string,
-		args: { where: Record<string, unknown>; set?: Partial<StockMove> },
-	): Promise<{ applied: true; data: StockMove } | { applied: false }>;
-};
-
-export function stockMovesStore(ctx: PluginContext): StockMovesStore {
-	return (ctx.storage as unknown as { stock_moves: StockMovesStore }).stock_moves;
-}
-
-export const moveId = (orderId: string, productId: string) => `${orderId}:${productId}`;
-
 /** How many applied move keys a stock row remembers. */
 export const ROW_MOVE_MEMORY = 50;
-const ROW_ATTEMPTS = 8;
+
+/** Next write counter for a row. */
+export const nextRev = (row: StockRow | null | undefined) => (row?.rev ?? 0) + 1;
 
 /**
- * Apply `delta` to one stock row exactly once for `key`, with
- * compare-and-set. Returns the on-hand level after the change (or the
- * current level when the row already had it), or null when there is no
- * row and `create` is not given.
+ * Write `next` over `row` only if nobody wrote the row since it was read:
+ * one `updateIf` guarded on `rev` (or on `updatedAt` for a row written
+ * before `rev` existed). Returns false on a lost race.
  */
-async function applyRowMove(
+export async function guardedRowWrite(
 	store: StockStore,
-	productId: string,
-	key: string,
-	delta: number,
-	change: StockRow["lastChange"],
-	at: string,
-	create?: { title: string; baseline: number },
-): Promise<number | null> {
-	for (let i = 0; i < ROW_ATTEMPTS; i += 1) {
-		const current = await store.getVersioned(productId);
-		const row = current?.value;
-		if (row?.moves?.includes(key)) return row.onHand;
-		let next: StockRow;
-		if (!row || (create && row.baseline !== create.baseline)) {
-			// No row yet, or the merchant changed stock_quantity on the product
-			// since the row was written: the product's value is the start.
-			if (!create) return null;
-			next = {
-				productId,
-				title: create.title,
-				onHand: create.baseline + delta,
-				baseline: create.baseline,
-				updatedAt: at,
-				lastChange: change,
-				moves: [...(row?.moves ?? []), key].slice(-ROW_MOVE_MEMORY),
-			};
-		} else {
-			next = {
-				...row,
-				onHand: row.onHand + delta,
-				updatedAt: at,
-				lastChange: change,
-				moves: [...(row.moves ?? []), key].slice(-ROW_MOVE_MEMORY),
-			};
-		}
-		const res = await store.compareAndSet(productId, current?.revision ?? null, next);
-		if (res.applied) return next.onHand;
-	}
-	throw new Error("Stock update conflicted repeatedly");
+	row: StockRow,
+	next: StockRow,
+): Promise<boolean> {
+	const where = typeof row.rev === "number" ? { rev: row.rev } : { updatedAt: row.updatedAt };
+	const res = await store.updateIf(row.productId, { where, set: next });
+	return res.applied;
 }
 
 /**
- * Take the items of a paid order out of stock. Idempotent: lines that
- * already have a `deducted` (or `restored`) move are not taken again, so
- * a retried webhook completes only the missing lines. Returns lines that
- * went below zero for products that do not allow backorders.
+ * Admin: set the on-hand quantity. The baseline is kept, so the ledger
+ * stays in charge. Two bridge calls (read, guarded write); a concurrent
+ * sale in between makes it fail rather than be overwritten.
  */
-export async function deductStock(
-	ctx: PluginContext,
-	orderId: string,
-	items: LiteOrderItem[],
-	now = Date.now(),
-): Promise<StockShortfall[]> {
-	const tracked = items.filter((i) => i.stock);
-	if (tracked.length === 0) return [];
-	const store = stockStore(ctx);
-	const movesStore = stockMovesStore(ctx);
-	const at = new Date(now).toISOString();
-	const moves = await movesStore.getMany(tracked.map((i) => moveId(orderId, i.productId)));
-	const shortfalls: StockShortfall[] = [];
-	for (const item of tracked) {
-		const id = moveId(orderId, item.productId);
-		let move = moves.get(id);
-		if (!move) {
-			const baseline = item.stock?.baseline as number;
-			const onHand = (await applyRowMove(
-				store,
-				item.productId,
-				`${orderId}:sale`,
-				-item.quantity,
-				{ delta: -item.quantity, reason: "sale", orderId, at },
-				at,
-				{ title: item.title, baseline },
-			)) as number;
-			move = {
-				orderId,
-				productId: item.productId,
-				quantity: item.quantity,
-				state: "deducted",
-				onHandAfter: onHand,
-				deductedAt: at,
-			};
-			// A concurrent delivery may have written the move first; the row
-			// key above already kept the stock change to one.
-			await movesStore.compareAndSet(id, null, move);
-		}
-		if (move.state === "deducted" && move.onHandAfter < 0 && !item.stock?.backorders) {
-			shortfalls.push({
-				productId: item.productId,
-				title: item.title,
-				short: Math.min(item.quantity, -move.onHandAfter),
-			});
-		}
-	}
-	return shortfalls;
-}
-
-/**
- * Put the items of a refunded or cancelled order back into stock.
- * Idempotent: only lines with a `deducted` move are restored, once. Lines
- * that were never taken (no move) are left alone.
- */
-export async function restoreStock(
-	ctx: PluginContext,
-	orderId: string,
-	items: LiteOrderItem[],
-	reason: "refund" | "cancel",
-	now = Date.now(),
-): Promise<void> {
-	const tracked = items.filter((i) => i.stock);
-	if (tracked.length === 0) return;
-	const store = stockStore(ctx);
-	const movesStore = stockMovesStore(ctx);
-	const at = new Date(now).toISOString();
-	const moves = await movesStore.getMany(tracked.map((i) => moveId(orderId, i.productId)));
-	for (const item of tracked) {
-		const id = moveId(orderId, item.productId);
-		const move = moves.get(id);
-		if (move?.state !== "deducted") continue;
-		const onHand = await applyRowMove(
-			store,
-			item.productId,
-			`${orderId}:restore`,
-			move.quantity,
-			{ delta: move.quantity, reason, orderId, at },
-			at,
-		);
-		if (onHand === null) {
-			ctx.log.warn("No stock row to restore", { productId: item.productId, orderId });
-		}
-		await movesStore.updateIf(id, {
-			where: { state: "deducted" },
-			set: { state: "restored", restoredAt: at, reason },
-		});
-	}
-}
-
-/** Admin: set the on-hand quantity. The baseline is kept, so the ledger stays in charge. */
 export async function setOnHand(
 	ctx: PluginContext,
 	productId: string,
@@ -301,40 +143,47 @@ export async function setOnHand(
 	const current = await store.get(productId);
 	if (!current) return null;
 	const at = new Date(now).toISOString();
-	const res = await store.updateIf(productId, {
-		where: {},
-		set: {
-			onHand,
-			updatedAt: at,
-			lastChange: { delta: onHand - current.onHand, reason: "adjust", at },
-		},
-	});
-	return res.applied ? res.data : null;
+	const next: StockRow = {
+		...current,
+		onHand,
+		updatedAt: at,
+		lastChange: { delta: onHand - current.onHand, reason: "adjust", at },
+		rev: nextRev(current),
+	};
+	return (await guardedRowWrite(store, current, next)) ? next : null;
 }
+
+/** Most rows one sync click writes, so the admin request stays in budget. */
+export const SYNC_WRITE_LIMIT = 6;
 
 /**
  * Admin: make sure every tracked product has a ledger row, and reset rows
- * whose product stock_quantity changed. Reads up to `limit` products.
+ * whose product stock_quantity changed. Writes at most `maxWrites` rows
+ * (one bridge call each, plus one batched read); `remaining` counts the
+ * rows still to do, so the page can ask for another click.
  */
 export async function syncFromProducts(
 	ctx: PluginContext,
 	products: Array<{ id: string; fields: ProductFields }>,
 	now = Date.now(),
-): Promise<{ created: number; reset: number }> {
+	maxWrites = SYNC_WRITE_LIMIT,
+): Promise<{ created: number; reset: number; remaining: number }> {
 	const tracked = products.filter((p) => isTracked(p.fields));
-	if (tracked.length === 0) return { created: 0, reset: 0 };
+	if (tracked.length === 0) return { created: 0, reset: 0, remaining: 0 };
 	const store = stockStore(ctx);
 	const rows = await store.getMany(tracked.map((p) => p.id));
 	const at = new Date(now).toISOString();
+	const todo = tracked.filter((p) => {
+		const row = rows.get(p.id);
+		return !row || row.baseline !== p.fields.stockQuantity || row.title !== p.fields.title;
+	});
 	let created = 0;
 	let reset = 0;
-	for (const p of tracked) {
+	for (const p of todo.slice(0, maxWrites)) {
 		const qty = p.fields.stockQuantity as number;
 		const row = rows.get(p.id);
 		if (row && row.baseline === qty) {
-			if (row.title !== p.fields.title) {
-				await store.updateIf(p.id, { where: {}, set: { title: p.fields.title } });
-			}
+			await guardedRowWrite(store, row, { ...row, title: p.fields.title, rev: nextRev(row) });
 			continue;
 		}
 		const next: StockRow = {
@@ -345,14 +194,13 @@ export async function syncFromProducts(
 			updatedAt: at,
 			lastChange: { delta: row ? qty - row.onHand : qty, reason: row ? "reset" : "seed", at },
 			...(row?.moves ? { moves: row.moves } : {}),
+			rev: nextRev(row),
 		};
 		if (row) {
-			await store.put(p.id, next);
-			reset += 1;
-		} else {
-			const res = await store.compareAndSet(p.id, null, next);
-			if (res.applied) created += 1;
+			if (await guardedRowWrite(store, row, next)) reset += 1;
+		} else if ((await store.compareAndSet(p.id, null, next)).applied) {
+			created += 1;
 		}
 	}
-	return { created, reset };
+	return { created, reset, remaining: Math.max(0, todo.length - maxWrites) };
 }

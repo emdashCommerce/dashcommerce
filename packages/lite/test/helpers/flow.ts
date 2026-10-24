@@ -107,3 +107,43 @@ export async function refund(
 		opts.id,
 	);
 }
+
+/**
+ * Run due one-shot `stock-*` settle tasks the way EmDash's cron executor
+ * does: each task is its own invocation, a task is deleted after it runs
+ * (even if it re-scheduled itself under the same name), and a task that
+ * throws stays for a retry. Returns the bridge calls of each invocation.
+ */
+export async function runSettleTasks(t: T, maxRounds = 50): Promise<number[]> {
+	const { handleCron } = await import("../../src/cron");
+	const counts: number[] = [];
+	for (let round = 0; round < maxRounds; round += 1) {
+		const due = [...t.cronTasks.entries()].filter(([name]) => name.startsWith("stock-"));
+		if (due.length === 0) break;
+		for (const [name, task] of due) {
+			const before = t.calls.count;
+			let failed = false;
+			try {
+				await handleCron(
+					{ name, data: task.data, scheduledAt: task.schedule } as Parameters<typeof handleCron>[0],
+					t.ctx,
+				);
+			} catch {
+				failed = true;
+			}
+			counts.push(t.calls.count - before);
+			if (!failed) t.cronTasks.delete(name);
+		}
+	}
+	return counts;
+}
+
+/** Bridge calls made by one invocation. */
+export async function countCalls<R>(
+	t: T,
+	fn: () => Promise<R>,
+): Promise<{ calls: number; result: R }> {
+	const before = t.calls.count;
+	const result = await fn();
+	return { calls: t.calls.count - before, result };
+}

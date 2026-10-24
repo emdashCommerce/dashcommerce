@@ -18,12 +18,20 @@
  *   charge.refunded                              -> record refund; a full
  *                                                   refund restores stock
  *
- * An event id is recorded in `stripe_events` only after all of its side
- * effects succeeded; a repeated delivery of a recorded id is acknowledged
- * without side effects. Until then a retry re-runs the event: order writes
- * are compare-and-set transitions, and the stock and cart steps are
- * idempotent (per-line `stock_moves` ledger, `paidEffectsAt`), so a retry
- * after a failure part-way completes the missing steps exactly once.
+ * An event id is recorded in `stripe_events` only after its side effects
+ * are done or durably queued; a repeated delivery of a recorded id is
+ * acknowledged without side effects. Until then a retry re-runs the event:
+ * order writes are compare-and-set transitions, and the stock and cart
+ * steps are idempotent (per-order, per-product stock ledger and
+ * `paidEffectsAt`, see settle.ts), so a retry after a failure part-way
+ * completes the missing steps exactly once.
+ *
+ * Subrequest budget (budget.ts): a paid event marks the order paid,
+ * clears the cart and takes stock for as many lines as fit in the
+ * request; the rest is taken by one-shot cron tasks, a few lines each
+ * (settle.ts). The event is recorded once that follow-up task is
+ * scheduled. A full refund restores stock the same way. Every webhook
+ * request stays within 10 bridge calls, whatever the cart size.
  *
  * Only `pending` or `failed` orders (or ones on hold for a delayed payment)
  * can become paid. A refund for an order that is not paid yet answers 500
@@ -31,6 +39,7 @@
  */
 
 import type { PluginContext } from "emdash/plugin";
+import { log, metered } from "./budget";
 import { cartsStore } from "./cart";
 import {
 	fromStripeAddress,
@@ -46,7 +55,7 @@ import {
 	type StripeCheckoutSession,
 	verifyStripeSignature,
 } from "./shared";
-import { deductStock, restoreStock } from "./stock";
+import { pendingLines, settleOrSchedule } from "./settle";
 
 export interface WebhookResult {
 	status: number;
@@ -106,14 +115,15 @@ export const HANDLED_EVENTS = [
 const HANDLED = new Set<string>(HANDLED_EVENTS);
 
 export async function handleStripeWebhook(
-	ctx: PluginContext,
+	rawCtx: PluginContext,
 	payload: unknown,
 	headers: Record<string, string>,
 	now = Date.now(),
 ): Promise<WebhookResult> {
+	const ctx = metered(rawCtx);
 	const secret = await ctx.settings.get<string>("stripeWebhookSecret");
 	if (!secret) {
-		ctx.log.warn("Stripe webhook received but no signing secret is configured");
+		log(ctx, "warn", "Stripe webhook received but no signing secret is configured");
 		return { status: 500, body: { error: "webhook_not_configured" } };
 	}
 	if (typeof payload !== "string" || payload.length === 0) {
@@ -156,13 +166,13 @@ export async function handleStripeWebhook(
 					);
 	} catch (err) {
 		if (err instanceof RetryLater) {
-			ctx.log.info("Stripe event deferred; Stripe will retry", {
+			log(ctx, "info", "Stripe event deferred; Stripe will retry", {
 				type: event.type,
 				reason: err.reason,
 			});
 			return { status: 500, body: { error: "retry_later", reason: err.reason } };
 		}
-		ctx.log.error("Stripe webhook processing failed", {
+		log(ctx, "error", "Stripe webhook processing failed", {
 			type: event.type,
 			message: err instanceof Error ? err.message : "unknown",
 		});
@@ -191,8 +201,11 @@ async function processSessionEvent(
 	if (type === "checkout.session.completed" && session.payment_status === "unpaid") {
 		// Delayed payment method: the shopper finished Checkout, the money
 		// arrives later with async_payment_succeeded or _failed.
-		const { order, written } = await updateOrder(store, orderId, (o) =>
-			sessionMatches(o) ? markAwaitingAsyncPayment(o, session) : null,
+		const { order, written } = await updateOrder(
+			store,
+			orderId,
+			(o) => (sessionMatches(o) ? markAwaitingAsyncPayment(o, session) : null),
+			2,
 		);
 		if (!order) return "order_not_found";
 		return written || isAwaitingAsyncPayment(order) ? "awaiting_async_payment" : "unchanged";
@@ -203,11 +216,14 @@ async function processSessionEvent(
 		type === "checkout.session.async_payment_succeeded"
 	) {
 		if (session.payment_status !== "paid") return "awaiting_payment";
-		const { order, written } = await updateOrder(store, orderId, (o) =>
-			sessionMatches(o) ? markPaid(o, session, now) : null,
+		const { order, written, revision } = await updateOrder(
+			store,
+			orderId,
+			(o) => (sessionMatches(o) ? markPaid(o, session, now) : null),
+			2,
 		);
 		if (!order) {
-			ctx.log.warn("Stripe session references an unknown order", { orderId });
+			log(ctx, "warn", "Stripe session references an unknown order", { orderId });
 			return "order_not_found";
 		}
 		if (!written) {
@@ -216,7 +232,7 @@ async function processSessionEvent(
 			const paidBySession = Boolean(order.paidAt) && order.stripeSessionId === session.id;
 			if (!paidBySession) {
 				if (sessionMatches(order) && !order.paidAt) {
-					ctx.log.warn("Payment for an order that can no longer be paid", {
+					log(ctx, "warn", "Payment for an order that can no longer be paid", {
 						orderId,
 						status: order.status,
 					});
@@ -226,63 +242,61 @@ async function processSessionEvent(
 			}
 			if (order.paidEffectsAt) return "unchanged";
 		}
-		const shortfalls = await completePaidEffects(ctx, orderId, order, now);
-		if (shortfalls.length > 0) return "paid_stock_shortfall";
+		const settled = await completePaidEffects(ctx, orderId, order, revision, now);
+		if (!settled.done) return "paid_stock_pending";
+		if ((settled.order?.stockShortfall ?? []).length > 0) return "paid_stock_shortfall";
 		return order.amountMismatch ? "paid_amount_mismatch" : "paid";
 	}
 
 	if (type === "checkout.session.async_payment_failed") {
-		const { order, written } = await updateOrder(store, orderId, (o) => {
-			if (!sessionMatches(o) || o.paymentStatus !== "pending") return null;
-			if (o.status !== "pending" && !isAwaitingAsyncPayment(o)) return null;
-			const { awaitingAsyncPayment: _awaiting, ...rest } = o;
-			return { ...rest, status: "failed", paymentStatus: "failed" };
-		});
+		const { order, written } = await updateOrder(
+			store,
+			orderId,
+			(o) => {
+				if (!sessionMatches(o) || o.paymentStatus !== "pending") return null;
+				if (o.status !== "pending" && !isAwaitingAsyncPayment(o)) return null;
+				const { awaitingAsyncPayment: _awaiting, ...rest } = o;
+				return { ...rest, status: "failed", paymentStatus: "failed" };
+			},
+			2,
+		);
 		if (!order) return "order_not_found";
 		return written ? "failed" : "unchanged";
 	}
 
 	// checkout.session.expired
-	const { order } = await updateOrder(store, orderId, (o) =>
-		sessionMatches(o) && o.status === "pending" && o.paymentStatus === "pending"
-			? { ...o, status: "cancelled", cancelReason: "session_expired" }
-			: null,
+	const { order } = await updateOrder(
+		store,
+		orderId,
+		(o) =>
+			sessionMatches(o) && o.status === "pending" && o.paymentStatus === "pending"
+				? { ...o, status: "cancelled", cancelReason: "session_expired" }
+				: null,
+		2,
 	);
 	return order ? "expired" : "order_not_found";
 }
 
 /**
- * Take a newly paid order's items out of stock and clear its cart, then
- * set `paidEffectsAt`. Each step is idempotent, so this is safe to run
- * again after a failure part-way. Returns stock shortfalls.
+ * Clear a newly paid order's cart, then take its items out of stock: as
+ * many lines as fit in this request, the rest in follow-up cron tasks
+ * (settle.ts). The settle pass sets `paidEffectsAt` when the last line is
+ * taken. Each step is idempotent, so this is safe to run again after a
+ * failure part-way. Keeps one call free for the event record.
  */
 async function completePaidEffects(
 	ctx: PluginContext,
 	orderId: string,
 	order: LiteOrder,
+	revision: string | undefined,
 	now: number,
 ) {
-	const shortfalls =
-		order.stock === "deducted" ? await deductStock(ctx, orderId, order.items, now) : [];
-	if (shortfalls.length > 0) {
-		ctx.log.warn("Paid order sold more than the stock on hand", { orderId });
-	}
 	await cartsStore(ctx).delete(order.cartId);
-	await updateOrder(ordersStore(ctx), orderId, (o) =>
-		o.paidEffectsAt
-			? null
-			: {
-					...o,
-					paidEffectsAt: new Date(now).toISOString(),
-					...(shortfalls.length > 0
-						? {
-								stockShortfall: shortfalls,
-								status: o.status === "processing" ? ("on-hold" as const) : o.status,
-							}
-						: {}),
-				},
-	);
-	return shortfalls;
+	return settleOrSchedule(ctx, orderId, {
+		reserve: 1,
+		current: revision ? { value: order, revision } : undefined,
+		now,
+	});
 }
 
 /** True when Stripe may move this order to paid. */
@@ -350,7 +364,7 @@ export function markPaid(
 		...(email ? { customerEmail: email.toLowerCase() } : {}),
 		...(address ? { shippingAddress: address } : {}),
 		...(typeof session.livemode === "boolean" ? { livemode: session.livemode } : {}),
-		...(tracked ? { stock: "deducted" as const } : {}),
+		...(tracked ? { stock: "deducted" as const, stockPending: 1 as const } : {}),
 	};
 	if (order.automaticTax && !mismatch) {
 		next.taxTotal = money(order.currency, stripeTax);
@@ -379,8 +393,11 @@ async function processChargeRefunded(
 	}
 	if (!orderId) return "order_not_found";
 	const refunded = typeof charge.amount_refunded === "number" ? charge.amount_refunded : 0;
-	const { order, written } = await updateOrder(store, orderId, (o) =>
-		applyRefund(o, refunded, charge, now),
+	const { order, written, revision } = await updateOrder(
+		store,
+		orderId,
+		(o) => applyRefund(o, refunded, charge, now),
+		2,
 	);
 	if (!order) return "order_not_found";
 	if (order.paymentStatus === "pending" || order.paymentStatus === "failed") {
@@ -388,9 +405,14 @@ async function processChargeRefunded(
 		// drop it: answer 500 without recording it, so Stripe retries.
 		throw new RetryLater("refund_before_paid");
 	}
-	// Idempotent: also finishes a restore that failed on an earlier attempt.
-	if (order.stock === "restored") {
-		await restoreStock(ctx, orderId, order.items, "refund", now);
+	// Idempotent: also finishes a restore that failed or was deferred on an
+	// earlier attempt. Lines that do not fit run in follow-up cron tasks.
+	if (order.stock === "restored" && pendingLines(order).length > 0) {
+		await settleOrSchedule(ctx, orderId, {
+			reserve: 1,
+			current: revision ? { value: order, revision } : undefined,
+			now,
+		});
 	}
 	if (!written) return "unchanged";
 	return order.paymentStatus === "refunded" ? "refunded" : "partially_refunded";
@@ -428,6 +450,9 @@ export function applyRefund(
 				? order.status
 				: deriveOrderStatusFromRefunds(order.status, paid, refundedTotal),
 	};
-	if (paymentStatus === "refunded" && order.stock === "deducted") next.stock = "restored";
+	if (paymentStatus === "refunded" && order.stock === "deducted") {
+		next.stock = "restored";
+		next.stockPending = 1;
+	}
 	return next;
 }

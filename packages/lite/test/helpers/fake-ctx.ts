@@ -203,7 +203,7 @@ export function makeCtx(
 	const products = new Map((opts.products ?? []).map((p) => [p.id, p]));
 	const httpCalls: HttpCall[] = [];
 	const logs: Array<{ level: string; msg: string; data?: unknown }> = [];
-	const cronTasks = new Map<string, { schedule: string }>();
+	const cronTasks = new Map<string, { schedule: string; data?: Record<string, unknown> }>();
 	const calls = { count: 0 };
 	const counted = <T extends object>(obj: T): T =>
 		new Proxy(obj, {
@@ -254,12 +254,22 @@ export function makeCtx(
 				const p = products.get(id);
 				return p ? toItem(p) : null;
 			},
-			list: async (_collection: string, o: { where?: { status?: string } } = {}) => ({
-				items: [...products.values()]
+			list: async (
+				_collection: string,
+				o: { where?: { status?: string }; limit?: number; cursor?: string } = {},
+			) => {
+				const all = [...products.values()]
 					.filter((p) => !o.where?.status || (p.status ?? "published") === o.where.status)
-					.map(toItem),
-				hasMore: false,
-			}),
+					.map(toItem);
+				const limit = Math.max(1, Math.min(o.limit ?? 50, 100));
+				const start = o.cursor ? Number(o.cursor) : 0;
+				const hasMore = all.length > start + limit;
+				return {
+					items: all.slice(start, start + limit),
+					hasMore,
+					...(hasMore ? { cursor: String(start + limit) } : {}),
+				};
+			},
 		}),
 		http: counted({
 			fetch: async (url: string, init: RequestInit = {}) => {
@@ -274,17 +284,18 @@ export function makeCtx(
 				return new Response(JSON.stringify(res.body), { status: res.status });
 			},
 		}),
-		cron: {
-			schedule: async (name: string, o: { schedule: string }) => void cronTasks.set(name, o),
+		cron: counted({
+			schedule: async (name: string, o: { schedule: string; data?: Record<string, unknown> }) =>
+				void cronTasks.set(name, structuredClone(o)),
 			cancel: async (name: string) => void cronTasks.delete(name),
 			list: async () => [],
-		},
-		log: {
-			debug: (msg: string, data?: unknown) => logs.push({ level: "debug", msg, data }),
-			info: (msg: string, data?: unknown) => logs.push({ level: "info", msg, data }),
-			warn: (msg: string, data?: unknown) => logs.push({ level: "warn", msg, data }),
-			error: (msg: string, data?: unknown) => logs.push({ level: "error", msg, data }),
-		},
+		}),
+		log: counted({
+			debug: (msg: string, data?: unknown) => void logs.push({ level: "debug", msg, data }),
+			info: (msg: string, data?: unknown) => void logs.push({ level: "info", msg, data }),
+			warn: (msg: string, data?: unknown) => void logs.push({ level: "warn", msg, data }),
+			error: (msg: string, data?: unknown) => void logs.push({ level: "error", msg, data }),
+		}),
 	};
 
 	return {
@@ -300,7 +311,7 @@ export function makeCtx(
 		httpCalls,
 		logs,
 		cronTasks,
-		/** Bridge calls made so far (kv, settings, storage, content, http). */
+		/** Bridge calls made so far (kv, settings, storage, content, http, cron, log). */
 		calls,
 	};
 }
