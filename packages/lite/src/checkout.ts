@@ -50,7 +50,7 @@ import {
 import { isTracked, type StockRow, stockStore } from "./stock";
 import { asEmail, asObject, fail } from "./validate";
 
-export const STRIPE_METADATA_SOURCE = "dashcommerce";
+export const STRIPE_METADATA_SOURCE = "dashcommerce-lite";
 
 /** Order id and Stripe idempotency key for one checkout of one cart version. */
 export async function checkoutAttempt(cartId: string, cartUpdatedAt: string) {

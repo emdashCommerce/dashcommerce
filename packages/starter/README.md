@@ -199,10 +199,13 @@ DASHCOMMERCE_EDITION=sandboxed bun run build
 
 In this edition:
 
-- `@dashcommerce/core` is not registered. Both plugins use the id
-  `dashcommerce`, so only one can be active on a site.
-- Install DashCommerce from the registry in the admin (Plugins). This needs
-  EmDash 1.3 or later and a sandbox runner. On Cloudflare the config passes
+- `@dashcommerce/core` is not registered. The registry plugin has its own
+  id, `dashcommerce-lite` (core is `dashcommerce`), with routes under
+  `/_emdash/api/plugins/dashcommerce-lite/`. Install one or the other, not
+  both: each runs its own cart, checkout, orders and Stripe webhook.
+- Install DashCommerce Lite (`dashcommerce-lite`) from the registry in the
+  admin (Plugins). This needs EmDash 1.3 or later and a sandbox runner. On
+  Cloudflare the config passes
   `sandbox()` from `@emdash-cms/cloudflare`, which needs a `LOADER` Worker
   Loader binding in `wrangler.jsonc` (Workers paid plan). On Node, add a
   runner such as `@emdash-cms/sandbox-workerd` yourself.

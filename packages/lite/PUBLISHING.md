@@ -1,26 +1,34 @@
-# Publishing DashCommerce to the EmDash plugin registry
+# Publishing DashCommerce Lite to the EmDash plugin registry
 
 This package is registry-only. It is `private` in `package.json`, so npm and
-`changeset publish` skip it. It publishes as slug `dashcommerce` from the
-`dashcommerce.bsky.social` Atmosphere account, pinned in
+`changeset publish` skip it. It publishes as slug `dashcommerce-lite` from
+the `dashcommerce.bsky.social` Atmosphere account, pinned in
 `emdash-plugin.jsonc` as `did:plc:yakxzbkuhphkc5eepv7p4wrc`.
 
-## It supersedes the setup listing
+## Its own listing and plugin id
 
-The `dashcommerce` listing already exists. Its 0.1.0 release was a setup
-page (no capabilities) that showed install steps for the native plugin. It
-was built from `packages/registry-setup`, which has been removed from this
-repo; the source is in git history (merged in #50). 0.2.0 from this package
-is the next release of the same listing, so sites that installed the setup
-page get the store as an update.
+Lite is a new listing with its own slug and plugin id, `dashcommerce-lite`.
+It does not reuse `dashcommerce`, which is the native plugin's id
+(`@dashcommerce/core`) and the slug of the existing "DashCommerce Setup"
+listing.
 
-- Same slug and publisher, so no new listing is created.
-- The trust contract changes: 0.1.0 asked for nothing; 0.2.0 asks for
-  `content:read`, `network:request` to `api.stripe.com`, and four storage
-  collections. Sites must approve the new access when they update. In 0.x
-  the minor bump (0.1 to 0.2) is the breaking-change bump.
-- The minimum host moves from EmDash 1.1 to `>=1.3.0 <2.0.0`.
-- This package is now the only source for the `dashcommerce` listing.
+- The slug is the plugin id on a site, so it sets the route prefix
+  (`/_emdash/api/plugins/dashcommerce-lite/`), the admin pages and the
+  storage namespace. A different id means Lite can never collide with an
+  installed native plugin.
+- Lite and core are still alternatives. Do not install both on one site:
+  each runs its own cart, checkout, orders and Stripe webhook.
+- The "DashCommerce Setup" listing (slug `dashcommerce`, 0.1.0, a static
+  page with install steps for the native plugin, built from
+  `packages/registry-setup`, which is in git history) is not touched by
+  Lite releases. Sites that installed it do not get Lite as an update.
+- The first publish creates the `dashcommerce-lite` package profile from
+  `emdash-plugin.jsonc` (name, description, keywords, license, author,
+  security contact). The first release is 0.2.0, the version in
+  `package.json`.
+- The trust contract: `content:read`, `network:request` to
+  `api.stripe.com`, and five storage collections (`orders`, `carts`,
+  `stock`, `stock_moves`, `stripe_events`). Sites approve it on install.
 - Releases are immutable. Every publish needs a new `version` in
   `package.json`. Bump the minor (0.x) or major (1.x and later) whenever
   `capabilities`, `allowedHosts` or `storage` change.
@@ -39,7 +47,7 @@ bun run typecheck
 bun run test
 bun run test:sandbox
 bun run bundle && bun run size
-tar tzf dist/dashcommerce-0.2.0.tar.gz
+tar tzf dist/dashcommerce-lite-0.2.0.tar.gz
 
 # Sign in (opens the Bluesky sign-in page in the browser)
 bunx emdash-plugin login dashcommerce.bsky.social
@@ -51,53 +59,24 @@ bunx emdash-plugin whoami
 bunx emdash-plugin publish
 
 # Follow the listing checks until the release is public
-bunx emdash-plugin info dashcommerce.bsky.social dashcommerce --version 0.2.0 --watch
+bunx emdash-plugin info dashcommerce.bsky.social dashcommerce-lite --version 0.2.0 --watch
 ```
 
-Then update the package profile (next section). The 0.2.0 release is not
-done until the listing shows the new name and description.
-
-## Update the package profile (part of the 0.2.0 release)
-
-Publishing a release does not change the package profile. The profile was
-created by the 0.1.0 publish and still reads:
-
-- Name: DashCommerce Setup
-- Description: Setup guide for DashCommerce. The full store installs from
-  npm as @dashcommerce/core; this listing shows the install steps in your
-  admin.
-- Keywords: commerce, ecommerce, stripe, store, setup
-
-After `publish` succeeds and `info --watch` shows 0.2.0 as public, run from
-`packages/lite` with the same signed-in session:
+Then confirm the new listing shows the profile from the manifest:
 
 ```sh
-# Dry run: prints the diff and writes nothing
-bunx emdash-plugin update-package --manifest ./emdash-plugin.jsonc
-
-# Apply it
-bunx emdash-plugin update-package --manifest ./emdash-plugin.jsonc --yes
-
-# Confirm the listing shows the new name and description
-bunx emdash-plugin info dashcommerce.bsky.social dashcommerce
+bunx emdash-plugin info dashcommerce.bsky.social dashcommerce-lite
 ```
-
-Add `--json` to either `update-package` call for machine-readable output.
-
-The dry run should show exactly these changes, all taken from
-`emdash-plugin.jsonc`:
 
 - Name: DashCommerce
 - Description: Sell products from your EmDash content with a cart, Stripe
   Checkout, stock tracking, refunds, flat tax and shipping, and CSV order
-  export.
+  export. (138 characters; the registry cap is 140.)
 - Keywords: commerce, ecommerce, stripe, cart, checkout
 
-The registry caps the description at 140 characters; this one is 138.
-
-License (MIT), author (Timchosen Uzua) and the security contact are the
-same as on the existing profile. If the dry run shows other differences,
-stop and check them before running with `--yes`.
+Later profile edits use `bunx emdash-plugin update-package --manifest
+./emdash-plugin.jsonc` (dry run first, then `--yes`). Do not run it against
+the `dashcommerce` (Setup) listing.
 
 ## Troubleshooting
 

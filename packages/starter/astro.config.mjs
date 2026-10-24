@@ -15,10 +15,11 @@ import { postgres, sqlite } from "emdash/db";
 const target = process.env.DEPLOY_TARGET === "cloudflare" ? "cloudflare" : "node";
 
 // Storefront edition. "native" (default) registers @dashcommerce/core.
-// "sandboxed" leaves core out so DashCommerce can be installed from the
-// EmDash plugin registry instead (both use the plugin id "dashcommerce", so
-// only one can be active), and the pages switch to the storefront kit in
-// src/lib/dashcommerce.js. See README.md, "Sandboxed edition".
+// "sandboxed" leaves core out so DashCommerce Lite can be installed from the
+// EmDash plugin registry instead (plugin id "dashcommerce-lite"; core is
+// "dashcommerce"; install one or the other, not both), and the pages switch
+// to the storefront kit in src/lib/dashcommerce.js. See README.md,
+// "Sandboxed edition".
 const edition =
 	process.env.DASHCOMMERCE_EDITION === "sandboxed" ? "sandboxed" : "native";
 

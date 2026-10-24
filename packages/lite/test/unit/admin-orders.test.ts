@@ -126,7 +126,7 @@ describe("orders admin", () => {
 		});
 		expectValid(res);
 		const url = JSON.stringify(res).match(
-			/https:\/\/shop\.example\/_emdash\/api\/plugins\/dashcommerce\/orders\/export\?token=([A-Za-z0-9_-]{43})/,
+			/https:\/\/shop\.example\/_emdash\/api\/plugins\/dashcommerce-lite\/orders\/export\?token=([A-Za-z0-9_-]{43})/,
 		);
 		expect(url).not.toBeNull();
 		const token = url?.[1] as string;

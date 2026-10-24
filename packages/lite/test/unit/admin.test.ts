@@ -99,7 +99,7 @@ describe("Block Kit admin", () => {
 		const json = JSON.stringify(res);
 		expect(json).not.toContain("secretvalue");
 		expect(json).toContain('"has_value":true');
-		expect(json).toContain("https://shop.example/_emdash/api/plugins/dashcommerce/stripe/webhook");
+		expect(json).toContain("https://shop.example/_emdash/api/plugins/dashcommerce-lite/stripe/webhook");
 	});
 
 	const goodValues = {

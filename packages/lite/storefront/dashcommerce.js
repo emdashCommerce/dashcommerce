@@ -4,7 +4,7 @@
  * A dependency-free ES module for themes. Copy it into your theme (for
  * example `src/lib/dashcommerce.js`) or import it from
  * `@dashcommerce/lite/storefront` in this repo. It talks to the plugin's
- * public routes under `/_emdash/api/plugins/dashcommerce/`, keeps the cart
+ * public routes under `/_emdash/api/plugins/dashcommerce-lite/`, keeps the cart
  * token in localStorage, and fires a `dashcommerce:cart` event on `window`
  * with the latest cart after every change.
  *
@@ -17,7 +17,7 @@
  * `DashCommerceError` (with `code`, for example "OUT_OF_STOCK") otherwise.
  */
 
-export const DEFAULT_BASE = "/_emdash/api/plugins/dashcommerce";
+export const DEFAULT_BASE = "/_emdash/api/plugins/dashcommerce-lite";
 export const STORAGE_KEY = "dashcommerce-cart";
 export const CART_HEADER = "X-DashCommerce-Cart";
 export const CART_EVENT = "dashcommerce:cart";

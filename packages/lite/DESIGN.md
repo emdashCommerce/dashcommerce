@@ -1,7 +1,7 @@
 # DashCommerce (sandboxed): design
 
 This package is the sandboxed build of DashCommerce. It is listed on the
-EmDash plugin registry as `dashcommerce` (publisher
+EmDash plugin registry as `dashcommerce-lite` (publisher
 `did:plc:yakxzbkuhphkc5eepv7p4wrc`, dashcommerce.bsky.social) and installs
 from the admin UI. It covers a part of the native plugin (`packages/core`):
 simple products read from content, a cart, Stripe hosted Checkout, a signed
@@ -10,13 +10,19 @@ cron, and Block Kit pages for orders, stock and settings.
 
 The package directory and npm name stay `packages/lite` and
 `@dashcommerce/lite` (private) inside this repo. Everything a site sees uses
-the `dashcommerce` slug.
+the `dashcommerce-lite` id: the registry slug, the route prefix
+(`/_emdash/api/plugins/dashcommerce-lite/`), the admin pages and the
+plugin's storage namespace.
 
-It supersedes the setup listing. Version 0.1.0 of `dashcommerce` on the
-registry was a static setup page with install steps for the native plugin,
-built from `packages/registry-setup`. That package has been removed (it is
-in git history), and 0.2.0 from this package replaces it under the same
-slug and publisher. See `PUBLISHING.md`.
+The id is deliberately different from the native plugin's `dashcommerce`,
+so the two never collide on routes, settings or storage. They are still
+alternatives: do not install both on one site, because each runs its own
+cart, checkout, orders and Stripe webhook.
+
+The separate "DashCommerce Setup" listing (slug `dashcommerce`, 0.1.0, a
+static page with install steps for the native plugin, from
+`packages/registry-setup`, now in git history) is unchanged. Lite is a new
+listing next to it, not a new version of it. See `PUBLISHING.md`.
 
 The native plugin is unchanged and remains the full option.
 
@@ -166,7 +172,8 @@ and one `stock_moves` row per order and tracked product, keyed
    with the new cart so the shopper can review it.
 3. Writes a `pending` order, then creates a Checkout Session with core's
    `createCheckoutSession()` (`mode=payment`, `client_reference_id` and
-   `metadata.orderId` set to the order id, `metadata.source=dashcommerce`).
+   `metadata.orderId` set to the order id,
+   `metadata.source=dashcommerce-lite`).
    The order id and the idempotency key (`dc_checkout_<hash>`) derive from
    the cart id and the cart's `updatedAt`, which increases on every cart
    write. A double submit of the same cart reuses the pending order (the
@@ -342,7 +349,7 @@ variants, subscriptions, Connect, emails, downloads.
 
 ## Storefront usage
 
-Base path: `/_emdash/api/plugins/dashcommerce`.
+Base path: `/_emdash/api/plugins/dashcommerce-lite`.
 
 | Route | Method | Body / query | Returns (`data`) |
 | --- | --- | --- | --- |
@@ -420,8 +427,8 @@ On Cloudflare each sandboxed call gets 50 ms CPU and 10 subrequests.
 
 ## Bundle size
 
-`emdash-plugin bundle` output for 0.2.0: `backend.js` 49.5 KB, total
-56.3 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
-is about 18 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
+`emdash-plugin bundle` output for 0.2.0: `backend.js` 52.7 KB, total
+60.1 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
+is about 19 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
 `bun run size` prints the numbers and fails above a 96 KB working budget
 for `backend.js`. The storefront kit is not part of the bundle.

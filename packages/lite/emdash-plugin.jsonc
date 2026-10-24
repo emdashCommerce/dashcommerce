@@ -1,10 +1,12 @@
 {
 	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
 
-	// Same registry listing as the retired setup page ("DashCommerce Setup",
-	// v0.1.0). This package ships as 0.2.0 of that listing and replaces it.
-	// See PUBLISHING.md.
-	"slug": "dashcommerce",
+	// Its own listing and plugin id, `dashcommerce-lite`, so it never clashes
+	// with the native plugin (`@dashcommerce/core`, id `dashcommerce`). The
+	// id also sets the route prefix (/_emdash/api/plugins/dashcommerce-lite/)
+	// and the storage namespace. The "DashCommerce Setup" listing (slug
+	// `dashcommerce`, v0.1.0) is separate and unchanged. See PUBLISHING.md.
+	"slug": "dashcommerce-lite",
 	"publisher": "did:plc:yakxzbkuhphkc5eepv7p4wrc", // dashcommerce.bsky.social
 
 	"license": "MIT",

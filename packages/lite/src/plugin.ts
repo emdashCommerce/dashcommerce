@@ -1,7 +1,9 @@
 /**
  * DashCommerce (sandboxed): runtime entry.
  *
- * Routes mount under /_emdash/api/plugins/dashcommerce/<name>.
+ * Routes mount under /_emdash/api/plugins/dashcommerce-lite/<name> (the
+ * plugin id, `dashcommerce-lite`, is separate from native core's
+ * `dashcommerce`).
  * Storefront routes are public, take the cart token in the
  * `X-DashCommerce-Cart` header, and return JSON. See DESIGN.md.
  *

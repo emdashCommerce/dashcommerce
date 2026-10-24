@@ -187,7 +187,7 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		// Order status for the success page.
 		const status = await call(h, "order", {
 			method: "GET",
-			url: `https://shop.example/_emdash/api/plugins/dashcommerce/order?id=${co.orderId}&key=${co.orderKey}`,
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce-lite/order?id=${co.orderId}&key=${co.orderKey}`,
 		});
 		expect(status.body.data).toMatchObject({ ok: true, order: { paymentStatus: "paid" } });
 
@@ -264,7 +264,7 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		expect(token).toBeDefined();
 		const csv = await h.actions.routes.request("orders/export", {
 			method: "GET",
-			url: `https://shop.example/_emdash/api/plugins/dashcommerce/orders/export?token=${token}`,
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce-lite/orders/export?token=${token}`,
 		});
 		expect(csv.status).toBe(200);
 		expect(csv.headers.get("content-type")).toContain("text/csv");
@@ -272,7 +272,7 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		expect(await csv.text()).toContain(String(order?.orderNumber));
 		const reused = await h.actions.routes.request("orders/export", {
 			method: "GET",
-			url: `https://shop.example/_emdash/api/plugins/dashcommerce/orders/export?token=${token}`,
+			url: `https://shop.example/_emdash/api/plugins/dashcommerce-lite/orders/export?token=${token}`,
 		});
 		expect(reused.status).toBe(403);
 	});
