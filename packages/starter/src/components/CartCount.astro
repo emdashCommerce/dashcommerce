@@ -1,0 +1,23 @@
+---
+/**
+ * Item count for a header cart link. Updates when the cart changes on any
+ * DashCommerce component on the page.
+ *
+ *   <a href="/cart">Cart (<CartCount />)</a>
+ */
+---
+
+<span class="dc-cart-count" data-dc-cart-count>0</span>
+
+<script>
+	import { CART_EVENT, createClient } from "../lib/dashcommerce.js";
+
+	const render = (count: number) => {
+		for (const el of document.querySelectorAll<HTMLElement>("[data-dc-cart-count]")) {
+			el.textContent = String(count);
+		}
+	};
+	window.addEventListener(CART_EVENT, (e) => render((e as CustomEvent).detail.itemCount));
+	const shop = createClient();
+	if (shop.getToken()) shop.getCart().catch(() => render(0));
+</script>

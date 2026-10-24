@@ -187,6 +187,40 @@ docker run -p 4321:4321 \
 
 Swap SQLite for Postgres by uncommenting the `db` service in `docker-compose.yml` and setting `DATABASE_URL`.
 
+## Sandboxed edition (optional)
+
+By default the starter registers `@dashcommerce/core` and uses its Astro
+components. Set `DASHCOMMERCE_EDITION=sandboxed` at build time to switch to
+the sandboxed DashCommerce plugin from the EmDash plugin registry instead:
+
+```sh
+DASHCOMMERCE_EDITION=sandboxed bun run build
+```
+
+In this edition:
+
+- `@dashcommerce/core` is not registered. The registry plugin has its own
+  id, `dashcommerce-lite` (core is `dashcommerce`), with routes under
+  `/_emdash/api/plugins/dashcommerce-lite/`. Install one or the other, not
+  both: each runs its own cart, checkout, orders and Stripe webhook.
+- Install DashCommerce Lite (`dashcommerce-lite`) from the registry in the
+  admin (Plugins). This needs EmDash 1.3 or later and a sandbox runner. On
+  Cloudflare the config passes
+  `sandbox()` from `@emdash-cms/cloudflare`, which needs a `LOADER` Worker
+  Loader binding in `wrangler.jsonc` (Workers paid plan). On Node, add a
+  runner such as `@emdash-cms/sandbox-workerd` yourself.
+- The pages use the storefront kit: `src/lib/dashcommerce.js` and
+  `src/components/AddToCart.astro`, `CartCount.astro`, `Cart.astro` and
+  `CheckoutSuccess.astro`. The product page shows `SandboxedProductInfo`.
+- `/checkout` redirects to `/cart`, which sends the shopper to Stripe
+  Checkout. Orders land on `/checkout/success`.
+- Simple products only. `/account`, `/orders/lookup`, `/subscriptions/*` and
+  `/thank-you/*` return 404, and the currency switcher is hidden.
+
+The kit files are copies of `packages/lite/storefront` in the DashCommerce
+monorepo. Edit them there and run `bun run --cwd packages/lite kit:sync`; a
+test fails when the copies drift.
+
 ## Customizing
 
 This is a *starting point*, not a framework. Everything is standard Astro — edit freely.

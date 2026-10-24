@@ -1,0 +1,67 @@
+---
+/**
+ * Product details for the sandboxed edition (DASHCOMMERCE_EDITION=sandboxed).
+ * The registry plugin sells simple products only, so other types show a
+ * note instead of the add-to-cart button.
+ */
+import AddToCart from "./AddToCart.astro";
+
+interface Props {
+	id: string;
+	data: Record<string, unknown>;
+}
+const { id, data } = Astro.props;
+
+type PriceMap = Record<string, { amount: number; compareAtAmount?: number }>;
+const prices = (data.prices ?? {}) as PriceMap;
+const currency = Object.keys(prices)[0];
+const price = currency ? prices[currency] : undefined;
+const format = (amount: number, cur: string) => {
+	const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: cur });
+	const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
+	return fmt.format(amount / 10 ** digits);
+};
+const sellable = (data.type ?? "simple") === "simple" && !data.subscription_config;
+const outOfStock = data.stock_status === "outofstock" && data.backorders !== "yes";
+const description = typeof data.short_description === "string"
+	? data.short_description
+	: typeof data.description === "string"
+		? data.description
+		: "";
+---
+
+<div class="sbx-product">
+	<h1 class="sbx-title">{String(data.title ?? "")}</h1>
+	{price && currency && (
+		<p class="sbx-price">
+			{format(price.amount, currency)}
+			{price.compareAtAmount && price.compareAtAmount > price.amount && (
+				<s class="sbx-compare">{format(price.compareAtAmount, currency)}</s>
+			)}
+		</p>
+	)}
+	{description && <p class="sbx-desc">{description}</p>}
+	{!sellable ? (
+		<p class="sbx-note">This product type cannot be bought in this store.</p>
+	) : outOfStock ? (
+		<p class="sbx-note">Out of stock</p>
+	) : (
+		<AddToCart productId={id} class="sbx-add" />
+	)}
+	<p class="sbx-cart-link"><a href="/cart">View cart</a></p>
+</div>
+
+<style>
+	.sbx-product { display: grid; gap: 1rem; }
+	.sbx-title { margin: 0; font-size: clamp(1.75rem, 3vw, 2.5rem); color: var(--text); }
+	.sbx-price { margin: 0; font-size: 1.25rem; color: var(--text); }
+	.sbx-compare { margin-left: .5rem; color: var(--text-muted); font-size: 1rem; }
+	.sbx-desc { margin: 0; color: var(--text-muted); }
+	.sbx-note { margin: 0; color: var(--text-muted); }
+	.sbx-cart-link a { color: var(--gold); }
+	.sbx-product :global(.sbx-add button) {
+		padding: .875rem 1.5rem; border: 0; border-radius: var(--radius);
+		background: var(--gold); color: #0b0b0b; font-weight: 600; cursor: pointer;
+	}
+	.sbx-product :global(.sbx-add button:disabled) { opacity: .6; cursor: progress; }
+</style>

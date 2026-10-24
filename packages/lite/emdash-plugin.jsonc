@@ -1,0 +1,103 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+
+	// Its own listing and plugin id, `dashcommerce-lite`, so it never clashes
+	// with the native plugin (`@dashcommerce/core`, id `dashcommerce`). The
+	// id also sets the route prefix (/_emdash/api/plugins/dashcommerce-lite/)
+	// and the storage namespace. The "DashCommerce Setup" listing (slug
+	// `dashcommerce`, v0.1.0) is separate and unchanged. See PUBLISHING.md.
+	"slug": "dashcommerce-lite",
+	"publisher": "did:plc:yakxzbkuhphkc5eepv7p4wrc", // dashcommerce.bsky.social
+
+	"license": "MIT",
+	"author": { "name": "Timchosen Uzua" },
+	"security": { "url": "https://github.com/emdashCommerce/dashcommerce/security" },
+	"name": "DashCommerce",
+	"description": "Sell products from your EmDash content with a cart, Stripe Checkout, stock tracking, refunds, flat tax and shipping, and CSV order export.",
+	"keywords": ["commerce", "ecommerce", "stripe", "cart", "checkout"],
+	"repo": "https://github.com/emdashCommerce/dashcommerce",
+
+	// Trust contract. Keep this list as short as possible: every entry is
+	// shown to site operators on install, and adding one later forces a
+	// re-consent. See packages/lite/DESIGN.md.
+	//   content:read     read prices and stock settings from the `products` collection
+	//   network:request  call the Stripe API (api.stripe.com only)
+	// Stock is kept in the plugin's own `stock` collection, so content:write
+	// is not needed. Order emails are not sent, so email:send is not needed.
+	"capabilities": ["content:read", "network:request"],
+	"allowedHosts": ["api.stripe.com"],
+	"storage": {
+		"orders": {
+			"indexes": [
+				"status",
+				"paymentStatus",
+				"createdAt",
+				"orderNumber",
+				"customerEmail",
+				"stripePaymentIntentId",
+				["status", "createdAt"]
+			],
+			"uniqueIndexes": ["stripeSessionId"]
+		},
+		"carts": {
+			"indexes": ["expiresAt"]
+		},
+		"stock": {
+			"indexes": ["title", "updatedAt"]
+		},
+		// One row per order and product (`${orderId}:${productId}`): makes
+		// stock changes from webhooks and admin actions idempotent.
+		"stock_moves": {
+			"indexes": ["orderId", "state"]
+		},
+		"stripe_events": {
+			"indexes": ["type", "createdAt"]
+		}
+	},
+
+	"admin": {
+		"pages": [
+			{ "path": "/orders", "label": "Orders", "icon": "shopping-bag" },
+			{ "path": "/stock", "label": "Stock", "icon": "package" },
+			{ "path": "/settings", "label": "Settings", "icon": "settings" }
+		],
+		"widgets": [{ "id": "recent-orders", "title": "Recent orders", "size": "half" }],
+		"settingsSchema": {
+			"stripeSecretKey": { "type": "secret", "label": "Stripe secret key" },
+			"stripeWebhookSecret": { "type": "secret", "label": "Stripe webhook signing secret" },
+			"currency": { "type": "string", "label": "Store currency", "default": "USD" },
+			"successUrl": {
+				"type": "string",
+				"label": "Success URL",
+				"default": "/checkout/success?order={ORDER_ID}&key={ORDER_KEY}"
+			},
+			"cancelUrl": { "type": "string", "label": "Cancel URL", "default": "/cart" },
+			"shippingCountries": {
+				"type": "string",
+				"label": "Shipping countries (ISO-2, comma separated)",
+				"default": ""
+			},
+			"flatShipping": {
+				"type": "number",
+				"label": "Flat shipping, in minor units (0 = free)",
+				"default": 0,
+				"min": 0
+			},
+			"flatTaxPercent": {
+				"type": "number",
+				"label": "Flat tax rate, percent (0 = none)",
+				"default": 0,
+				"min": 0,
+				"max": 50
+			},
+			"automaticTax": { "type": "boolean", "label": "Use Stripe Tax", "default": false }
+		}
+	},
+
+	"release": {
+		"requires": { "env:emdash": ">=1.3.0 <2.0.0" },
+		"artifacts": {
+			"icon": { "file": "./icon.png" }
+		}
+	}
+}

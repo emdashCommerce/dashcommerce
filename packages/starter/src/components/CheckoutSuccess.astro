@@ -1,0 +1,61 @@
+---
+/**
+ * Order confirmation for the success URL
+ * (default `/checkout/success?order={ORDER_ID}&key={ORDER_KEY}`).
+ * Waits for Stripe's webhook to confirm payment, then shows the order.
+ *
+ *   <CheckoutSuccess />            on src/pages/checkout/success.astro
+ *
+ * The page must be server-rendered or use client-side query parsing (this
+ * component reads the query string in the browser, so static pages work).
+ */
+---
+
+<section class="dc-order" data-dc-order>
+	<h1 data-dc-order-title>Confirming your payment...</h1>
+	<ul data-dc-order-lines></ul>
+	<p data-dc-order-total></p>
+	<p class="dc-message" data-dc-message role="status" aria-live="polite"></p>
+</section>
+
+<script>
+	import { createClient, formatMoney, orderFromQuery } from "../lib/dashcommerce.js";
+
+	const shop = createClient();
+	const root = document.querySelector<HTMLElement>("[data-dc-order]");
+	const set = (sel: string, value: string) => {
+		const el = root?.querySelector<HTMLElement>(sel);
+		if (el) el.textContent = value;
+	};
+
+	const ref = orderFromQuery();
+	if (!ref) {
+		set("[data-dc-order-title]", "Order not found");
+	} else {
+		shop
+			.waitForPayment(ref.id, ref.orderKey)
+			.then((order) => {
+				const paid = order.paymentStatus === "paid";
+				set(
+					"[data-dc-order-title]",
+					paid ? `Thank you. Order ${order.orderNumber} is confirmed.` : `Order ${order.orderNumber}`,
+				);
+				if (!paid) {
+					set(
+						"[data-dc-message]",
+						order.paymentStatus === "pending"
+							? "We have not received the payment confirmation yet. Refresh this page in a minute."
+							: `Payment status: ${order.paymentStatus}`,
+					);
+				}
+				const lines = root?.querySelector("[data-dc-order-lines]");
+				for (const item of order.items) {
+					const li = document.createElement("li");
+					li.textContent = `${item.quantity} x ${item.title}: ${formatMoney(item.lineTotal)}`;
+					lines?.append(li);
+				}
+				set("[data-dc-order-total]", `Total: ${formatMoney(order.total)}`);
+			})
+			.catch((err) => set("[data-dc-order-title]", err instanceof Error ? err.message : "Order not found"));
+	}
+</script>

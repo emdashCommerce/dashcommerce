@@ -3,8 +3,8 @@ import node from "@astrojs/node";
 import react from "@astrojs/react";
 import sitemap from "@astrojs/sitemap";
 import { dashcommerce } from "@dashcommerce/core";
-import { d1, r2 } from "@emdash-cms/cloudflare";
-import { defineConfig, passthroughImageService } from "astro/config";
+import { d1, r2, sandbox } from "@emdash-cms/cloudflare";
+import { defineConfig, envField, passthroughImageService } from "astro/config";
 import emdash, { local, s3 } from "emdash/astro";
 import { postgres, sqlite } from "emdash/db";
 
@@ -13,6 +13,15 @@ import { postgres, sqlite } from "emdash/db";
 //   - Node prod (Railway): Postgres via DATABASE_URL + S3/R2 via S3_* env vars
 //   - Cloudflare Workers: D1 binding + R2 binding, selected by DEPLOY_TARGET=cloudflare
 const target = process.env.DEPLOY_TARGET === "cloudflare" ? "cloudflare" : "node";
+
+// Storefront edition. "native" (default) registers @dashcommerce/core.
+// "sandboxed" leaves core out so DashCommerce Lite can be installed from the
+// EmDash plugin registry instead (plugin id "dashcommerce-lite"; core is
+// "dashcommerce"; install one or the other, not both), and the pages switch
+// to the storefront kit in src/lib/dashcommerce.js. See README.md,
+// "Sandboxed edition".
+const edition =
+	process.env.DASHCOMMERCE_EDITION === "sandboxed" ? "sandboxed" : "native";
 
 const adapter =
 	target === "cloudflare" ? cloudflare() : node({ mode: "standalone" });
@@ -49,6 +58,16 @@ export default defineConfig({
 		// sharp (Astro's default) is Node-only; Workers uses the passthrough service.
 		...(target === "cloudflare" ? { service: passthroughImageService() } : {}),
 	},
+	env: {
+		schema: {
+			DASHCOMMERCE_EDITION: envField.enum({
+				context: "server",
+				access: "public",
+				values: ["native", "sandboxed"],
+				default: "native",
+			}),
+		},
+	},
 	integrations: [
 		react(),
 		sitemap({
@@ -62,7 +81,14 @@ export default defineConfig({
 		emdash({
 			database,
 			storage,
-			plugins: [dashcommerce()],
+			plugins: edition === "native" ? [dashcommerce()] : [],
+			// Registry installs need a sandbox runner. On Cloudflare this is
+			// the Worker Loader runner, which needs the LOADER binding in
+			// wrangler.jsonc (paid plan); without it sandbox() returns
+			// undefined and registry installs stay off.
+			...(edition === "sandboxed" && target === "cloudflare"
+				? { sandboxRunner: sandbox() }
+				: {}),
 		}),
 	],
 	devToolbar: { enabled: false },

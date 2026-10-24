@@ -1,0 +1,114 @@
+---
+/**
+ * Cart page or drawer body: lines with quantity controls, totals, and a
+ * checkout button that sends the shopper to Stripe Checkout.
+ *
+ *   <Cart />                       on src/pages/cart.astro
+ *   <Cart askEmail={false} />      skip the email field (Stripe asks for it)
+ */
+interface Props {
+	askEmail?: boolean;
+	emptyText?: string;
+}
+const { askEmail = true, emptyText = "Your cart is empty." } = Astro.props;
+---
+
+<section class="dc-cart" data-dc-cart data-dc-empty-text={emptyText}>
+	<p class="dc-cart-loading">Loading cart...</p>
+	<ul class="dc-cart-lines" data-dc-lines></ul>
+	<dl class="dc-cart-totals" data-dc-totals hidden>
+		<dt>Subtotal</dt><dd data-dc-subtotal></dd>
+		<dt data-dc-shipping-row>Shipping</dt><dd data-dc-shipping></dd>
+		<dt data-dc-tax-row>Tax</dt><dd data-dc-tax></dd>
+		<dt>Total</dt><dd data-dc-total></dd>
+	</dl>
+	<form class="dc-checkout" data-dc-checkout hidden>
+		{askEmail && (
+			<label>Email <input type="email" name="email" autocomplete="email" /></label>
+		)}
+		<button type="submit">Checkout</button>
+		<p class="dc-message" data-dc-message role="status" aria-live="polite"></p>
+	</form>
+</section>
+
+<script>
+	import { CART_EVENT, createClient, formatMoney, type Cart } from "../lib/dashcommerce.js";
+
+	const shop = createClient();
+	const root = document.querySelector<HTMLElement>("[data-dc-cart]");
+
+	function text(sel: string, value: string) {
+		const el = root?.querySelector<HTMLElement>(sel);
+		if (el) el.textContent = value;
+	}
+
+	function render(cart: Cart) {
+		if (!root) return;
+		root.querySelector(".dc-cart-loading")?.remove();
+		const lines = root.querySelector<HTMLUListElement>("[data-dc-lines]");
+		const totals = root.querySelector<HTMLElement>("[data-dc-totals]");
+		const form = root.querySelector<HTMLFormElement>("[data-dc-checkout]");
+		if (!lines || !totals || !form) return;
+		lines.replaceChildren();
+		if (cart.items.length === 0) {
+			const li = document.createElement("li");
+			li.textContent = root.dataset.dcEmptyText ?? "Your cart is empty.";
+			lines.append(li);
+		}
+		for (const item of cart.items) {
+			const li = document.createElement("li");
+			li.className = "dc-cart-line";
+			const title = document.createElement("span");
+			title.textContent = item.title;
+			const qty = document.createElement("input");
+			qty.type = "number";
+			qty.min = "0";
+			qty.max = "99";
+			qty.value = String(item.quantity);
+			qty.setAttribute("aria-label", `Quantity of ${item.title}`);
+			qty.addEventListener("change", () => update(item.lineId, Number(qty.value)));
+			const price = document.createElement("span");
+			price.textContent = formatMoney(item.lineSubtotal);
+			const remove = document.createElement("button");
+			remove.type = "button";
+			remove.textContent = "Remove";
+			remove.addEventListener("click", () => update(item.lineId, 0));
+			li.append(title, qty, price, remove);
+			lines.append(li);
+		}
+		const empty = cart.items.length === 0;
+		totals.hidden = empty;
+		form.hidden = empty;
+		text("[data-dc-subtotal]", formatMoney(cart.subtotal));
+		text("[data-dc-shipping]", formatMoney(cart.shippingTotal));
+		text("[data-dc-tax]", cart.taxAtCheckout ? "Calculated at checkout" : formatMoney(cart.taxTotal));
+		text("[data-dc-total]", formatMoney(cart.total));
+	}
+
+	async function update(lineId: string, quantity: number) {
+		try {
+			await shop.updateItem(lineId, quantity);
+		} catch (err) {
+			text("[data-dc-message]", err instanceof Error ? err.message : "Could not update the cart");
+			render(await shop.getCart());
+		}
+	}
+
+	window.addEventListener(CART_EVENT, (e) => render((e as CustomEvent<Cart>).detail));
+
+	root?.querySelector<HTMLFormElement>("[data-dc-checkout]")?.addEventListener("submit", async (e) => {
+		e.preventDefault();
+		const form = e.currentTarget as HTMLFormElement;
+		const button = form.querySelector("button");
+		const email = new FormData(form).get("email");
+		if (button) button.disabled = true;
+		try {
+			await shop.redirectToCheckout(typeof email === "string" && email ? { email } : {});
+		} catch (err) {
+			text("[data-dc-message]", err instanceof Error ? err.message : "Could not start checkout");
+			if (button) button.disabled = false;
+		}
+	});
+
+	shop.getCart().catch((err) => text("[data-dc-message]", String(err?.message ?? err)));
+</script>

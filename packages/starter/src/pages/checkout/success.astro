@@ -1,0 +1,27 @@
+---
+/**
+ * Order confirmation for the sandboxed edition. The registry plugin's
+ * default success URL is /checkout/success?order={ORDER_ID}&key={ORDER_KEY}.
+ * The native edition uses /thank-you/[draft] instead, so this page is a 404
+ * there.
+ */
+import Shop from "../../layouts/Shop.astro";
+import CheckoutSuccess from "../../components/CheckoutSuccess.astro";
+import { SANDBOXED } from "../../lib/edition";
+
+export const prerender = false;
+
+if (!SANDBOXED) return new Response("Not found", { status: 404 });
+---
+
+<Shop title="Order confirmation" description="Your order status.">
+	<div class="container-narrow success-wrap">
+		<CheckoutSuccess />
+		<p><a href="/shop">Back to shop</a></p>
+	</div>
+</Shop>
+
+<style>
+	.success-wrap { padding: 3rem 0 6rem; }
+	.success-wrap a { color: var(--gold); }
+</style>
