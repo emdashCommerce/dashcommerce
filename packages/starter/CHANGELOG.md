@@ -1,5 +1,11 @@
 # @dashcommerce/starter
 
+## 0.3.7
+
+### Patch Changes
+
+- [#53](https://github.com/emdashCommerce/dashcommerce/pull/53) [`ff67d95`](https://github.com/emdashCommerce/dashcommerce/commit/ff67d95ea475abd35cfb2d96f47adfddd92fcbb0) Thanks [@cavewebs](https://github.com/cavewebs)! - Require EmDash 1.3.1 (`emdash` and `@emdash-cms/cloudflare` ^1.3.1) and document the commented `worker_loaders` binding that sandboxed plugins such as DashCommerce Lite need on Cloudflare (Workers Paid).
+
 ## 0.3.6
 
 ### Patch Changes
