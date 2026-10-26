@@ -5,7 +5,7 @@
 	"publisher": "did:plc:yakxzbkuhphkc5eepv7p4wrc", // dashcommerce.bsky.social
 
 	"name": "DashCommerce Setup",
-	"description": "Setup guide for DashCommerce. The full store installs from npm as @dashcommerce/core; this listing shows the install steps in your admin.",
+	"description": "Setup guide for DashCommerce: @dashcommerce/core on npm, or DashCommerce Lite (dashcommerce-lite) in this registry. Don't install both.",
 	"keywords": ["commerce", "ecommerce", "stripe", "store", "setup"],
 	"license": "MIT",
 	"author": { "name": "Timchosen Uzua" },
