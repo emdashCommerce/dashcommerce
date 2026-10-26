@@ -6,6 +6,10 @@ hosted Checkout, a signed Stripe webhook, a stock ledger, refunds from
 Stripe, flat tax and shipping or Stripe Tax, and Block Kit pages for
 orders, stock and settings.
 
+Install it from the EmDash plugin registry:
+[DashCommerce Lite on plugins.emdashcms.com](https://plugins.emdashcms.com/plugins/@dashcommerce.bsky.social/dashcommerce-lite).
+On Cloudflare it needs the Workers Paid plan (see Setup).
+
 This package lives at `packages/lite` (`@dashcommerce/lite`, private). The
 full native plugin is `@dashcommerce/core`.
 
