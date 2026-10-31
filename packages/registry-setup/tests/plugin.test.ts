@@ -50,7 +50,7 @@ describe("setup page", () => {
 		expect(text).toContain("npm install @dashcommerce/core");
 		expect(text).toContain("npm create @dashcommerce@latest");
 		expect(text).toContain("plugins: [dashcommerce()]");
-		expect(text).toContain("emdash@1.3.1.patch");
+		expect(text).toContain("emdash@1.4.0.patch");
 		expect(text).toContain("https://demo.dashcommerce.dev");
 		expect(text).toContain("https://dashcommerce.dev/docs");
 		expect(text).toContain("https://github.com/emdashCommerce/dashcommerce");

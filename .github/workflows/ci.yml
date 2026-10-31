@@ -89,6 +89,7 @@ jobs:
           - "1.2.0"   # 1.2 hashed-dist patch (version-exact)
           - "1.3.0"   # 1.3 hashed-dist patch (version-exact)
           - "1.3.1"   # 1.3.1 renamed hashed chunks (version-exact)
+          - "1.4.0"   # 1.4 hashed-dist patch (version-exact)
           # Add new versions as they're tested and verified
     steps:
       - uses: actions/checkout@v4
