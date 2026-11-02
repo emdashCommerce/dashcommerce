@@ -37,14 +37,15 @@ const BUN_PATCH = `// package.json (Bun). Keep only the line for your installed 
     "emdash@1.1.0": "node_modules/@dashcommerce/core/patches/emdash@1.1.0.patch",
     "emdash@1.2.0": "node_modules/@dashcommerce/core/patches/emdash@1.2.0.patch",
     "emdash@1.3.0": "node_modules/@dashcommerce/core/patches/emdash@1.3.0.patch",
-    "emdash@1.3.1": "node_modules/@dashcommerce/core/patches/emdash@1.3.1.patch"
+    "emdash@1.3.1": "node_modules/@dashcommerce/core/patches/emdash@1.3.1.patch",
+    "emdash@1.4.0": "node_modules/@dashcommerce/core/patches/emdash@1.4.0.patch"
   }
 }`;
 
 const NPM_PATCH = `npm install -D patch-package
 mkdir -p patches
-# copy the file that matches your installed EmDash version, for example 1.3.1:
-cp node_modules/@dashcommerce/core/patches/emdash@1.3.1.patch patches/
+# copy the file that matches your installed EmDash version, for example 1.4.0:
+cp node_modules/@dashcommerce/core/patches/emdash@1.4.0.patch patches/
 # add "postinstall": "patch-package" to your package.json scripts, then:
 npm install`;
 
@@ -81,7 +82,7 @@ export function renderSetupPage(): BlockResponse {
 				type: "fields",
 				fields: [
 					{ label: "npm package", value: "@dashcommerce/core" },
-					{ label: "EmDash versions DashCommerce supports", value: "0.37.x, or 1.1.0 to 1.3.x" },
+					{ label: "EmDash versions DashCommerce supports", value: "0.37.x, or 1.1.0 to 1.4.x" },
 					{ label: "Hosting", value: "Cloudflare Workers or Node.js" },
 					{ label: "Payments", value: "Stripe (test mode works out of the box)" },
 				],
@@ -130,7 +131,7 @@ export function renderSetupPage(): BlockResponse {
 			{ type: "code", language: "ts", code: ASTRO_CONFIG },
 			{
 				type: "section",
-				text: "3. Apply the EmDash patch for your exact EmDash version. DashCommerce needs it for Stripe webhook signatures, cart cookies and redirects. Patches ship for EmDash 0.37.0, 1.1.0, 1.2.0, 1.3.0 and 1.3.1, and each one only applies to that exact version. Check your version with npm ls emdash.",
+				text: "3. Apply the EmDash patch for your exact EmDash version. DashCommerce needs it for Stripe webhook signatures, cart cookies and redirects. Patches ship for EmDash 0.37.0, 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.4.0, and each one only applies to that exact version. Check your version with npm ls emdash.",
 			},
 			{ type: "code", language: "jsonc", code: BUN_PATCH },
 			{ type: "context", text: "With Bun, run bun install after editing package.json." },
