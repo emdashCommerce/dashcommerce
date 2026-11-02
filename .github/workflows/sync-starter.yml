@@ -167,11 +167,65 @@ jobs:
           console.log('Wrote flat-repo railway.json (uses build:node for Railway)');
           NODE
 
+      # Version Packages merges bump core in git before Tim's local OTP
+      # publish lands on npm. bun install against ^x.y.z then fails with
+      # "No version matching" and the job dies, so the starter never syncs.
+      # Retry only that unpublished-core race (a few minutes, backoff).
+      # Any other bun install failure still fails the job immediately.
+      # Retries pass --force so bun does not reuse a 5-minute-stale
+      # registry manifest from the first miss.
       - name: Regenerate standalone lockfile
+        timeout-minutes: 15
         working-directory: target
         run: |
+          set -euo pipefail
           rm -f bun.lock bun.lockb
-          bun install --ignore-scripts
+
+          CORE_SPEC="$(node -p "require('./package.json').dependencies['@dashcommerce/core'] || ''")"
+          echo "Installing with @dashcommerce/core pinned to ${CORE_SPEC:-<not present>}"
+
+          LOG="${RUNNER_TEMP}/bun-install.log"
+          attempt=1
+          max_attempts=8
+          delay=15
+
+          while true; do
+            echo "::group::bun install attempt ${attempt}/${max_attempts}"
+            install_args=(--ignore-scripts)
+            if [ "${attempt}" -gt 1 ]; then
+              install_args+=(--force)
+              echo "Retrying with --force so bun does not reuse a stale registry manifest"
+            fi
+            set +e
+            bun install "${install_args[@]}" 2>&1 | tee "${LOG}"
+            status="${PIPESTATUS[0]}"
+            set -e
+            echo "::endgroup::"
+
+            if [ "${status}" -eq 0 ]; then
+              echo "::notice::bun install succeeded on attempt ${attempt}"
+              break
+            fi
+
+            if grep -Eq 'No version matching .* specifier "@dashcommerce/core"|@dashcommerce/core@[^[:space:]]* failed to resolve' "${LOG}"; then
+              if [ "${attempt}" -ge "${max_attempts}" ]; then
+                echo "::error::@dashcommerce/core ${CORE_SPEC} was still unpublished after ${attempt} attempts (~5 minutes). Publish it to npm (local OTP), then re-run this workflow."
+                exit "${status}"
+              fi
+              echo "::warning::@dashcommerce/core ${CORE_SPEC} is not on the npm registry yet (attempt ${attempt}/${max_attempts}). Expected right after a Version Packages merge, before local OTP publish. Retrying in ${delay}s."
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+              delay=$((delay + 15))
+              if [ "${delay}" -gt 60 ]; then
+                delay=60
+              fi
+              rm -f bun.lock bun.lockb
+              continue
+            fi
+
+            echo "::error::bun install failed with a non-retryable error (attempt ${attempt})"
+            exit "${status}"
+          done
 
       - name: Commit + push to target
         working-directory: target
