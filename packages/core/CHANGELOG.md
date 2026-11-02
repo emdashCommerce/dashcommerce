@@ -1,5 +1,11 @@
 # Changelog — @dashcommerce/core
 
+## 0.3.3
+
+### Patch Changes
+
+- [#60](https://github.com/emdashCommerce/dashcommerce/pull/60) [`37b9afc`](https://github.com/emdashCommerce/dashcommerce/commit/37b9afcba62db4d34fb40660c954721d13fc7166) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 1.4.0. Ship `patches/emdash@1.4.0.patch` (same raw Response passthrough and request body clone fix as 1.3.1, retargeted at 1.4.0's hashed dist files). Widen the EmDash peer range to `>=0.37.0 <0.38.0 || >=1.1.0 <1.5.0` so create-emdash 1.4 installs pass peer checks. Cap below 1.5 so the next untested EmDash minor is still rejected.
+
 ## 0.3.2
 
 ### Patch Changes

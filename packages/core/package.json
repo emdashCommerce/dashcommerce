@@ -1,6 +1,6 @@
 {
 	"name": "@dashcommerce/core",
-	"version": "0.3.2",
+	"version": "0.3.3",
 	"description": "DashCommerce — full WooCommerce-equivalent commerce plugin for EmDash CMS",
 	"type": "module",
 	"main": "dist/index.js",
