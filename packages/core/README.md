@@ -2,7 +2,7 @@
 
 The e-commerce plugin for [EmDash CMS](https://github.com/emdash-cms/emdash).
 
-**Current npm version: 0.2.2.** See the monorepo README for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
+**Current npm version: 0.3.4.** See the monorepo README for the full feature list and quick start, or [dashcommerce.dev/docs](https://dashcommerce.dev/docs) for guides. Live demo: [demo.dashcommerce.dev](https://demo.dashcommerce.dev).
 
 ## Package exports
 
