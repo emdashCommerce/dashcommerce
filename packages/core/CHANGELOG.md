@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- [`32f4f57`](https://github.com/emdashCommerce/dashcommerce/commit/32f4f577535c7216b9e173066ee22058a671bea4) - Republish with a fresh build so the shipped dist matches main (EmDash peer `<1.5.0` / runtime version-check). npm 0.3.3 incorrectly shipped the 0.3.2 dist. See [#63](https://github.com/emdashCommerce/dashcommerce/issues/63).
+- [#65](https://github.com/emdashCommerce/dashcommerce/pull/65) [`32f4f57`](https://github.com/emdashCommerce/dashcommerce/commit/32f4f577535c7216b9e173066ee22058a671bea4) - Republish with a fresh build so the shipped dist matches main (EmDash peer `<1.5.0` / runtime version-check). npm 0.3.3 incorrectly shipped the 0.3.2 dist. See [#63](https://github.com/emdashCommerce/dashcommerce/issues/63).
 
 ## 0.3.3
 
