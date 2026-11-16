@@ -1,5 +1,5 @@
 ---
-import type { MediaValue } from "emdash";
+import type { MediaValue, PortableTextBlock } from "emdash";
 import {
   getEmDashEntry,
   getEntryTerms,
@@ -33,13 +33,13 @@ const minutes = post.data.reading_minutes ?? 0;
 // exists — otherwise the portable-text component silently renders nothing
 // and the page looks bodyless.
 const rawBody: unknown = post.data.body;
-let body: unknown[] = [];
+let body: PortableTextBlock[] = [];
 if (Array.isArray(rawBody)) {
-  body = rawBody;
+  body = rawBody as PortableTextBlock[];
 } else if (typeof rawBody === "string" && rawBody.trim().startsWith("[")) {
   try {
-    const parsed = JSON.parse(rawBody);
-    if (Array.isArray(parsed)) body = parsed;
+    const parsed = JSON.parse(rawBody) as unknown;
+    if (Array.isArray(parsed)) body = parsed as PortableTextBlock[];
   } catch {
     // Malformed JSON — fall through to empty body.
   }
