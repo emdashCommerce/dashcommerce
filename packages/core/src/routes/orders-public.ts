@@ -11,8 +11,9 @@
  *     - Returns `{ status: "failed" }` if the draft snapshot is gone and
  *       no order was created (Stripe webhook never arrived / PI failed).
  *
- * We don't leak arbitrary orders — access is keyed on `orderDraftId`
- * which only the session that created the PI knows.
+ * Access is keyed on `orderDraftId`, but that id travels in the
+ * thank-you URL, so treat it as public: the "ready" response is reduced
+ * to the fields the thank-you page renders (see toPublicOrder).
  *
  * Why a query string instead of `/orders/by-draft/:id`? emdash's
  * PluginRouteRegistry does an exact-string lookup on the route key — it
@@ -43,6 +44,59 @@ function json(body: unknown, status = 200): Response {
 	});
 }
 
+/**
+ * What the public thank-you poll is allowed to return.
+ *
+ * The route is unauthenticated: anyone holding the draft id (it sits in
+ * the thank-you URL, browser history and Referer headers) can call it.
+ * So the response carries only what the thank-you page renders: no
+ * addresses, Stripe ids, IP, user agent, metadata or vendor splits.
+ * The email is masked; the full address is in the receipt email.
+ */
+export interface PublicOrderSummary {
+	id: string;
+	orderNumber: string;
+	status: Order["status"];
+	customerEmail: string;
+	currency: Order["currency"];
+	total: Order["total"];
+}
+
+export interface PublicOrderItem {
+	id: string;
+	name: string;
+	quantity: number;
+	total: OrderItem["total"];
+}
+
+/** "jane.doe@example.com" → "j***@example.com". */
+export function maskEmail(email: string | undefined): string {
+	if (!email) return "";
+	const at = email.lastIndexOf("@");
+	if (at <= 0) return "***";
+	return `${email[0]}***${email.slice(at)}`;
+}
+
+export function toPublicOrder(order: Order): PublicOrderSummary {
+	return {
+		id: order.id,
+		orderNumber: order.orderNumber,
+		status: order.status,
+		customerEmail: maskEmail(order.customerEmail),
+		currency: order.currency,
+		total: order.total,
+	};
+}
+
+export function toPublicOrderItem(item: OrderItem): PublicOrderItem {
+	return {
+		id: item.id,
+		name: item.name,
+		quantity: item.quantity,
+		total: item.total,
+	};
+}
+
 function parseDraftId(req: Request): string | null {
 	const url = new URL(req.url);
 	// Preferred: ?id=xxx (what the thank-you island sends).
@@ -54,7 +108,7 @@ function parseDraftId(req: Request): string | null {
 	// helper robust for tests / future matchers.
 	const parts = url.pathname.split("/").filter(Boolean);
 	const idx = parts.lastIndexOf("by-draft");
-	return idx === -1 ? null : parts[idx + 1] ?? null;
+	return idx === -1 ? null : (parts[idx + 1] ?? null);
 }
 
 export const ordersPublicRoutes = {
@@ -73,9 +127,7 @@ export const ordersPublicRoutes = {
 				limit: 200,
 			});
 			const match = recent.items.find((r) => {
-				const meta = (r.data as Order).metadata as
-					| { orderDraftId?: string }
-					| undefined;
+				const meta = (r.data as Order).metadata as { orderDraftId?: string } | undefined;
 				return meta?.orderDraftId === orderDraftId;
 			});
 			if (match) {
@@ -85,8 +137,8 @@ export const ordersPublicRoutes = {
 						where: { orderId: order.id },
 						limit: 200,
 					})
-				).items.map((r) => orderItemFromStorage(r.id, r.data as OrderItem));
-				return json({ status: "ready", order, items });
+				).items.map((r) => toPublicOrderItem(orderItemFromStorage(r.id, r.data as OrderItem)));
+				return json({ status: "ready", order: toPublicOrder(order), items });
 			}
 
 			// No order yet — is the draft snapshot still around?
