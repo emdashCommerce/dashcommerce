@@ -1,5 +1,14 @@
 # @dashcommerce/starter
 
+## 0.3.10
+
+### Patch Changes
+
+- [#70](https://github.com/emdashCommerce/dashcommerce/pull/70) [`00d81ad`](https://github.com/emdashCommerce/dashcommerce/commit/00d81add96f0a643b47396eba9dfc8134f46bfbe) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 1.5.0. Ship `patches/emdash@1.5.0.patch` (same raw Response passthrough and request body clone fix as 1.4.0, retargeted at 1.5.0's hashed dist files `routes-QcHRiebw.mjs` and `http-route-dispatch-BsjkWBZF.mjs`). Widen the EmDash peer range to `>=0.37.0 <0.38.0 || >=1.1.0 <1.6.0` so create-emdash 1.5 installs pass peer checks. Cap below 1.6 so the next untested EmDash minor is still rejected. Point the starter at `emdash` / `@emdash-cms/cloudflare` ^1.5.0, refresh its migrations snapshot, and type PortableText `value` for 1.5.0's stricter `emdash/ui` props.
+
+- Updated dependencies [[`00d81ad`](https://github.com/emdashCommerce/dashcommerce/commit/00d81add96f0a643b47396eba9dfc8134f46bfbe), [`2577cbf`](https://github.com/emdashCommerce/dashcommerce/commit/2577cbf531cd81f551921a4bce6dcb6323d01fd9), [`f94864a`](https://github.com/emdashCommerce/dashcommerce/commit/f94864ab690680c14a37602a07960e0e96751b5a)]:
+  - @dashcommerce/core@0.3.5
+
 ## 0.3.9
 
 ### Patch Changes

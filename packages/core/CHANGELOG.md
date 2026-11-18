@@ -1,5 +1,15 @@
 # Changelog — @dashcommerce/core
 
+## 0.3.5
+
+### Patch Changes
+
+- [#70](https://github.com/emdashCommerce/dashcommerce/pull/70) [`00d81ad`](https://github.com/emdashCommerce/dashcommerce/commit/00d81add96f0a643b47396eba9dfc8134f46bfbe) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 1.5.0. Ship `patches/emdash@1.5.0.patch` (same raw Response passthrough and request body clone fix as 1.4.0, retargeted at 1.5.0's hashed dist files `routes-QcHRiebw.mjs` and `http-route-dispatch-BsjkWBZF.mjs`). Widen the EmDash peer range to `>=0.37.0 <0.38.0 || >=1.1.0 <1.6.0` so create-emdash 1.5 installs pass peer checks. Cap below 1.6 so the next untested EmDash minor is still rejected. Point the starter at `emdash` / `@emdash-cms/cloudflare` ^1.5.0, refresh its migrations snapshot, and type PortableText `value` for 1.5.0's stricter `emdash/ui` props.
+
+- [#69](https://github.com/emdashCommerce/dashcommerce/pull/69) [`2577cbf`](https://github.com/emdashCommerce/dashcommerce/commit/2577cbf531cd81f551921a4bce6dcb6323d01fd9) Thanks [@robertmonroe](https://github.com/robertmonroe)! - Stop `GET /orders/by-draft` from returning the full stored order ([#68](https://github.com/emdashCommerce/dashcommerce/issues/68)). The route is public and its draft id travels in the thank-you URL, so the `ready` response now carries only what the thank-you page renders: order id, number, status, currency, total, a masked customer email, and each item's id, name, quantity and total. Addresses, Stripe ids, IP address, user agent, coupon codes, notes, metadata and vendor data are no longer exposed. The receipt line on the thank-you page now shows the masked email (`j***@example.com`).
+
+- [#72](https://github.com/emdashCommerce/dashcommerce/pull/72) [`f94864a`](https://github.com/emdashCommerce/dashcommerce/commit/f94864ab690680c14a37602a07960e0e96751b5a) Thanks [@cavewebs](https://github.com/cavewebs)! - Stop public review and subscription routes from returning stored records. `GET /reviews/list` and `GET /reviews/item` now return an allowlisted shape (id, rating, title, body, display name, createdAt, verifiedPurchase) so customer email, customerId and moderation metadata never reach the storefront. `GET /subscriptions/state` returns only the portal island fields (status, amount, interval, period end, cancel-at-period-end) and no longer includes stripeSubscriptionId or customerId. Cancel/pause/resume still run; they echo Stripe status, not Stripe ids.
+
 ## 0.3.4
 
 ### Patch Changes
