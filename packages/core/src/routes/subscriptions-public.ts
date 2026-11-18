@@ -10,10 +10,12 @@
  * Routes use static paths + query/body params because emdash's plugin
  * route registry does exact-string matching (no `:param` support).
  *
- * The token carries the subscription id + expiry + HMAC. Every lifecycle
- * call forwards to Stripe; the `customer.subscription.updated` webhook
- * mirrors the change back into our storage. We do NOT mutate our local
- * row directly to keep Stripe authoritative.
+ * The token carries the subscription id + expiry + HMAC. The token
+ * travels in emailed URLs, so treat it as public: /subscriptions/state
+ * returns only what SubscriptionPortalIsland renders (see
+ * toPublicSubscription). stripeSubscriptionId and customerId stay off
+ * the wire. Lifecycle POSTs still forward to Stripe; they echo Stripe
+ * status only, never Stripe ids.
  *
  * The portal action hands out a Stripe-hosted Billing Portal URL so
  * customers can update cards, download invoices, and manage billing
@@ -23,8 +25,8 @@
  */
 
 import type { PluginContext, RouteContext } from "emdash";
-import type { StripeClientOptions } from "../stripe/client";
 import { createBillingPortalSession } from "../stripe/checkout-sessions";
+import type { StripeClientOptions } from "../stripe/client";
 import { findSubscription } from "../subscriptions/create";
 import { cancel, pause, resume } from "../subscriptions/lifecycle";
 import { verifyToken } from "../subscriptions/tokens";
@@ -45,15 +47,41 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
+ * What the token-gated /subscriptions/state endpoint is allowed to
+ * return. Matches SubscriptionPortalIsland: status, price, interval,
+ * next bill date, cancel-at-period-end. No Stripe or customer ids.
+ */
+export interface PublicSubscription {
+	id: string;
+	status: Subscription["status"];
+	currency: Subscription["currency"];
+	unitAmount: Subscription["unitAmount"];
+	interval: Subscription["interval"];
+	intervalCount: number;
+	currentPeriodEnd: Subscription["currentPeriodEnd"];
+	cancelAtPeriodEnd: boolean;
+}
+
+export function toPublicSubscription(sub: Subscription): PublicSubscription {
+	return {
+		id: sub.id,
+		status: sub.status,
+		currency: sub.currency,
+		unitAmount: sub.unitAmount,
+		interval: sub.interval,
+		intervalCount: sub.intervalCount,
+		currentPeriodEnd: sub.currentPeriodEnd,
+		cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+	};
+}
+
+/**
  * Read the token from `?token=…` (GET) or the JSON body (POST). Older
  * client callers may still send tokens via path segments; we fall back
  * to the last non-action segment for backwards-compat even though the
  * new route names are static.
  */
-function extractToken(
-	req: Request,
-	input: { token?: string } | undefined,
-): string | null {
+function extractToken(req: Request, input: { token?: string } | undefined): string | null {
 	if (input?.token) return input.token;
 	const url = new URL(req.url);
 	const qs = url.searchParams.get("token");
@@ -64,10 +92,7 @@ function extractToken(
 async function loadAuthorisedSub(
 	ctx: PluginContext,
 	token: string | null,
-): Promise<
-	| { ok: true; subscription: Subscription }
-	| { ok: false; response: Response }
-> {
+): Promise<{ ok: true; subscription: Subscription } | { ok: false; response: Response }> {
 	if (!token) {
 		return { ok: false, response: jsonResponse({ error: "Missing token" }, 400) };
 	}
@@ -85,21 +110,15 @@ async function loadAuthorisedSub(
 	return { ok: true, subscription: sub };
 }
 
-async function handleState(
-	routeCtx: RouteContext,
-	_ctx?: PluginContext,
-): Promise<Response> {
+async function handleState(routeCtx: RouteContext, _ctx?: PluginContext): Promise<Response> {
 	const ctx = (_ctx ?? (routeCtx as unknown as PluginContext)) as PluginContext;
 	const token = extractToken(routeCtx.request, routeCtx.input as { token?: string });
 	const loaded = await loadAuthorisedSub(ctx, token);
 	if (!loaded.ok) return loaded.response;
-	return jsonResponse({ subscription: loaded.subscription });
+	return jsonResponse({ subscription: toPublicSubscription(loaded.subscription) });
 }
 
-async function handleCancel(
-	routeCtx: RouteContext,
-	_ctx?: PluginContext,
-): Promise<Response> {
+async function handleCancel(routeCtx: RouteContext, _ctx?: PluginContext): Promise<Response> {
 	const ctx = (_ctx ?? (routeCtx as unknown as PluginContext)) as PluginContext;
 	const input = (routeCtx.input ?? {}) as {
 		token?: string;
@@ -117,7 +136,7 @@ async function handleCancel(
 			mode: input.mode ?? "at_period_end",
 			client,
 		});
-		return jsonResponse({ stripeStatus: updated.status, stripeSubscriptionId: updated.id });
+		return jsonResponse({ status: updated.status });
 	} catch (err) {
 		ctx.log.error("Subscription cancel failed", {
 			subscriptionId: loaded.subscription.id,
@@ -130,10 +149,7 @@ async function handleCancel(
 	}
 }
 
-async function handlePause(
-	routeCtx: RouteContext,
-	_ctx?: PluginContext,
-): Promise<Response> {
+async function handlePause(routeCtx: RouteContext, _ctx?: PluginContext): Promise<Response> {
 	const ctx = (_ctx ?? (routeCtx as unknown as PluginContext)) as PluginContext;
 	const input = (routeCtx.input ?? {}) as {
 		token?: string;
@@ -151,7 +167,7 @@ async function handlePause(
 			...(input.resumesAt !== undefined ? { resumesAt: input.resumesAt } : {}),
 			client,
 		});
-		return jsonResponse({ stripeStatus: updated.status, stripeSubscriptionId: updated.id });
+		return jsonResponse({ status: updated.status });
 	} catch (err) {
 		ctx.log.error("Subscription pause failed", {
 			subscriptionId: loaded.subscription.id,
@@ -164,10 +180,7 @@ async function handlePause(
 	}
 }
 
-async function handleResume(
-	routeCtx: RouteContext,
-	_ctx?: PluginContext,
-): Promise<Response> {
+async function handleResume(routeCtx: RouteContext, _ctx?: PluginContext): Promise<Response> {
 	const ctx = (_ctx ?? (routeCtx as unknown as PluginContext)) as PluginContext;
 	const input = (routeCtx.input ?? {}) as { token?: string };
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
@@ -181,7 +194,7 @@ async function handleResume(
 			subscriptionId: loaded.subscription.id,
 			client,
 		});
-		return jsonResponse({ stripeStatus: updated.status, stripeSubscriptionId: updated.id });
+		return jsonResponse({ status: updated.status });
 	} catch (err) {
 		ctx.log.error("Subscription resume failed", {
 			subscriptionId: loaded.subscription.id,
@@ -204,10 +217,7 @@ async function handleResume(
  * The portal URL is short-lived (~5 min). We build a fresh one per
  * request rather than caching, so a leaked URL can't be replayed.
  */
-async function handlePortal(
-	routeCtx: RouteContext,
-	_ctx?: PluginContext,
-): Promise<Response> {
+async function handlePortal(routeCtx: RouteContext, _ctx?: PluginContext): Promise<Response> {
 	const ctx = (_ctx ?? (routeCtx as unknown as PluginContext)) as PluginContext;
 	const input = (routeCtx.input ?? {}) as { token?: string; returnUrl?: string };
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
@@ -217,19 +227,14 @@ async function handlePortal(
 	// customer row the subscription is linked to.
 	const customerId = loaded.subscription.customerId;
 	if (!customerId) {
-		return jsonResponse(
-			{ error: "Subscription has no linked customer — cannot open portal" },
-			409,
-		);
+		return jsonResponse({ error: "Subscription has no linked customer — cannot open portal" }, 409);
 	}
 	const row = await (
 		ctx.storage as unknown as {
 			customers: { get(id: string): Promise<unknown> };
 		}
 	).customers.get(customerId);
-	const customer = row
-		? ({ ...(row as object), id: customerId } as unknown as Customer)
-		: null;
+	const customer = row ? ({ ...(row as object), id: customerId } as unknown as Customer) : null;
 	if (!customer?.stripeCustomerId) {
 		return jsonResponse(
 			{

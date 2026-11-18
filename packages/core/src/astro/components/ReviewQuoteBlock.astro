@@ -10,7 +10,6 @@ interface Review {
   body: string;
   customerName: string;
   verifiedPurchase: boolean;
-  status: string;
 }
 
 interface Node {
@@ -42,8 +41,10 @@ async function loadReview(id: string) {
 }
 
 const review = reviewId ? await loadReview(reviewId) : null;
-const usable =
-  review && review.status === "approved" && (review.body?.length ?? 0) > 0;
+// /reviews/item already 404s anything that is not approved, so a
+// successful payload is storefront-safe. Do not require `status` —
+// the public shape no longer includes it.
+const usable = Boolean(review && (review.body?.length ?? 0) > 0);
 ---
 {usable && review ? (
   <blockquote class="dc-review-quote">
