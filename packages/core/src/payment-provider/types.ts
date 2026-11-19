@@ -94,7 +94,16 @@ export interface InitCheckoutInput {
 	discounts?: Array<{ coupon: string }>;
 	/** Hint for gateways that restrict methods on the hosted page. */
 	preferredChannels?: string[];
+	/**
+	 * `hosted` (default): return a redirect. `on_page`: return an `on_page`
+	 * result for the storefront to open over the page. Core asks for
+	 * `on_page` only from providers that declare it in `checkoutStyles`.
+	 */
+	checkoutStyle?: CheckoutStyle;
 }
+
+/** How customers pay: on the provider's hosted page, or over the store's page. */
+export type CheckoutStyle = "hosted" | "on_page";
 
 export type InitCheckoutResult =
 	| {
@@ -106,6 +115,16 @@ export type InitCheckoutResult =
 	| {
 			kind: "pending";
 			checkoutReference: string;
+	  }
+	| {
+			/**
+			 * Pay over the store's page. `client` is handed to the provider's
+			 * browser client (see the package's checkout-client entry), e.g.
+			 * Paystack's `{ accessCode }`. Never trusted as proof of payment.
+			 */
+			kind: "on_page";
+			checkoutReference: string;
+			client: Record<string, string>;
 	  };
 
 export interface VerifyWebhookInput {
@@ -269,6 +288,10 @@ export interface PaymentProvider {
 	 * is passed as `signatureHeader`. `stripe-signature` is reserved.
 	 */
 	readonly webhookHeaders?: readonly string[];
+
+	/** Checkout styles this provider supports. Defaults to `["hosted"]`. */
+	readonly checkoutStyles?: readonly CheckoutStyle[];
+
 
 	/**
 	 * True when the provider's hosted page collects the customer's email and
