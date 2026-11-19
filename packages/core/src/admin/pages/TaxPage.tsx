@@ -409,6 +409,7 @@ function TaxRateEditor({
 				onClick={(e) => e.stopPropagation()}
 				style={{
 					background: T.surface,
+					border: `1px solid ${T.border}`,
 					borderRadius: 8,
 					maxWidth: 520,
 					width: "100%",

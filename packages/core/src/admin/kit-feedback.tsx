@@ -110,6 +110,7 @@ function ConfirmDialog() {
 				style={{
 					background: T.surface,
 					color: T.text,
+					border: `1px solid ${T.border}`,
 					borderRadius: 8,
 					maxWidth: 440,
 					width: "100%",
