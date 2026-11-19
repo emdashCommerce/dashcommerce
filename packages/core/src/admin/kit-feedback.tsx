@@ -14,6 +14,7 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { T, TONES } from "./theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Confirm dialog
@@ -95,7 +96,7 @@ function ConfirmDialog() {
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17, 17, 17, 0.5)",
+				background: T.scrim,
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -107,22 +108,28 @@ function ConfirmDialog() {
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: T.surface,
+					color: T.text,
 					borderRadius: 8,
 					maxWidth: 440,
 					width: "100%",
 					padding: "20px 24px",
-					boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+					boxShadow: T.shadowLg,
 				}}
 			>
 				<h2
 					id={`dc-confirm-${state.id}-title`}
-					style={{ margin: "0 0 8px", fontSize: "1.05rem", fontWeight: 600 }}
+					style={{
+						margin: "0 0 8px",
+						fontSize: "1.05rem",
+						fontWeight: 600,
+						color: T.text,
+					}}
 				>
 					{state.title}
 				</h2>
 				{state.description && (
-					<div style={{ color: "#444", fontSize: "0.95em", lineHeight: 1.4 }}>
+					<div style={{ color: T.textMuted, fontSize: "0.95em", lineHeight: 1.4 }}>
 						{state.description}
 					</div>
 				)}
@@ -139,9 +146,9 @@ function ConfirmDialog() {
 						onClick={() => finish(false)}
 						autoFocus
 						style={{
-							border: "1px solid #d4d4d8",
-							background: "#f4f4f5",
-							color: "#111",
+							border: `1px solid ${T.border}`,
+							background: T.surfaceSunken,
+							color: T.text,
 							padding: "8px 14px",
 							borderRadius: 6,
 							fontWeight: 500,
@@ -155,9 +162,9 @@ function ConfirmDialog() {
 						onClick={() => finish(true)}
 						style={{
 							border: "1px solid",
-							borderColor: state.destructive ? "#991b1b" : "#111",
-							background: state.destructive ? "#b91c1c" : "#111",
-							color: "#fff",
+							borderColor: state.destructive ? T.dangerBorder : T.primaryBg,
+							background: state.destructive ? T.dangerBg : T.primaryBg,
+							color: state.destructive ? T.onFill : T.primaryFg,
 							padding: "8px 14px",
 							borderRadius: 6,
 							fontWeight: 500,
@@ -267,10 +274,10 @@ export function useToast(): ToastApi {
 }
 
 const TOAST_COLORS: Record<ToastKind, { bg: string; fg: string; border: string }> = {
-	info: { bg: "#eff6ff", fg: "#1e3a8a", border: "#93c5fd" },
-	success: { bg: "#f0fdf4", fg: "#14532d", border: "#86efac" },
-	warning: { bg: "#fffbeb", fg: "#78350f", border: "#fde68a" },
-	error: { bg: "#fef2f2", fg: "#7f1d1d", border: "#fca5a5" },
+	info: TONES.info,
+	success: TONES.success,
+	warning: TONES.warning,
+	error: TONES.error,
 };
 
 function Toaster() {
@@ -305,7 +312,7 @@ function Toaster() {
 							border: `1px solid ${c.border}`,
 							borderRadius: 6,
 							padding: "10px 14px",
-							boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+							boxShadow: T.shadowMd,
 							fontSize: "0.9em",
 							display: "flex",
 							flexDirection: "column",

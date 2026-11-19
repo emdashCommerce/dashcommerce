@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loading, usePluginAPI } from "../kit";
+import { T } from "../theme";
 
 export function PendingReviews() {
 	const api = usePluginAPI();
@@ -15,7 +16,7 @@ export function PendingReviews() {
 	return (
 		<a href="#/reviews" style={{ display: "block" }}>
 			<div style={{ fontSize: "2em", fontWeight: 700 }}>{count}</div>
-			<div style={{ color: "#666" }}>Pending review{count === 1 ? "" : "s"}</div>
+			<div style={{ color: T.textMuted }}>Pending review{count === 1 ? "" : "s"}</div>
 		</a>
 	);
 }

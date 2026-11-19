@@ -23,6 +23,7 @@ import {
 	toast,
 } from "../kit";
 import { EmptyState } from "../ui/EmptyState";
+import { T } from "../theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -592,8 +593,8 @@ export function MenusPage() {
 											gap: 8,
 											padding: "8px 10px",
 											borderRadius: 6,
-											border: "1px solid var(--dc-border, #e4e4e7)",
-											background: node.depth === 0 ? "#fff" : "#fafafa",
+											border: `1px solid ${T.hairline}`,
+											background: node.depth === 0 ? T.surface : T.surfaceSunken,
 											marginLeft: node.depth * 24,
 										}}
 									>
@@ -615,8 +616,8 @@ export function MenusPage() {
 														fontSize: "0.75em",
 														padding: "2px 6px",
 														borderRadius: 3,
-														background: "#f4f4f5",
-														color: "#52525b",
+														background: T.surfaceSunken,
+														color: T.textMuted,
 													}}
 												>
 													{it.type}
@@ -625,7 +626,7 @@ export function MenusPage() {
 											<span
 												style={{
 													fontSize: "0.8em",
-													color: "#71717a",
+													color: T.textSubtle,
 													overflow: "hidden",
 													textOverflow: "ellipsis",
 													whiteSpace: "nowrap",
@@ -1076,7 +1077,7 @@ function Shell({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: T.scrim,
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -1088,7 +1089,7 @@ function Shell({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: T.surface,
 					borderRadius: 8,
 					maxWidth: 560,
 					width: "100%",
