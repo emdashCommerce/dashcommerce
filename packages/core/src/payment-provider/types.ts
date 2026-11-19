@@ -244,6 +244,15 @@ export interface PaymentProviderCredentialField {
 	help?: string;
 }
 
+/** What a provider's `checkConnection` reports to the Settings button. */
+export interface ConnectionCheckResult {
+	ok: boolean;
+	/** One line for the merchant, e.g. "Connected in test mode." */
+	message: string;
+	/** Which kind of key is saved, when the provider can tell. */
+	mode?: "test" | "live";
+}
+
 export interface PaymentStatusResult {
 	status: "pending" | "succeeded" | "failed";
 	paymentReference?: string;
@@ -325,4 +334,15 @@ export interface PaymentProvider {
 		paymentReference: string,
 		credentials: PaymentProviderCredentials,
 	): Promise<PaymentStatusResult>;
+
+	/**
+	 * Optional check behind the "Test connection" button in Settings: one
+	 * read-only call with the saved credentials. It must not create or change
+	 * anything at the provider. Return `ok: false` with a message the merchant
+	 * can act on (wrong key, missing permission); don't throw for those.
+	 */
+	checkConnection?(
+		ctx: PaymentProviderRuntimeContext,
+		credentials: PaymentProviderCredentials,
+	): Promise<ConnectionCheckResult>;
 }

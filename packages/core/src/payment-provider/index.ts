@@ -29,6 +29,7 @@ export {
 export type { RegisterProviderOptions } from "./registry";
 export { stripePaymentProvider, toCreateCheckoutSessionInput } from "./stripe-provider";
 export type {
+	ConnectionCheckResult,
 	CreateRefundInput,
 	InitCheckoutInput,
 	InitCheckoutResult,
