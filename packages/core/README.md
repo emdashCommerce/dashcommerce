@@ -69,6 +69,7 @@ For provider authors, `PaymentProvider` can declare:
 
 - `credentialFields`: the label, accepted prefixes and help text for the settings form.
 - `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header.
+- `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
 
 `parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`.
 
@@ -142,6 +143,7 @@ Same prefix, gated by emdash's admin auth:
 GET    /admin/settings                    Read all settings:* keys
 POST   /admin/settings                    Write (validated via schema)
 POST   /admin/stripe/ping                 Live-key sanity check
+POST   /admin/payments/check-connection   Same check for another provider ({ providerId })
 GET    /admin/orders, /admin/orders/:id   Order list + detail
 POST   /admin/orders/:id/refund           Full or partial refund
 PATCH  /admin/orders/:id/status           Transition order status (triggers review-request etc.)

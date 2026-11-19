@@ -48,7 +48,12 @@ import {
 	validateSettingsKey,
 } from "../settings/schema";
 import { normalizeCurrencyList } from "../data/currencies";
-import { listPaymentProviders, providerCredentialSetting } from "../payment-provider";
+import {
+	getPaymentProvider,
+	listPaymentProviders,
+	loadPaymentProviderCredentials,
+	providerCredentialSetting,
+} from "../payment-provider";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -175,6 +180,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 		rows.push({
 			...card,
 			credentialFields: provider.credentialFields ?? {},
+			canCheckConnection: typeof provider.checkConnection === "function",
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
 				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),
@@ -2028,6 +2034,50 @@ export const adminApiRoutes = {
 					{ ok: false, error: err instanceof Error ? err.message : "Ping failed" },
 					502,
 				);
+			}
+		},
+	},
+
+	// Any registered provider's "Test connection" button (Stripe keeps
+	// admin/stripe/ping). One read-only call with the saved credentials.
+	// Outcomes the button shows (no key saved, rejected, unreachable) are
+	// 200 with ok: false; only a bad request is an error status.
+	"admin/payments/check-connection": {
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+			const ctx = getCtx(routeCtx, _c);
+			const { providerId } = (routeCtx.input ?? {}) as { providerId?: unknown };
+			const provider =
+				typeof providerId === "string" ? getPaymentProvider(providerId) : undefined;
+			if (!provider?.checkConnection) {
+				return json(
+					{
+						error: {
+							code: "NO_CONNECTION_CHECK",
+							message: "This provider has no connection check.",
+						},
+					},
+					400,
+				);
+			}
+			const creds = await loadPaymentProviderCredentials(ctx.kv, provider.id);
+			if (!creds) {
+				return json({ ok: false, message: `Save the ${provider.label} secret key first.` });
+			}
+			try {
+				return json(await provider.checkConnection(ctx, creds));
+			} catch (err) {
+				let error = err instanceof Error ? err.message : String(err);
+				for (const secret of [creds.secretKey, creds.webhookSecret]) {
+					if (secret) error = error.split(secret).join("[redacted]");
+				}
+				ctx.log.warn("Payment provider connection check failed", {
+					providerId: provider.id,
+					error,
+				});
+				return json({
+					ok: false,
+					message: `Couldn't reach ${provider.label}. Try again in a moment.`,
+				});
 			}
 		},
 	},
