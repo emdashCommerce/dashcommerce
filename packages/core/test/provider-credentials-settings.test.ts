@@ -112,6 +112,7 @@ describe("provider credentials in the settings API", () => {
 					help: "From the dashboard",
 				},
 			},
+			checkoutStyles: ["hosted"],
 			secrets: {
 				secretKey: { isSet: true, hint: "••••1234" },
 				webhookSecret: { isSet: false, hint: null },

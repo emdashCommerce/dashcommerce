@@ -48,7 +48,11 @@ import {
 	validateSettingsKey,
 } from "../settings/schema";
 import { normalizeCurrencyList } from "../data/currencies";
-import { listPaymentProviders, providerCredentialSetting } from "../payment-provider";
+import {
+	listPaymentProviders,
+	providerCheckoutStyles,
+	providerCredentialSetting,
+} from "../payment-provider";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -161,6 +165,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 			id: provider.id,
 			label: provider.label,
 			credentialFields: provider.credentialFields ?? {},
+			checkoutStyles: providerCheckoutStyles(provider),
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
 				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),

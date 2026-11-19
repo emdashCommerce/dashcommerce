@@ -29,6 +29,7 @@ describe("config-check names the active provider", () => {
 			label: "Stripe",
 			configured: false,
 			checkoutMode: "hosted",
+			checkoutStyles: ["hosted", "on_page"],
 		});
 	});
 
@@ -47,6 +48,7 @@ describe("config-check names the active provider", () => {
 			label: "Acme Pay",
 			configured: true,
 			checkoutMode: "embedded",
+			checkoutStyles: ["hosted"],
 		});
 	});
 
