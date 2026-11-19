@@ -7,7 +7,12 @@ export { unsupportedHostedCheckoutFeatures } from "./capabilities";
 export type { RequestedHostedCheckoutFeatures } from "./capabilities";
 export {
 	loadPaymentProviderCredentials,
+	providerCredentialSetting,
 	webhookSignatureHeader,
+} from "./credentials";
+export type {
+	ProviderCredentialName,
+	ProviderCredentialSetting,
 } from "./credentials";
 export { createMockPaymentProvider } from "./mock-provider";
 export type { MockPaymentProviderOptions } from "./mock-provider";
@@ -31,6 +36,7 @@ export type {
 	PaymentProvider,
 	PaymentProviderAddress,
 	PaymentProviderCapabilities,
+	PaymentProviderCredentialField,
 	PaymentProviderCredentials,
 	PaymentProviderCustomer,
 	PaymentProviderLineItem,

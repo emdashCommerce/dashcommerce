@@ -6,7 +6,8 @@
  * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
  */
 
-import type { PaymentProviderCredentials } from "./types";
+import { getPaymentProvider } from "./registry";
+import type { PaymentProviderCredentialField, PaymentProviderCredentials } from "./types";
 
 export interface KvLike {
 	get<T>(key: string): Promise<T | null>;
@@ -37,4 +38,29 @@ export function webhookSignatureHeader(headers: Headers, providerId: string): st
 		headers.get("x-webhook-signature") ??
 		headers.get("signature")
 	);
+}
+
+export type ProviderCredentialName = "secretKey" | "webhookSecret";
+
+export interface ProviderCredentialSetting {
+	providerId: string;
+	field: ProviderCredentialName;
+	spec: PaymentProviderCredentialField;
+}
+
+const PROVIDER_CREDENTIAL_KEY = /^([a-z][a-z0-9_-]{0,63})(SecretKey|WebhookSecret)$/;
+
+/**
+ * If `key` (without the `settings:` prefix) is a credential setting of a
+ * registered provider other than Stripe, describe it. Stripe's keys stay
+ * in the fixed settings schema.
+ */
+export function providerCredentialSetting(key: string): ProviderCredentialSetting | undefined {
+	const match = PROVIDER_CREDENTIAL_KEY.exec(key);
+	const providerId = match?.[1];
+	if (!match || !providerId || providerId === "stripe") return undefined;
+	const provider = getPaymentProvider(providerId);
+	if (!provider) return undefined;
+	const field: ProviderCredentialName = match[2] === "SecretKey" ? "secretKey" : "webhookSecret";
+	return { providerId, field, spec: provider.credentialFields?.[field] ?? {} };
 }
