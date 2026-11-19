@@ -30,7 +30,14 @@ import {
 } from "../kit";
 import type { CheckoutMode, TaxMode } from "../../settings/schema";
 
-type Group = "store" | "reviews" | "downloads" | "marketing" | "connect" | "stripe";
+type Group =
+	| "store"
+	| "provider"
+	| "reviews"
+	| "downloads"
+	| "marketing"
+	| "connect"
+	| "stripe";
 
 interface GroupSpec {
 	id: Group;
@@ -44,6 +51,12 @@ const GROUPS: GroupSpec[] = [
 		title: "Store",
 		description:
 			"Currency defaults. Only codes listed as enabled can be used at checkout.",
+	},
+	{
+		id: "provider",
+		title: "Payment provider",
+		description:
+			"Who takes payment at checkout. Keep Stripe's keys below while Stripe orders can still be refunded or send webhooks.",
 	},
 	{
 		id: "stripe",
@@ -95,10 +108,45 @@ interface SettingsShape {
 	stripePublishableKey: string | null;
 	stripeWebhookSecret: string | null;
 	checkoutMode: CheckoutMode | null;
-	_secrets: Record<string, { isSet: boolean; hint: string | null }>;
+	paymentProvider: string | null;
+	_secrets: Record<string, SecretMeta>;
+	/** Registered providers, Stripe first. Absent from older servers. */
+	_providers?: ProviderRow[];
 }
 
-type Draft = Partial<Omit<SettingsShape, "_secrets">>;
+interface SecretMeta {
+	isSet: boolean;
+	hint: string | null;
+}
+
+interface CredentialField {
+	label?: string;
+	prefixes?: string[];
+	help?: string;
+}
+
+interface ProviderRow {
+	id: string;
+	label: string;
+	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
+	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
+}
+
+/**
+ * Fixed settings, plus `<providerId>SecretKey` / `<providerId>WebhookSecret`
+ * for registered non-Stripe providers.
+ */
+type Draft = Partial<Omit<SettingsShape, "_secrets" | "_providers">> & {
+	[providerCredential: string]: unknown;
+};
+
+/**
+ * A saved value by key. Provider credential keys are not part of the fixed
+ * shape (secrets never come down), so they read as undefined.
+ */
+function savedValue(saved: SettingsShape | null, key: PropertyKey): unknown {
+	return (saved as Record<PropertyKey, unknown> | null)?.[key];
+}
 
 function isEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
@@ -138,13 +186,13 @@ export function SettingsPage() {
 	const effective = useCallback(
 		<K extends keyof Draft>(key: K): Draft[K] | undefined => {
 			if (key in draft) return draft[key];
-			return saved?.[key];
+			return savedValue(saved, key) as Draft[K] | undefined;
 		},
 		[draft, saved],
 	);
 
 	function setField<K extends keyof Draft>(key: K, value: Draft[K]): void {
-		const baseline = saved?.[key];
+		const baseline = savedValue(saved, key);
 		const nextDraft: Draft = { ...draft };
 		if (isEqual(value, baseline)) {
 			delete nextDraft[key];
@@ -228,7 +276,12 @@ export function SettingsPage() {
 	const enabledCurrencies =
 		(effective("enabledCurrencies") as string[] | null | undefined) ?? [];
 
-	const needsStripeKey = !saved._secrets?.stripeSecretKey?.isSet;
+	const activeProviderId = (effective("paymentProvider") as string | null | undefined) ?? "stripe";
+	const activeProvider = saved._providers?.find((p) => p.id === activeProviderId);
+	const needsStripeKey = activeProviderId === "stripe" && !saved._secrets?.stripeSecretKey?.isSet;
+	const needsProviderKey =
+		activeProviderId !== "stripe" && activeProvider?.secrets?.secretKey.isSet === false;
+	const showProviderPicker = (saved._providers?.length ?? 0) > 1;
 
 	return (
 		<div
@@ -249,12 +302,19 @@ export function SettingsPage() {
 				</Alert>
 			)}
 
+			{needsProviderKey && activeProvider && (
+				<Alert type="warning" title="Finish setup">
+					Add your {activeProvider.label} secret key under Payment provider to start
+					accepting payments.
+				</Alert>
+			)}
+
 			<Alert type="info" title="Tax settings live in Tax">
 				Tax mode and rates are configured on the dedicated Tax page to keep
 				flat-rate, table, and Stripe Tax controls in one place.
 			</Alert>
 
-			{GROUPS.map((group) => (
+			{GROUPS.filter((group) => group.id !== "provider" || showProviderPicker).map((group) => (
 				<Card key={group.id} title={group.title}>
 					{group.description && (
 						<p
@@ -308,7 +368,7 @@ function eff<K extends keyof Draft>(
 	draft: Draft,
 ): Draft[K] | undefined {
 	if (key in draft) return draft[key];
-	return saved[key] as Draft[K] | undefined;
+	return savedValue(saved, key) as Draft[K] | undefined;
 }
 
 function GroupBody({
@@ -358,6 +418,53 @@ function GroupBody({
 						{...(errors.defaultCurrency ? { invalid: true } : {})}
 					/>
 				</FormField>
+			</>
+		);
+	}
+
+	if (group === "provider") {
+		const providers = saved._providers ?? [];
+		const selectedId = (eff("paymentProvider", saved, draft) as string | null) ?? "stripe";
+		const selected = providers.find((p) => p.id === selectedId);
+		return (
+			<>
+				<FormField label="Provider" error={errors.paymentProvider}>
+					<Select
+						value={selectedId}
+						options={providers.map((p) => ({ value: p.id, label: p.label }))}
+						onChange={(e) => setField("paymentProvider", e.currentTarget.value)}
+						disabled={disabled}
+					/>
+				</FormField>
+				{selected && selected.id !== "stripe" && (
+					<>
+						<SecretField
+							keyName={`${selected.id}SecretKey`}
+							label={selected.credentialFields?.secretKey?.label ?? `${selected.label} secret key`}
+							description={credentialDescription(selected.credentialFields?.secretKey)}
+							meta={selected.secrets?.secretKey}
+							saved={saved}
+							draft={draft}
+							errors={errors}
+							setField={setField}
+							disabled={disabled}
+						/>
+						<SecretField
+							keyName={`${selected.id}WebhookSecret`}
+							label={
+								selected.credentialFields?.webhookSecret?.label ??
+								`${selected.label} webhook secret`
+							}
+							description={credentialDescription(selected.credentialFields?.webhookSecret)}
+							meta={selected.secrets?.webhookSecret}
+							saved={saved}
+							draft={draft}
+							errors={errors}
+							setField={setField}
+							disabled={disabled}
+						/>
+					</>
+				)}
 			</>
 		);
 	}
@@ -583,26 +690,38 @@ function GroupBody({
 	return null;
 }
 
+/** "Starts with sk_test_ or rk_test_. From the dashboard." from a provider's field spec. */
+function credentialDescription(field: CredentialField | undefined): string | undefined {
+	const parts: string[] = [];
+	if (field?.prefixes?.length) parts.push(`Starts with ${field.prefixes.join(" or ")}.`);
+	if (field?.help) parts.push(field.help);
+	return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 function SecretField({
 	keyName,
 	label,
 	description,
+	meta: metaOverride,
 	saved,
 	draft,
 	errors,
 	setField,
 	disabled,
 }: {
-	keyName: "stripeSecretKey" | "stripeWebhookSecret";
+	/** `stripeSecretKey`, `stripeWebhookSecret`, or a provider's `<id>SecretKey` / `<id>WebhookSecret`. */
+	keyName: string;
 	label: string;
 	description?: string;
+	/** Set/hint status; defaults to the fixed `_secrets` entry for `keyName`. */
+	meta?: SecretMeta;
 	saved: SettingsShape;
 	draft: Draft;
 	errors: Record<string, string>;
 	setField: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 	disabled: boolean;
 }) {
-	const meta = saved._secrets?.[keyName];
+	const meta = metaOverride ?? saved._secrets?.[keyName];
 	const value = (draft[keyName] as string | undefined) ?? "";
 	return (
 		<FormField
