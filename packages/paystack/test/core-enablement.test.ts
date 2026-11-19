@@ -1,5 +1,5 @@
 /**
- * What the package declares to core (FIK-58): its webhook headers, its
+ * What the package declares to core: its webhook headers, its
  * credential fields, and refund.* events as refund.updated.
  */
 

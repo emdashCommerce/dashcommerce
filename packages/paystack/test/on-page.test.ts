@@ -1,5 +1,5 @@
 /**
- * Paystack on-page checkout (FIK-59): the Popup, opened over the store's
+ * Paystack on-page checkout: the Popup, opened over the store's
  * checkout with the access code from /transaction/initialize.
  */
 

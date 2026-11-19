@@ -2,7 +2,7 @@
 
 A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hosted page by card or M-Pesa (Paystack's `mobile_money` channel). DashCommerce creates the order when Paystack's signed `charge.success` webhook arrives and the transaction is confirmed with Paystack.
 
-> **Status: needs core with the provider-enablement changes** (fork PR [#3](https://github.com/FIKANOVA/dashcommerce/pull/3), not yet upstream). Released core 0.3.5 cannot call `api.paystack.co`, save Paystack keys, pass `Paystack-Signature`, or take refund updates. See [Core requirements](#core-requirements). The package is `private` and is not published.
+> **Status: needs core with the provider-enablement changes** (the companion core PR). Released core 0.3.5 cannot call `api.paystack.co`, save Paystack keys, pass `Paystack-Signature`, or take refund updates. See [Core requirements](#core-requirements). The package is `private` and is not published.
 
 ## What it does
 
@@ -76,7 +76,7 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
 
 ## Core requirements
 
-From core (fork PR #3, proposed upstream together with this package):
+From core (the companion core PR, proposed together with this package):
 
 1. **`dashcommerce({ allowedHosts })`.** Without it, `ctx.http.fetch` refuses `api.paystack.co`, and EmDash 1.5 throws.
 2. **Per-provider credentials** in the settings API and admin, accepting the `rk_` and `whsec_` prefixes this package declares in `credentialFields`.
