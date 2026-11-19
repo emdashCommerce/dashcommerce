@@ -540,3 +540,9 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
     });
   }
 </script>
+
+<script>
+  // Test wiring (FIK-57): Paystack's on-page client. It registers itself and
+  // loads Paystack's inline.js only when the customer presses Pay.
+  import "@dashcommerce/paystack/checkout-client";
+</script>
