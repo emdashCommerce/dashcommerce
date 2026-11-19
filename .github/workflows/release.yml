@@ -26,14 +26,14 @@ jobs:
       pull-requests: write    # open/update the Version Packages PR
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # Keep Node aligned with CI. Registry auth is not needed: this
       # workflow only opens Version Packages PRs. npm publish is local.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -72,7 +72,7 @@ jobs:
       contents: write         # create the tag and the GitHub Release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Create tag and GitHub Release if missing
         env:

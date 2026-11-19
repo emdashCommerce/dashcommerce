@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout monorepo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
@@ -57,7 +57,7 @@ jobs:
           TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -115,10 +115,26 @@ jobs:
           }
 
           // Propagate the emdash bun-patch reference from the monorepo root
-          // so the flat repo applies it on `bun install` too.
+          // so the flat repo applies it on `bun install` too. Only the patch
+          // for the EmDash version the starter resolves (the top-level
+          // `emdash` entry in bun.lock) is kept: the others belong to other
+          // workspaces and would only make the flat repo's install warn.
           const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           if (rootPkg.patchedDependencies) {
-            pkg.patchedDependencies = rootPkg.patchedDependencies;
+            const lock = fs.readFileSync('bun.lock', 'utf8');
+            const resolved = lock.match(/^\s*"emdash": \["emdash@([^"]+)"/m)?.[1];
+            const key = resolved && `emdash@${resolved}`;
+            if (key && rootPkg.patchedDependencies[key]) {
+              pkg.patchedDependencies = { [key]: rootPkg.patchedDependencies[key] };
+              const keep = new Set(['README.md', rootPkg.patchedDependencies[key].replace(/^patches\//, '')]);
+              for (const file of fs.readdirSync('target/patches')) {
+                if (!keep.has(file)) fs.rmSync(`target/patches/${file}`);
+              }
+              console.log(`Keeping only the ${key} patch for the flat repo`);
+            } else {
+              console.log(`::warning::No root patch for the starter's EmDash (${resolved ?? 'not found in bun.lock'}); copying them all`);
+              pkg.patchedDependencies = rootPkg.patchedDependencies;
+            }
           }
 
           fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, '\t') + '\n');
