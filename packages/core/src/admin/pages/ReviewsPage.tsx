@@ -26,6 +26,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { StatusBadge } from "../ui/StatusBadge";
 import type { Review, ReviewStatus } from "../../types";
 import { useListControls } from "../hooks/useListControls";
+import { T } from "../theme";
 
 type ModerationTarget = Exclude<ReviewStatus, "pending">;
 
@@ -257,7 +258,7 @@ export function ReviewsPage() {
 				>
 					{activeFilters > 0 && (
 						<>
-							<span style={{ color: "#6b7280", fontSize: 13 }}>
+							<span style={{ color: T.textMuted, fontSize: 13 }}>
 								{activeFilters} filter{activeFilters === 1 ? "" : "s"} applied
 							</span>
 							<Button size="sm" variant="secondary" onClick={resetFilters}>
@@ -267,7 +268,7 @@ export function ReviewsPage() {
 					)}
 					{selected.size > 0 && (
 						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-							<span style={{ color: "#555", fontSize: "0.9em" }}>
+							<span style={{ color: T.textMuted, fontSize: "0.9em" }}>
 								{selected.size} selected
 							</span>
 							{filters.queue === "pending" ? (
@@ -376,7 +377,7 @@ export function ReviewsPage() {
 								render: (r) => (
 									<div>
 										<div>{r.customerName}</div>
-										<div style={{ color: "#666", fontSize: "0.85em" }}>
+										<div style={{ color: T.textMuted, fontSize: "0.85em" }}>
 											{r.customerEmail ?? "—"}
 										</div>
 									</div>
@@ -482,7 +483,7 @@ export function ReviewsPage() {
 								Load more
 							</Button>
 						) : items.length > 0 ? (
-							<span style={{ color: "#6b7280", fontSize: 13 }}>
+							<span style={{ color: T.textMuted, fontSize: 13 }}>
 								End of results — {items.length} reviews
 							</span>
 						) : null}

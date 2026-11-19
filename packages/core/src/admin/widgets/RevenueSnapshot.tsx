@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loading, usePluginAPI } from "../kit";
+import { T } from "../theme";
 
 interface Shape {
 	sevenDay: Record<string, number>;
@@ -20,7 +21,7 @@ export function RevenueSnapshot() {
 		<div>
 			<div style={{ display: "flex", gap: 24 }}>
 				<div>
-					<div style={{ fontSize: "0.8em", color: "#666" }}>Last 7 days</div>
+					<div style={{ fontSize: "0.8em", color: T.textMuted }}>Last 7 days</div>
 					<div style={{ fontSize: "1.4em", fontWeight: 700 }}>
 						{Object.entries(data.sevenDay ?? {}).length === 0
 							? "—"
@@ -30,7 +31,7 @@ export function RevenueSnapshot() {
 					</div>
 				</div>
 				<div>
-					<div style={{ fontSize: "0.8em", color: "#666" }}>Last 30 days</div>
+					<div style={{ fontSize: "0.8em", color: T.textMuted }}>Last 30 days</div>
 					<div style={{ fontSize: "1.4em", fontWeight: 700 }}>
 						{Object.entries(data.thirtyDay ?? {}).length === 0
 							? "—"

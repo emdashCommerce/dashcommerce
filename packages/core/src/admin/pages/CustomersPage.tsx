@@ -19,6 +19,7 @@ import { EmptyState } from "../ui/EmptyState";
 import type { Customer } from "../../types";
 import { useListControls } from "../hooks/useListControls";
 import { CustomerDetailPage } from "./CustomerDetailPage";
+import { T } from "../theme";
 
 // Emdash's admin shell only mounts pages by exact path match, so parametric
 // keys like `/customers/:id` never resolve. We route the detail view via
@@ -136,7 +137,7 @@ function CustomersList() {
 						marginBottom: 12,
 					}}
 				>
-					<span style={{ color: "#6b7280", fontSize: 13 }}>
+					<span style={{ color: T.textMuted, fontSize: 13 }}>
 						{activeFilters} filter{activeFilters === 1 ? "" : "s"} applied
 					</span>
 					<Button size="sm" variant="secondary" onClick={resetFilters}>
@@ -205,7 +206,7 @@ function CustomersList() {
 								Load more
 							</Button>
 						) : items.length > 0 ? (
-							<span style={{ color: "#6b7280", fontSize: 13 }}>
+							<span style={{ color: T.textMuted, fontSize: 13 }}>
 								End of results — {items.length} customers
 							</span>
 						) : null}
