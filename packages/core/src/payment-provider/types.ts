@@ -236,6 +236,14 @@ export interface PaymentProviderCapabilities {
 	subscriptions?: boolean;
 }
 
+/** How the admin settings form shows and validates one credential. */
+export interface PaymentProviderCredentialField {
+	label?: string;
+	/** Accepted prefixes, e.g. `["sk_test_", "rk_test_"]`. Omit to accept any non-empty value. */
+	prefixes?: readonly string[];
+	help?: string;
+}
+
 export interface PaymentStatusResult {
 	status: "pending" | "succeeded" | "failed";
 	paymentReference?: string;
@@ -261,6 +269,15 @@ export interface PaymentProvider {
 	 * is passed as `signatureHeader`. `stripe-signature` is reserved.
 	 */
 	readonly webhookHeaders?: readonly string[];
+
+	/**
+	 * Credentials the merchant enters in admin settings, saved as
+	 * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
+	 */
+	readonly credentialFields?: {
+		secretKey?: PaymentProviderCredentialField;
+		webhookSecret?: PaymentProviderCredentialField;
+	};
 
 	/** True if this provider can charge `currency` (ISO-4217). */
 	supportsCurrency(currency: string): boolean;
