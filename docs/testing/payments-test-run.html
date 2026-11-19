@@ -1,0 +1,484 @@
+<title>DashCommerce Payments Test Run</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a QA run sheet. Provider × checkout matrix up top, then step cards grouped by section, each recording result, order, notes and screenshots. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --sunken: #eef0f4;
+  --fg: #151a23;
+  --muted: #4a5363;
+  --line: #d6dae2;
+  --accent: #3b4fd8;
+  --accent-soft: #e8ebfc;
+  --pass: #157347;
+  --pass-soft: #e3f4ea;
+  --fail: #b42318;
+  --fail-soft: #fdeceb;
+  --blocked: #9a5b00;
+  --blocked-soft: #fdf3e1;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10131a; --surface: #171b24; --sunken: #1e2330; --fg: #e8ebf2; --muted: #a5adbd; --line: #2d3343;
+    --accent: #8f9dff; --accent-soft: #232a4d;
+    --pass: #5fd08f; --pass-soft: #163325; --fail: #ff8a80; --fail-soft: #3a1b1a; --blocked: #f2b45c; --blocked-soft: #3a2a12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10131a; --surface: #171b24; --sunken: #1e2330; --fg: #e8ebf2; --muted: #a5adbd; --line: #2d3343;
+  --accent: #8f9dff; --accent-soft: #232a4d;
+  --pass: #5fd08f; --pass-soft: #163325; --fail: #ff8a80; --fail-soft: #3a1b1a; --blocked: #f2b45c; --blocked-soft: #3a2a12;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 80px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; font-family: var(--font-body); font-weight: 600; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+header.top { display: flex; flex-direction: column; gap: 10px; }
+.run-meta { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.run-meta label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.run-meta input { height: 40px; min-width: 0; width: 200px; max-width: 100%; }
+input, textarea, select {
+  font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+input:focus-visible, textarea:focus-visible, button:focus-visible, .seg input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.stat b { font-family: var(--font-display); font-size: 26px; font-variant-numeric: tabular-nums; }
+.stat.pass b { color: var(--pass); } .stat.fail b { color: var(--fail); } .stat.blocked b { color: var(--blocked); }
+
+.matrix { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.matrix-grid { display: grid; grid-template-columns: minmax(90px, 0.6fr) repeat(2, minmax(0, 1fr)); gap: 8px; }
+.matrix-grid .head { font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 2px; }
+.cell { border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); background: var(--sunken); }
+.cell strong { font-size: 14px; }
+.cell .steps { font-size: 12px; color: var(--muted); }
+.cell[data-state="pass"] { background: var(--pass-soft); border-color: var(--pass); }
+.cell[data-state="fail"] { background: var(--fail-soft); border-color: var(--fail); }
+.cell[data-state="partial"] { background: var(--blocked-soft); border-color: var(--blocked); }
+.cell[data-state="pass"] strong { color: var(--pass); } .cell[data-state="fail"] strong { color: var(--fail); } .cell[data-state="partial"] strong { color: var(--blocked); }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; }
+.chip-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+section.group { display: flex; flex-direction: column; gap: 12px; }
+.group-head { display: flex; flex-direction: column; gap: 2px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; }
+.step[data-status="pass"] { border-left: 4px solid var(--pass); }
+.step[data-status="fail"] { border-left: 4px solid var(--fail); }
+.step[data-status="blocked"] { border-left: 4px solid var(--blocked); }
+.step-id { font-family: var(--font-mono); font-weight: 500; font-size: 14px; background: var(--sunken); border-radius: 8px; height: 36px; display: flex; align-items: center; justify-content: center; }
+.step-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.how, .expect { margin: 0; font-size: 14px; }
+.expect { color: var(--muted); }
+.expect b { color: var(--fg); font-weight: 600; }
+.record { display: grid; grid-template-columns: auto minmax(120px, 180px) minmax(0, 1fr); gap: 10px; align-items: start; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: block; padding: 0 12px; height: 38px; line-height: 38px; font-size: 14px; cursor: pointer; border-right: 1px solid var(--line); background: var(--surface); }
+.seg label:last-child span { border-right: 0; }
+.seg input:checked + span.p { background: var(--pass); color: #fff; }
+.seg input:checked + span.f { background: var(--fail); color: #fff; }
+.seg input:checked + span.b { background: var(--blocked); color: #fff; }
+.record input[type="text"] { height: 40px; width: 100%; }
+.record textarea { width: 100%; min-height: 40px; height: 40px; resize: vertical; }
+.shots { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.shot { position: relative; width: 96px; height: 72px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--sunken); }
+.shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shot a { display: block; height: 100%; }
+.shot button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 999px; border: 0; background: rgba(0,0,0,0.65); color: #fff; cursor: pointer; font-size: 14px; line-height: 26px; padding: 0; }
+.add-shot { height: 72px; padding: 0 14px; border: 1px dashed var(--line); border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.add-shot:hover { border-color: var(--accent); color: var(--accent); }
+.saved { font-size: 12px; color: var(--muted); min-height: 18px; }
+.notice { background: var(--blocked-soft); color: var(--fg); border: 1px solid var(--blocked); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+details.setup { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+details.setup summary { cursor: pointer; font-weight: 600; }
+details.setup ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; margin: 6px 0 0; }
+
+@media (max-width: 640px) {
+  .step { grid-template-columns: minmax(0, 1fr); }
+  .step-id { width: 56px; }
+  .record { grid-template-columns: minmax(0, 1fr); }
+  .matrix-grid { grid-template-columns: minmax(70px, 0.5fr) repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · branch test/FIK-57-paystack-e2e</span>
+    <h1>Payments test run</h1>
+    <p class="muted" style="margin:0;max-width:65ch">Stripe and Paystack, each hosted and on-page, end to end in test mode. Record every step here: result, order number, notes and screenshots. Nothing goes to a PR or the upstream proposal until this run passes. Test keys only.</p>
+    <div class="run-meta">
+      <label for="run-tester">Tested by<input id="run-tester" type="text" placeholder="Your name"></label>
+      <label for="run-commit">Commit tested<input id="run-commit" type="text" placeholder="git log --oneline -1" class="mono"></label>
+      <label for="run-date">Date<input id="run-date" type="date"></label>
+    </div>
+    <div id="store-notice" class="notice" hidden></div>
+  </header>
+
+  <div class="summary" aria-label="Run summary">
+    <div class="stat pass"><span class="muted">Passed</span><b id="n-pass">0</b></div>
+    <div class="stat fail"><span class="muted">Failed</span><b id="n-fail">0</b></div>
+    <div class="stat blocked"><span class="muted">Blocked</span><b id="n-blocked">0</b></div>
+    <div class="stat"><span class="muted">Not tested</span><b id="n-open">0</b></div>
+  </div>
+
+  <section class="matrix" aria-labelledby="matrix-title">
+    <h2 id="matrix-title">Provider × checkout</h2>
+    <p class="muted" style="margin:0;font-size:14px">Green only when every step in the cell passes. This is the bar for the PRs and the proposal.</p>
+    <div class="matrix-grid" id="matrix">
+      <span></span><span class="head">Hosted page</span><span class="head">On your page</span>
+      <span class="head">Stripe</span>
+      <div class="cell" data-cell="stripe-hosted"><strong>Not tested</strong><span class="steps">M1 · R5</span></div>
+      <div class="cell" data-cell="stripe-onpage"><strong>Not tested</strong><span class="steps">M2</span></div>
+      <span class="head">Paystack</span>
+      <div class="cell" data-cell="paystack-hosted"><strong>Not tested</strong><span class="steps">M3 · M4 · R1</span></div>
+      <div class="cell" data-cell="paystack-onpage"><strong>Not tested</strong><span class="steps">M5 · M6 · M7 · inline.js</span></div>
+    </div>
+  </section>
+
+  <details class="setup">
+    <summary>Setup before you start (fresh store, webhooks, keys)</summary>
+    <ol>
+      <li><b>Keys (test mode):</b> Stripe <code>sk_test_</code> and <code>pk_test_</code>; Paystack <code>rk_test_</code> (or <code>sk_test_</code>) and <code>whsec_</code> if you have one. Paste them only into the admin form.</li>
+      <li><b>Fresh store</b>, terminal 1:
+        <pre>cd ~/Projects/DashCommerce/.worktrees/FIK-57-paystack-e2e
+git pull && npx bun@1.4.3 install
+(cd packages/core && npx bun@1.4.3 run build) && (cd packages/paystack && npx bun@1.4.3 run build)
+cd packages/starter && rm -f data.db data.db-shm data.db-wal
+npx emdash init && node ../core/dist/cli/merge-seed.js && npx emdash seed --on-conflict=update
+git checkout -- .emdash/seed.json emdash-env.d.ts
+SITE_URL=http://localhost:4321 npx astro dev --port 4321</pre></li>
+      <li><b>Sign in:</b> <code>http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin</code>. Add a KES 1,000.00 price to <b>Design Templates</b>; enable KES and make it the default.</li>
+      <li><b>Webhooks:</b> terminal 2 <code>node docs/testing/capture-webhooks.mjs</code> · terminal 3 <code>ngrok http 4322</code> (Paystack test webhook URL: <code>https://&lt;ngrok&gt;/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=paystack</code>) · terminal 4 <code>stripe listen --forward-to localhost:4322/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=stripe</code> (its <code>whsec_</code> is Stripe's webhook secret).</li>
+      <li>Full reference: <code>docs/testing/payments-e2e.md</code> on the branch.</li>
+    </ol>
+  </details>
+
+  <div class="toolbar">
+    <div class="filters" role="group" aria-label="Show steps">
+      <button class="chip-btn" type="button" data-filter="all" aria-pressed="true">All</button>
+      <button class="chip-btn" type="button" data-filter="open" aria-pressed="false">Not tested</button>
+      <button class="chip-btn" type="button" data-filter="fail" aria-pressed="false">Failed or blocked</button>
+    </div>
+    <span class="saved" id="save-state"></span>
+  </div>
+
+  <div id="groups"></div>
+</div>
+
+<input type="file" id="shot-input" accept="image/*" multiple hidden>
+
+<script>
+const GROUPS = [
+  { id: "settings", title: "Settings, first run", intro: "DashCommerce › Settings on the fresh store.", steps: [
+    { id: "S1", how: "Open Settings before choosing anything.", expect: "<b>Payments aren't set up yet</b> warning. Stripe and Paystack cards side by side, <b>neither selected</b>. No Stripe card, no Connect card." },
+    { id: "S2", how: "Click the Paystack card.", expect: "Paystack selected (blue border and tick). <b>How customers pay</b> (Hosted by Paystack / On your page) and Paystack's two key fields appear." },
+    { id: "S3", how: "Enter <code>pk_test_x</code> as the Paystack key and Save all.", expect: "Refused, with a message listing the allowed prefixes." },
+    { id: "S4", how: "Enter your Paystack key and webhook secret, then Save all.", expect: "Saved. Both fields show <code>••••</code> and the last four characters." },
+    { id: "S5", how: "Click the Stripe card. Enter <code>sk_test_</code>, <code>pk_test_</code> and the <code>whsec_</code> from <code>stripe listen</code>. Save all.", expect: "Stripe selected and the Stripe card shown with its keys, saved and masked." },
+    { id: "S6", how: "Keyboard only: Tab to the provider cards and use the arrow keys.", expect: "Focus is visible and the arrows change the selection." },
+    { id: "S7", how: "Repeat S1 and S2 at 360px wide (devtools device mode).", expect: "Cards stack; nothing scrolls sideways." },
+  ]},
+  { id: "matrix", title: "Payments: the four combinations", intro: "Set the provider and How customers pay in Settings and Save all. Then, in a private window, add Design Templates to the cart, go to /checkout and pay. Check admin › Orders.", steps: [
+    { id: "M1", cell: "stripe-hosted", how: "<b>Stripe · Hosted.</b> Card <code>4242 4242 4242 4242</code>, any future date, any CVC.", expect: "“Pay with Stripe →” goes to Stripe and back to <code>/thank-you/…</code>. Order <b>Paid</b>. <code>checkout.session.completed</code> answered 200." },
+    { id: "M2", cell: "stripe-onpage", how: "<b>Stripe · On your page.</b> Same card.", expect: "Card form on <code>/checkout</code> itself (Stripe Elements). Order <b>Paid</b>." },
+    { id: "M3", cell: "paystack-hosted", how: "<b>Paystack · Hosted.</b> M-Pesa <code>+254 710 000 000</code>.", expect: "Checkout asks for your details; button reads “Pay with Paystack →”. Paystack's page and back. Order <b>Paid</b>; <code>charge.success</code> captured." },
+    { id: "M4", cell: "paystack-hosted", how: "<b>Paystack · Hosted.</b> Card <code>4084 0840 8408 4081</code>, CVV <code>408</code>, <code>11/27</code>.", expect: "As M3." },
+    { id: "M5", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> M-Pesa <code>+254 710 000 000</code>.", expect: "Pay opens Paystack <b>over</b> the checkout (URL unchanged). Thank-you page after paying; order <b>Paid</b> only once <code>charge.success</code> arrives. Note whether M-Pesa is offered in the Popup." },
+    { id: "M6", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> Card <code>4084 0840 8408 4081</code>.", expect: "As M5." },
+    { id: "M7", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> Open the Popup and close it without paying.", expect: "“Payment not completed. You can try again.” Pay works again; no order." },
+    { id: "INL", cell: "paystack-onpage", how: "DevTools › Network, filter <code>paystack.co</code>, reload <code>/checkout</code>.", expect: "Nothing from <code>js.paystack.co</code> until you press Pay." },
+    { id: "LCP", how: "Optional. DevTools › Performance, Network “Fast 3G”, record a reload of <code>/checkout</code>.", expect: "LCP under 2 s. Write the number in notes." },
+  ]},
+  { id: "failures", title: "Paystack failures", intro: "Hosted or on-page, your choice: note which. Note whether any webhook arrived.", steps: [
+    { id: "F1", how: "Card <code>4084 0800 0000 5408</code>, CVV <code>001</code> (declined).", expect: "No order; the customer can try again." },
+    { id: "F2", how: "Card <code>5078 5078 5078 5078 53</code>, CVV <code>082</code>, PIN <code>0000</code>.", expect: "No order." },
+    { id: "F3", how: "Card <code>4084 0800 0067 0037</code>, CVV <code>787</code> (insufficient funds).", expect: "No order." },
+  ]},
+  { id: "duplicate", title: "Duplicate webhook", intro: "Replay M3's capture: node docs/testing/capture-webhooks.mjs replay docs/testing/webhook-captures/<file>-charge.success.json", steps: [
+    { id: "D1", how: "Replay within 5 minutes of the original.", expect: "200; still one order." },
+    { id: "D2", how: "Replay after 5 minutes.", expect: "With a <code>whsec_</code> secret: 400 “outside the 300-second window”. With <code>sk_</code>: 200, still one order." },
+  ]},
+  { id: "refunds", title: "Refunds", intro: "Admin › Orders › open the order › Refund.", steps: [
+    { id: "R1", cell: "paystack-hosted", how: "M3 (Paystack M-Pesa): partial refund KES 100.", expect: "Refund <b>pending</b>, then a <code>refund.*</code> webhook moves it to <b>succeeded</b>. Note whether the refund webhook has an <code>id</code>." },
+    { id: "R2", how: "New Paystack order paid with <code>4084 0800 0067 1803</code>, CVV <code>180</code>; full refund.", expect: "<code>refund.failed</code>; refund marked <b>failed</b>; an error in terminal 1." },
+    { id: "R3", how: "New Paystack order paid with <code>4084 0800 0067 1902</code>, CVV <code>190</code>; full refund.", expect: "<code>refund.needs-attention</code>; refund stays <b>pending</b>." },
+    { id: "R4", how: "M4: click Refund twice quickly, same amount.", expect: "Record how many refunds Paystack shows (known core gap)." },
+    { id: "R5", cell: "stripe-hosted", how: "M1 (Stripe): partial refund.", expect: "Succeeds at Stripe; order shows Partially refunded." },
+  ]},
+  { id: "switching", title: "Switching provider", intro: "", steps: [
+    { id: "W1", how: "With Paystack active, refund the Stripe order M2.", expect: "Works; Settings shows “Stripe (not active)”." },
+    { id: "W2", how: "Resend an old Stripe webhook: <code>stripe events resend &lt;evt_…&gt;</code>.", expect: "Verified and accepted (200, duplicate). Nothing breaks." },
+  ]},
+  { id: "findings", title: "Findings to record", intro: "Facts the package needs from this run. Mark pass when you've written the answer in notes.", steps: [
+    { id: "H1", how: "Which Paystack signature headers arrive on the captures?", expect: "Write: <code>Paystack-Signature</code>, <code>x-paystack-signature</code>, or both." },
+    { id: "H2", how: "Did the restricted <code>rk_test_</code> key work for checkout, verify and refunds?", expect: "Write yes or what was refused." },
+  ]},
+];
+
+const ALL_STEPS = GROUPS.flatMap((g) => g.steps);
+const CELLS = ["stripe-hosted", "stripe-onpage", "paystack-hosted", "paystack-onpage"];
+
+const state = { results: {}, filter: "all" };
+let db = null;
+let assets = null;
+let pendingShotStep = null;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function resultOf(id) {
+  return state.results[id] ?? { status: "", order: "", notes: "", shots: [] };
+}
+
+function renderGroups() {
+  const root = document.getElementById("groups");
+  root.innerHTML = GROUPS.map((g) => `
+    <section class="group" data-group="${g.id}" aria-labelledby="g-${g.id}">
+      <div class="group-head">
+        <h2 id="g-${g.id}">${esc(g.title)}</h2>
+        ${g.intro ? `<p class="muted" style="margin:0;font-size:14px;max-width:70ch">${esc(g.intro)}</p>` : ""}
+      </div>
+      ${g.steps.map(stepHtml).join("")}
+    </section>`).join("");
+}
+
+function stepHtml(s) {
+  return `
+  <article class="step" id="step-${s.id}" data-step="${s.id}">
+    <div class="step-id" aria-hidden="true">${s.id}</div>
+    <div class="step-body">
+      <h3 class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Step ${s.id}</h3>
+      <p class="how">${s.how}</p>
+      <p class="expect"><span class="eyebrow" style="font-size:11px">Expect</span> ${s.expect}</p>
+      <div class="record">
+        <div class="seg" role="radiogroup" aria-label="Result for ${s.id}">
+          <label><input type="radio" name="st-${s.id}" value="pass" id="st-${s.id}-pass"><span class="p">Pass</span></label>
+          <label><input type="radio" name="st-${s.id}" value="fail" id="st-${s.id}-fail"><span class="f">Fail</span></label>
+          <label><input type="radio" name="st-${s.id}" value="blocked" id="st-${s.id}-blocked"><span class="b">Blocked</span></label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:2px"><span class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Order number for ${s.id}</span>
+          <input type="text" id="order-${s.id}" placeholder="Order no." autocomplete="off"></label>
+        <label style="display:flex;flex-direction:column;gap:2px"><span class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Notes for ${s.id}</span>
+          <textarea id="notes-${s.id}" placeholder="Notes: what you saw, anything odd"></textarea></label>
+      </div>
+      <div class="shots" id="shots-${s.id}"></div>
+      <span class="saved" id="saved-${s.id}"></span>
+    </div>
+  </article>`;
+}
+
+function renderStep(id) {
+  const r = resultOf(id);
+  const el = document.getElementById(`step-${id}`);
+  if (!el) return;
+  el.dataset.status = r.status || "";
+  for (const v of ["pass", "fail", "blocked"]) {
+    const input = document.getElementById(`st-${id}-${v}`);
+    if (input) input.checked = r.status === v;
+  }
+  const order = document.getElementById(`order-${id}`);
+  if (order && document.activeElement !== order) order.value = r.order ?? "";
+  const notes = document.getElementById(`notes-${id}`);
+  if (notes && document.activeElement !== notes) notes.value = r.notes ?? "";
+  const shots = document.getElementById(`shots-${id}`);
+  const list = (r.shots ?? []).map((sid) => `
+    <div class="shot"><a href="/_blob/${esc(sid)}" target="_blank" rel="noopener"><img src="/_blob/${esc(sid)}" alt="Screenshot for ${id}"></a>
+    ${assets ? `<button type="button" data-remove="${esc(sid)}" data-step="${id}" aria-label="Remove screenshot">×</button>` : ""}</div>`).join("");
+  shots.innerHTML = list + (assets ? `<button type="button" class="add-shot" data-add="${id}">+ Screenshot</button>` : "");
+}
+
+function renderSummary() {
+  const counts = { pass: 0, fail: 0, blocked: 0, open: 0 };
+  for (const s of ALL_STEPS) {
+    const st = resultOf(s.id).status;
+    if (st === "pass" || st === "fail" || st === "blocked") counts[st] += 1;
+    else counts.open += 1;
+  }
+  document.getElementById("n-pass").textContent = counts.pass;
+  document.getElementById("n-fail").textContent = counts.fail;
+  document.getElementById("n-blocked").textContent = counts.blocked;
+  document.getElementById("n-open").textContent = counts.open;
+
+  for (const cell of CELLS) {
+    const steps = ALL_STEPS.filter((s) => s.cell === cell).map((s) => resultOf(s.id).status);
+    const el = document.querySelector(`[data-cell="${cell}"]`);
+    let label = "Not tested", st = "";
+    if (steps.some((x) => x === "fail")) { label = "Failing"; st = "fail"; }
+    else if (steps.length && steps.every((x) => x === "pass")) { label = "Passing"; st = "pass"; }
+    else if (steps.some((x) => x)) { label = `${steps.filter((x) => x === "pass").length} of ${steps.length} passed`; st = "partial"; }
+    el.dataset.state = st;
+    el.querySelector("strong").textContent = label;
+  }
+}
+
+function applyFilter() {
+  for (const s of ALL_STEPS) {
+    const st = resultOf(s.id).status;
+    const show = state.filter === "all" || (state.filter === "open" && !st) || (state.filter === "fail" && (st === "fail" || st === "blocked"));
+    document.getElementById(`step-${s.id}`).hidden = !show;
+  }
+  for (const g of GROUPS) {
+    const anyShown = g.steps.some((s) => !document.getElementById(`step-${s.id}`).hidden);
+    document.querySelector(`[data-group="${g.id}"]`).hidden = !anyShown;
+  }
+}
+
+function renderAll() {
+  for (const s of ALL_STEPS) renderStep(s.id);
+  renderSummary();
+  applyFilter();
+}
+
+function showNotice(msg) {
+  const n = document.getElementById("store-notice");
+  n.textContent = msg;
+  n.hidden = !msg;
+}
+
+const timers = {};
+async function save(id, patch, immediate = false) {
+  const next = { ...resultOf(id), ...patch, updatedAt: new Date().toISOString() };
+  state.results[id] = next;
+  renderSummary();
+  document.getElementById(`step-${id}`).dataset.status = next.status || "";
+  if (!db) { document.getElementById(`saved-${id}`).textContent = "Not saved: results storage isn't available in this view."; return; }
+  clearTimeout(timers[id]);
+  const run = async () => {
+    try {
+      await db.collection("results").doc(id).set(next);
+      document.getElementById(`saved-${id}`).textContent = `Saved ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    } catch (e) {
+      document.getElementById(`saved-${id}`).textContent = `Couldn't save (${e?.code ?? "error"}). Your entry is still on screen; try again.`;
+    }
+  };
+  if (immediate) await run(); else timers[id] = setTimeout(run, 700);
+}
+
+let metaTimer;
+function saveMeta() {
+  if (!db) return;
+  clearTimeout(metaTimer);
+  metaTimer = setTimeout(() => {
+    db.doc("meta/run").set({
+      tester: document.getElementById("run-tester").value,
+      commit: document.getElementById("run-commit").value,
+      date: document.getElementById("run-date").value,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+  }, 700);
+}
+
+document.getElementById("groups").addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.matches('input[type="radio"]')) {
+    const id = t.name.slice(3);
+    save(id, { status: t.value }, true);
+    applyFilter();
+  }
+});
+document.getElementById("groups").addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.id.startsWith("order-")) save(t.id.slice(6), { order: t.value });
+  if (t.id.startsWith("notes-")) save(t.id.slice(6), { notes: t.value });
+});
+document.getElementById("groups").addEventListener("click", async (e) => {
+  const add = e.target.closest("[data-add]");
+  if (add) { pendingShotStep = add.dataset.add; document.getElementById("shot-input").click(); return; }
+  const rm = e.target.closest("[data-remove]");
+  if (rm) {
+    const id = rm.dataset.step, sid = rm.dataset.remove;
+    const shots = resultOf(id).shots.filter((x) => x !== sid);
+    await save(id, { shots }, true);
+    renderStep(id);
+    assets?.delete(sid).catch(() => {});
+  }
+});
+document.getElementById("shot-input").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  const id = pendingShotStep;
+  if (!id || !assets || !files.length) return;
+  const status = document.getElementById(`saved-${id}`);
+  status.textContent = `Uploading ${files.length} screenshot${files.length > 1 ? "s" : ""}…`;
+  const added = [];
+  for (const f of files) {
+    try { const a = await assets.upload(f); added.push(a.id); }
+    catch (err) { status.textContent = `Couldn't upload ${f.name} (${err?.code ?? "error"}). Images up to 20 MB.`; }
+  }
+  if (added.length) { await save(id, { shots: [...(resultOf(id).shots ?? []), ...added] }, true); renderStep(id); }
+});
+// Paste a screenshot straight onto the step you last touched.
+let lastStep = null;
+document.getElementById("groups").addEventListener("focusin", (e) => {
+  const step = e.target.closest("[data-step]");
+  if (step) lastStep = step.dataset.step;
+});
+document.addEventListener("paste", async (e) => {
+  if (!assets || !lastStep) return;
+  const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+  if (!files.length) return;
+  e.preventDefault();
+  const id = lastStep;
+  document.getElementById(`saved-${id}`).textContent = "Uploading pasted screenshot…";
+  const added = [];
+  for (const f of files) { try { added.push((await assets.upload(f)).id); } catch {} }
+  if (added.length) { await save(id, { shots: [...(resultOf(id).shots ?? []), ...added] }, true); renderStep(id); }
+});
+for (const id of ["run-tester", "run-commit", "run-date"]) document.getElementById(id).addEventListener("input", saveMeta);
+document.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", () => {
+  state.filter = b.dataset.filter;
+  document.querySelectorAll("[data-filter]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  applyFilter();
+}));
+
+renderGroups();
+renderAll();
+
+(async () => {
+  try { db = await window.claude?.use?.("db"); } catch { db = null; }
+  try { assets = await window.claude?.use?.("assets"); } catch { assets = null; }
+  if (!db) { showNotice("Results can't be saved in this view. Open the page from claude.ai while signed in to record the run."); renderAll(); return; }
+  if (!assets) showNotice("Screenshot upload needs edit access to this page. You can still record results and notes.");
+  db.collection("results").onSnapshot((snap) => {
+    for (const d of snap.docs) if (d.exists) state.results[d.id] = d.data();
+    renderAll();
+    document.getElementById("save-state").textContent = snap.metadata.fromCache ? "Syncing…" : "All results saved to this page";
+  }, (err) => showNotice(`Results stopped syncing (${err?.code ?? "error"}). Reload the page.`));
+  const meta = await db.doc("meta/run").get().catch(() => null);
+  if (meta?.exists) {
+    const m = meta.data();
+    document.getElementById("run-tester").value = m.tester ?? "";
+    document.getElementById("run-commit").value = m.commit ?? "";
+    document.getElementById("run-date").value = m.date ?? "";
+  }
+  renderAll();
+})();
+</script>

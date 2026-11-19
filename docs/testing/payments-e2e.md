@@ -10,7 +10,9 @@
 
 **Rules:** test keys only, no real money. Paste keys into the admin form yourself, never into chat, shell commands or files.
 
-**Time:** about 90 minutes. Fill in the [results sheet](#results-sheet) as you go. Pass or fail, plus the order number and anything odd.
+**Time:** about 90 minutes.
+
+**Record results on the test-run page**, https://claude.ai/artifact/RDraJoGWMbourG3hu1u4XH. It has every step below, with pass/fail/blocked, order number, notes and screenshots (upload, or paste straight onto a step). Results save as you go, and Claude reads them back from there. Its source is `docs/testing/payments-test-run.html`. The [results sheet](#results-sheet) at the end is the same list on paper.
 
 ## 0. Before you start
 
