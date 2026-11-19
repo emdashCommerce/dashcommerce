@@ -78,12 +78,18 @@ function stripeEventsStore(ctx: PluginContext): StripeEventsStore {
  * trade-off: a duplicate dunning email or duplicate stock decrement is
  * worse than a rare dropped event that the merchant can replay
  * manually from the Stripe dashboard.
+ *
+ * The one exception is {@link ConfirmationFailure}: the handler could not
+ * confirm the payment with the provider, before any side effect, so the row
+ * is released and the provider's retry is processed.
+ *
+ * Returns the new row id, or `null` for a duplicate delivery.
  */
 async function recordStripeEvent(
 	ctx: PluginContext,
 	stripeEventId: string,
 	type: string,
-): Promise<boolean> {
+): Promise<string | null> {
 	try {
 		const id = randomId();
 		await stripeEventsStore(ctx).put(id, {
@@ -92,13 +98,42 @@ async function recordStripeEvent(
 			type,
 			createdAt: new Date().toISOString(),
 		});
-		return true;
+		return id;
 	} catch (err) {
 		if (isUniqueViolation(err)) {
 			ctx.log.info("Stripe webhook deduped", { stripeEventId, type });
-			return false;
+			return null;
 		}
 		throw err;
+	}
+}
+
+/**
+ * Thrown when a handler cannot confirm the payment with the provider (the
+ * live retrieve failed, or did not report it paid). It is thrown before any
+ * order, stock or email side effect, so a retry is safe.
+ */
+class ConfirmationFailure extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ConfirmationFailure";
+	}
+}
+
+/** Let the provider's retry through after a {@link ConfirmationFailure}. */
+async function releaseEventRecord(
+	ctx: PluginContext,
+	rowId: string | null,
+	err: unknown,
+): Promise<void> {
+	if (!rowId || !(err instanceof ConfirmationFailure)) return;
+	try {
+		await stripeEventsStore(ctx).delete(rowId);
+	} catch (deleteErr) {
+		ctx.log.error("Could not release webhook dedup record; the retry will be skipped", {
+			rowId,
+			error: deleteErr instanceof Error ? deleteErr.message : String(deleteErr),
+		});
 	}
 }
 
@@ -461,7 +496,14 @@ async function handleCheckoutSessionCompleted(
 			headers: { "Content-Type": "application/json" },
 		});
 	}
-	const pi = await retrievePaymentIntent(ctx, session.payment_intent, client);
+	let pi: Awaited<ReturnType<typeof retrievePaymentIntent>>;
+	try {
+		pi = await retrievePaymentIntent(ctx, session.payment_intent, client);
+	} catch (err) {
+		throw new ConfirmationFailure(
+			`Could not retrieve PaymentIntent: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
 
 	let order: Order;
 	let duplicate = false;
@@ -672,7 +714,14 @@ async function handleNormalizedChargeSucceeded(
 	if (provider.getPaymentStatus) {
 		const creds = await loadPaymentProviderCredentials(ctx.kv, provider.id);
 		if (creds) {
-			const live = await provider.getPaymentStatus(ctx, event.paymentReference, creds);
+			let live: Awaited<ReturnType<NonNullable<typeof provider.getPaymentStatus>>>;
+			try {
+				live = await provider.getPaymentStatus(ctx, event.paymentReference, creds);
+			} catch (err) {
+				throw new ConfirmationFailure(
+					`Provider status check failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
 			if (live.status !== "succeeded") {
 				ctx.log.error("Provider retrieve did not confirm a succeeded payment", {
 					providerId: provider.id,
@@ -680,10 +729,7 @@ async function handleNormalizedChargeSucceeded(
 					status: live.status,
 					reason: live.reason,
 				});
-				return new Response(JSON.stringify({ error: "Payment not succeeded at provider" }), {
-					status: 500,
-					headers: { "Content-Type": "application/json" },
-				});
+				throw new ConfirmationFailure("Payment not succeeded at provider");
 			}
 			if (typeof live.amount === "number") amount = live.amount;
 			if (live.currency) currency = live.currency;
@@ -829,9 +875,10 @@ export const webhookRoutes = {
 			// (stripePaymentIntentId, stripeRefundId, …) still protects
 			// against out-of-order deliveries for different events against
 			// the same resource. `providerEventId` is Stripe `event.id`.
+			let dedupRowId: string | null = null;
 			if (providerEventId) {
-				const fresh = await recordStripeEvent(ctx, providerEventId, eventTypeForDedup);
-				if (!fresh) {
+				dedupRowId = await recordStripeEvent(ctx, providerEventId, eventTypeForDedup);
+				if (!dedupRowId) {
 					return new Response(JSON.stringify({ received: true, duplicate: true }), {
 						status: 200,
 						headers: { "Content-Type": "application/json" },
@@ -856,6 +903,7 @@ export const webhookRoutes = {
 						{ status: 200, headers: { "Content-Type": "application/json" } },
 					);
 				} catch (err) {
+					await releaseEventRecord(ctx, dedupRowId, err);
 					ctx.log.error("Webhook handler error", {
 						providerId: provider.id,
 						error: err instanceof Error ? err.message : String(err),
@@ -1006,6 +1054,7 @@ export const webhookRoutes = {
 						);
 				}
 			} catch (err) {
+				await releaseEventRecord(ctx, dedupRowId, err);
 				ctx.log.error("Stripe webhook handler error", {
 					type: event.type,
 					error: err instanceof Error ? err.message : String(err),
