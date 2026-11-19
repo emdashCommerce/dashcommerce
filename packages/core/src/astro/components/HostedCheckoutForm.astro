@@ -332,6 +332,18 @@ const payHint = isStripe
     return true;
   }
 
+  /**
+   * A readable message from an error response. DashCommerce routes answer
+   * `{ error: "…" }`; EmDash wraps a crashed route as
+   * `{ error: { code, message: "Plugin route error" } }`, which is no use to
+   * a customer, so that falls back to `fallback`.
+   */
+  async function errorMessage(res: Response, fallback: string): Promise<string> {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    if (typeof body.error === "string" && body.error) return body.error;
+    return fallback;
+  }
+
   function setError(el: HTMLElement | null, msg: string | null) {
     if (el) el.textContent = msg ?? "";
   }
@@ -404,14 +416,12 @@ const payHint = isStripe
           body: JSON.stringify({ country, postalCode }),
         });
         if (!locRes.ok) {
-          const b = await locRes.json().catch(() => ({}));
-          throw new Error((b as { error?: string }).error ?? `Save failed (${locRes.status})`);
+          throw new Error(await errorMessage(locRes, "Couldn't save your location. Please try again."));
         }
 
         const optsRes = await fetch(`${API}/cart/shipping-methods`, { credentials: "include" });
         if (!optsRes.ok) {
-          const b = await optsRes.json().catch(() => ({}));
-          throw new Error((b as { error?: string }).error ?? `Couldn't load shipping options (${optsRes.status})`);
+          throw new Error(await errorMessage(optsRes, "Couldn't load shipping options. Please try again."));
         }
         const { options } = (await optsRes.json()) as { options: ShippingOption[] };
         if (!options || options.length === 0) {
@@ -467,8 +477,7 @@ const payHint = isStripe
             body: JSON.stringify({ methodId: input.value }),
           });
           if (!res.ok) {
-            const b = await res.json().catch(() => ({}));
-            throw new Error((b as { error?: string }).error ?? `Save failed (${res.status})`);
+            throw new Error(await errorMessage(res, "Couldn't save that. Please try again."));
           }
           window.dispatchEvent(
             new CustomEvent("dashcommerce:cart-updated", { detail: { silent: true } }),
@@ -547,8 +556,7 @@ const payHint = isStripe
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error((b as { error?: string }).error ?? `Payment setup failed (${res.status})`);
+        throw new Error(await errorMessage(res, "Payment couldn't start. Please try again in a moment."));
       }
       const body = (await res.json()) as {
         kind?: "redirect" | "on_page";
