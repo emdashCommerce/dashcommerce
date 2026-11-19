@@ -111,8 +111,15 @@ export type InitCheckoutResult =
 export interface VerifyWebhookInput {
 	/** Exact raw body bytes as received — never a re-serialised parse. */
 	rawBody: string;
+	/** The header that routed this webhook to the provider (see `webhookHeaders`). */
 	signatureHeader: string;
 	secret: string;
+	/**
+	 * Every request header, for schemes that sign over more than one
+	 * (Standard Webhooks: `webhook-id`, `webhook-timestamp`,
+	 * `webhook-signature`). Core's webhook route always passes it.
+	 */
+	headers?: Headers;
 }
 
 export interface VerifyWebhookResult {
@@ -232,6 +239,14 @@ export interface PaymentProvider {
 	 * coupons, Connect splits, or subscriptions.
 	 */
 	readonly capabilities?: PaymentProviderCapabilities;
+
+	/**
+	 * Request headers that identify this provider's webhooks, in order of
+	 * preference, e.g. `["paystack-signature", "x-paystack-signature"]`.
+	 * `x-<id>-signature` is always recognised as well. The first one present
+	 * is passed as `signatureHeader`. `stripe-signature` is reserved.
+	 */
+	readonly webhookHeaders?: readonly string[];
 
 	/** True if this provider can charge `currency` (ISO-4217). */
 	supportsCurrency(currency: string): boolean;
