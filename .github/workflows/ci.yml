@@ -11,12 +11,12 @@ jobs:
     name: Typecheck + Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Astro 6's CLI forks a Node process; the runner's default Node is 20
       # but Astro requires >=22.12.0. Set Node before Bun so `node` in PATH
       # points at 22 when `astro check` / `astro build` fork.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -44,9 +44,9 @@ jobs:
     name: Lite plugin (validate, bundle, sandbox tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -93,9 +93,9 @@ jobs:
           - "1.5.0"   # 1.5 hashed-dist patch (version-exact)
           # Add new versions as they're tested and verified
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
