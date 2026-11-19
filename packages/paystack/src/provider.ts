@@ -263,6 +263,62 @@ async function listRefundPage(
 	};
 }
 
+/**
+ * Paystack may send both headers. Verify the one keyed with the secret the
+ * merchant configured: `Paystack-Signature` for a `whsec_` secret,
+ * `x-paystack-signature` for an `sk_` key. Without all headers (older core),
+ * use the one core routed on.
+ */
+function signatureHeaderFor(input: VerifyWebhookInput): string {
+	const preferred = input.secret.startsWith("whsec_")
+		? "paystack-signature"
+		: "x-paystack-signature";
+	return input.headers?.get(preferred) ?? input.signatureHeader;
+}
+
+interface PaystackRefundWebhookData {
+	id?: number | string;
+	status?: string;
+	transaction_reference?: string;
+	refund_reference?: string;
+}
+
+/** Refund webhooks, from https://paystack.com/docs/payments/refunds/. */
+const REFUND_EVENT_STATUS: Record<string, "pending" | "succeeded" | "failed"> = {
+	"refund.pending": "pending",
+	"refund.processing": "pending",
+	"refund.needs-attention": "pending",
+	"refund.processed": "succeeded",
+	"refund.failed": "failed",
+};
+
+/**
+ * Report a refund's new status by the numeric refund id that `refund()`
+ * returned. Paystack's documented sample shows only `refund_reference`
+ * (its own UUID); without an id the event is left unhandled rather than
+ * matched by guesswork. Confirm against a real payload.
+ */
+function refundEvent(
+	eventName: string,
+	data: PaystackRefundWebhookData | undefined,
+	raw: unknown,
+): NormalizedPaymentEvent {
+	const status = REFUND_EVENT_STATUS[eventName];
+	const id = data?.id;
+	if (!status || (typeof id !== "number" && typeof id !== "string") || String(id) === "") {
+		return { type: "unhandled", providerEventType: eventName, raw };
+	}
+	return {
+		type: "refund.updated",
+		providerId: "paystack",
+		providerEventId: "",
+		providerRefundId: String(id),
+		status,
+		...(data?.transaction_reference ? { paymentReference: data.transaction_reference } : {}),
+		raw,
+	};
+}
+
 export const paystackPaymentProvider: PaymentProvider = {
 	id: "paystack",
 	label: "Paystack",
@@ -270,6 +326,22 @@ export const paystackPaymentProvider: PaymentProvider = {
 		coupons: false,
 		connect: false,
 		subscriptions: false,
+	},
+
+	// Current scheme first; see ./webhook-verify for both.
+	webhookHeaders: ["paystack-signature", "x-paystack-signature"],
+
+	credentialFields: {
+		secretKey: {
+			label: "Paystack secret or restricted key",
+			prefixes: ["sk_test_", "sk_live_", "rk_test_", "rk_live_"],
+			help: "Best: a restricted key with transactions:write and disputes_refunds:write only.",
+		},
+		webhookSecret: {
+			label: "Paystack webhook signing secret",
+			prefixes: ["whsec_", "sk_test_", "sk_live_"],
+			help: "The whsec_ secret from Developers → API configuration. If you have none yet, your sk_ secret key.",
+		},
 	},
 
 	supportsCurrency(currency: string): boolean {
@@ -328,7 +400,7 @@ export const paystackPaymentProvider: PaymentProvider = {
 	async verifyWebhook(input: VerifyWebhookInput): Promise<VerifyWebhookResult> {
 		const result = await verifyPaystackSignature({
 			payload: input.rawBody,
-			signatureHeader: input.signatureHeader,
+			signatureHeader: signatureHeaderFor(input),
 			secret: input.secret,
 		});
 		return { ok: result.ok, reason: result.reason };
@@ -352,6 +424,10 @@ export const paystackPaymentProvider: PaymentProvider = {
 				providerEventType: "malformed",
 				raw: event,
 			};
+		}
+
+		if (event.event.startsWith("refund.")) {
+			return refundEvent(event.event, event.data as unknown as PaystackRefundWebhookData, event);
 		}
 
 		// Paystack documents `charge.success` for completed payments. It has no

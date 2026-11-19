@@ -329,11 +329,12 @@ async function startCheckout(ctx: import("emdash").PluginContext, sessionId: str
 async function deliverWebhook(
 	ctx: import("emdash").PluginContext,
 	payload: string,
-	signature: string,
+	signature: string | Record<string, string>,
+	url = "http://test/checkout/webhook",
 ) {
-	const request = new Request("http://test/checkout/webhook", {
+	const request = new Request(url, {
 		method: "POST",
-		headers: { "x-paystack-signature": signature },
+		headers: typeof signature === "string" ? { "x-paystack-signature": signature } : signature,
 		body: payload,
 	});
 	const routeCtx = { ...ctx, request } as unknown as import("emdash").RouteContext;
@@ -361,7 +362,7 @@ function chargeSuccess(reference: string, orderDraftId: string, id: number, amou
 	});
 }
 
-describe("@dashcommerce/paystack on released core", () => {
+describe("@dashcommerce/paystack through core", () => {
 	it("registers on import and resolves as the configured provider", async () => {
 		expect(getPaymentProvider("paystack")).toBe(paystackPaymentProvider);
 		const { ctx } = makeContext({ "settings:paymentProvider": "paystack" }, fakePaystack().fetch);
@@ -584,5 +585,152 @@ describe("@dashcommerce/paystack on released core", () => {
 			{ secretKey: SECRET_KEY },
 		);
 		expect(paystack.refunds).toHaveLength(2);
+	});
+});
+
+// ── With core enablement (FIK-58) ──────────────────────────────────────────
+
+const WHSEC = "whsec_1234567890abcdef";
+
+async function paystackSignatureHeader(payload: string, t = Math.floor(Date.now() / 1000)) {
+	const enc = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		"raw",
+		enc.encode(WHSEC),
+		{ name: "HMAC", hash: "SHA-512" },
+		false,
+		["sign"],
+	);
+	const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(`${t}.${payload}`)));
+	return `t=${t},v1=whk_test:${Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+describe("@dashcommerce/paystack with core enablement", () => {
+	it("saves a restricted key and a whsec_ secret through the settings API", async () => {
+		const { ctx } = makeContext({}, fakePaystack().fetch);
+		const routeCtx = {
+			request: new Request("http://test/admin/settings", { method: "POST" }),
+			input: {
+				paymentProvider: "paystack",
+				paystackSecretKey: "rk_test_1234567890abcdef",
+				paystackWebhookSecret: WHSEC,
+			},
+		} as unknown as import("emdash").RouteContext;
+		const res = (await sandbox.routes["admin/settings"].handler(routeCtx, ctx)) as Response;
+		expect(res.status).toBe(200);
+		expect(await ctx.kv.get("settings:paystackSecretKey")).toBe("rk_test_1234567890abcdef");
+
+		const bad = (await sandbox.routes["admin/settings"].handler(
+			{
+				request: new Request("http://test/admin/settings", { method: "POST" }),
+				input: { paystackSecretKey: "pk_test_public_key" },
+			} as unknown as import("emdash").RouteContext,
+			ctx,
+		)) as Response;
+		expect(bad.status).toBe(400);
+	});
+
+	it("creates the order from a Paystack-Signature webhook verified with the whsec_ secret", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(
+			{ ...paystackSettings, "settings:paystackWebhookSecret": WHSEC },
+			paystack.fetch,
+		);
+		const initRes = await startCheckout(ctx, "sess_paystack_v2");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+
+		const res = await deliverWebhook(ctx, payload, {
+			"Paystack-Signature": await paystackSignatureHeader(payload),
+		});
+		expect(res.status).toBe(200);
+		expect(getCol("orders").size).toBe(1);
+	});
+
+	it("verifies whichever header matches the configured secret when Paystack sends both", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_both");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+
+		// The merchant still has the sk_ key as webhook secret (legacy header).
+		const res = await deliverWebhook(ctx, payload, {
+			"Paystack-Signature": await paystackSignatureHeader(payload),
+			"x-paystack-signature": await sign(SECRET_KEY, payload),
+		});
+		expect(res.status).toBe(200);
+		expect(getCol("orders").size).toBe(1);
+	});
+
+	it("rejects a replayed Paystack-Signature older than five minutes", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(
+			{ ...paystackSettings, "settings:paystackWebhookSecret": WHSEC },
+			paystack.fetch,
+		);
+		const initRes = await startCheckout(ctx, "sess_paystack_old");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+
+		const res = await deliverWebhook(ctx, payload, {
+			"Paystack-Signature": await paystackSignatureHeader(
+				payload,
+				Math.floor(Date.now() / 1000) - 301,
+			),
+		});
+		expect(res.status).toBe(400);
+		expect(getCol("orders").size).toBe(0);
+	});
+
+	it("moves a refund to succeeded when Paystack reports refund.processed", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_refund_evt");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+		const charge = chargeSuccess(reference, orderDraftId, tx.id);
+		await deliverWebhook(ctx, charge, await sign(SECRET_KEY, charge));
+		const order = Array.from(getCol("orders").values())[0] as Order;
+
+		// Create the refund through the admin route, as a merchant would.
+		const refundRes = (await sandbox.routes["admin/orders/refund"].handler(
+			{
+				request: new Request(`http://test/admin/orders/refund?id=${order.id}`, { method: "POST" }),
+				input: { amount: 50000, currency: "KES" },
+			} as unknown as import("emdash").RouteContext,
+			ctx,
+		)) as Response;
+		expect(refundRes.status).toBe(200);
+		const refundRow = Array.from(getCol("refunds").values())[0] as { status: string };
+		expect(refundRow.status).toBe("pending");
+		const refundId = Number(paystack.refunds[0]?.id);
+
+		const event = JSON.stringify({
+			event: "refund.processed",
+			data: {
+				id: refundId,
+				status: "processed",
+				transaction_reference: reference,
+				amount: 50000,
+				currency: "KES",
+			},
+		});
+		const res = await deliverWebhook(ctx, event, await sign(SECRET_KEY, event));
+		expect(res.status).toBe(200);
+		expect((Array.from(getCol("refunds").values())[0] as { status: string }).status).toBe(
+			"succeeded",
+		);
 	});
 });
