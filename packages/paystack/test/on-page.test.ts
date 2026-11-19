@@ -19,6 +19,15 @@ describe("provider declarations", () => {
 		expect(paystackPaymentProvider.description).toMatch(/M-Pesa/);
 	});
 
+	it("ships its logo inline as a WebP data URI the Settings card accepts", () => {
+		const logo = paystackPaymentProvider.logo ?? "";
+		expect(logo).toMatch(/^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+		const bytes = Buffer.from(logo.split(",")[1] ?? "", "base64");
+		expect(bytes.subarray(0, 4).toString("ascii")).toBe("RIFF");
+		expect(bytes.subarray(8, 12).toString("ascii")).toBe("WEBP");
+		expect(bytes.length).toBeLessThan(4096);
+	});
+
 	it("returns the access code for on-page checkout", async () => {
 		const ctx: PaymentProviderRuntimeContext = {
 			http: {

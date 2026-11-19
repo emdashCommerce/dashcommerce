@@ -21,6 +21,7 @@ import type {
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
 import { call, callEnvelope, type PaystackClientOptions } from "./client";
+import { PAYSTACK_LOGO } from "./logo";
 import { verifyPaystackSignature } from "./webhook-verify";
 
 const SUPPORTED_CURRENCIES = new Set(["KES", "NGN", "GHS", "ZAR", "USD"]);
@@ -328,6 +329,7 @@ export const paystackPaymentProvider: PaymentProvider = {
 		subscriptions: false,
 	},
 
+	logo: PAYSTACK_LOGO,
 	description: "Card and M-Pesa payments for African shoppers, settled in your local currency.",
 	// Hosted page, or the Popup over the store's checkout (./checkout-client).
 	checkoutStyles: ["hosted", "on_page"],
