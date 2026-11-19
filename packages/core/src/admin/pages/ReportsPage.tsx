@@ -26,6 +26,7 @@ import {
 } from "../kit";
 import { EmptyState } from "../ui/EmptyState";
 import type { Customer } from "../../types";
+import { T } from "../theme";
 
 type GroupBy = "day" | "week" | "month";
 
@@ -496,11 +497,11 @@ function Sparkline({
 			role="img"
 			aria-label="Sparkline of revenue over time"
 		>
-			<polygon points={areaPoints} fill="#dbeafe" />
+			<polygon points={areaPoints} fill={T.accentSoft} />
 			<polyline
 				points={points}
 				fill="none"
-				stroke="#2563eb"
+				stroke={T.accent}
 				strokeWidth={1.5}
 				strokeLinecap="round"
 				strokeLinejoin="round"

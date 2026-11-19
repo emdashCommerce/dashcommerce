@@ -26,6 +26,7 @@ import {
 import { EmptyState } from "../ui/EmptyState";
 import { StatusBadge } from "../ui/StatusBadge";
 import type { Vendor, VendorPayout } from "../../types";
+import { T } from "../theme";
 
 const STATUS_OPTIONS = [
 	{ value: "", label: "All statuses" },
@@ -130,8 +131,8 @@ export function VendorsPage() {
 							href="/_emdash/admin/plugins/dashcommerce/settings"
 							style={{
 								display: "inline-block",
-								background: "#111",
-								color: "#fff",
+								background: T.primaryBg,
+								color: T.primaryFg,
 								padding: "8px 16px",
 								borderRadius: 6,
 								textDecoration: "none",
@@ -225,7 +226,7 @@ export function VendorsPage() {
 								render: (v) => (
 									<div>
 										<div style={{ fontWeight: 500 }}>{v.name}</div>
-										<div style={{ color: "#666", fontSize: "0.85em" }}>
+										<div style={{ color: T.textMuted, fontSize: "0.85em" }}>
 											{v.email}
 										</div>
 									</div>
@@ -543,7 +544,7 @@ function EditVendorModal({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: T.scrim,
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -555,7 +556,7 @@ function EditVendorModal({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: T.surface,
 					borderRadius: 8,
 					maxWidth: 440,
 					width: "100%",
@@ -632,7 +633,7 @@ function PayoutList({
 				Recent payouts for {vendorId}
 			</h3>
 			{payouts.length === 0 ? (
-				<p style={{ color: "#666", fontSize: "0.9em" }}>No payouts yet.</p>
+				<p style={{ color: T.textMuted, fontSize: "0.9em" }}>No payouts yet.</p>
 			) : (
 				<Table<VendorPayout>
 					data={payouts}
