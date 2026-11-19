@@ -165,6 +165,8 @@ function parseStripeEvent(rawBody: string): {
 export const stripePaymentProvider: PaymentProvider = {
 	id: "stripe",
 	label: "Stripe",
+	description: "Cards, wallets and local payment methods worldwide.",
+	brandColour: "#635BFF",
 	capabilities: {
 		coupons: true,
 		connect: true,

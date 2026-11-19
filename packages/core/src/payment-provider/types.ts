@@ -318,6 +318,16 @@ export interface PaymentProvider {
 	/** Checkout styles this provider supports. Defaults to `["hosted"]`. */
 	readonly checkoutStyles?: readonly CheckoutStyle[];
 
+	/** One line for the provider card in Settings, e.g. "Card and M-Pesa in Kenya". */
+	readonly description?: string;
+
+	/**
+	 * The provider's official logo for its card in Settings: an https URL or
+	 * a `data:image/…` URI. Core ships no third-party logos; without one the
+	 * card shows a lettered tile in `brandColour` (#rrggbb).
+	 */
+	readonly logo?: string;
+	readonly brandColour?: string;
 
 	/**
 	 * True when the provider's hosted page collects the customer's email and

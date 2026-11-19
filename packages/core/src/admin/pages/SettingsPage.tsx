@@ -29,6 +29,7 @@ import {
 	usePluginAPI,
 } from "../kit";
 import type { CheckoutMode, TaxMode } from "../../settings/schema";
+import { ProviderCards } from "./ProviderCards";
 
 type Group =
 	| "store"
@@ -127,6 +128,9 @@ interface CredentialField {
 interface ProviderRow {
 	id: string;
 	label: string;
+	description?: string | null;
+	logo?: string | null;
+	brandColour?: string | null;
 	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
 	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
 	/** Absent from servers before on-page checkout: treat as hosted only. */
@@ -277,13 +281,21 @@ export function SettingsPage() {
 	const enabledCurrencies =
 		(effective("enabledCurrencies") as string[] | null | undefined) ?? [];
 
-	const activeProviderId = (effective("paymentProvider") as string | null | undefined) ?? "stripe";
-	const activeProvider = saved._providers?.find((p) => p.id === activeProviderId);
-	const needsStripeKey = activeProviderId === "stripe" && !saved._secrets?.stripeSecretKey?.isSet;
-	const needsProviderKey =
-		activeProviderId !== "stripe" && activeProvider?.secrets?.secretKey.isSet === false;
 	const showProviderPicker = (saved._providers?.length ?? 0) > 1;
-	const stripeActive = activeProviderId === "stripe";
+	// With a choice of providers, a new store starts with none selected;
+	// one with Stripe keys already saved has Stripe selected. A Stripe-only
+	// store keeps Stripe, as before.
+	const selectedProviderId = selectedProvider(saved, draft, showProviderPicker);
+	const activeProviderId = selectedProviderId ?? "stripe";
+	const activeProvider = saved._providers?.find((p) => p.id === activeProviderId);
+	const needsStripeKey =
+		selectedProviderId === "stripe" && !saved._secrets?.stripeSecretKey?.isSet;
+	const needsProviderKey =
+		selectedProviderId !== null &&
+		selectedProviderId !== "stripe" &&
+		activeProvider?.secrets?.secretKey.isSet === false;
+	const needsProviderChoice = selectedProviderId === null;
+	const stripeActive = selectedProviderId === "stripe";
 	const stripeKeysSaved =
 		!!saved._secrets?.stripeSecretKey?.isSet || !!saved._secrets?.stripeWebhookSecret?.isSet;
 
@@ -295,6 +307,10 @@ export function SettingsPage() {
 	function groupView(group: GroupSpec): GroupSpec | null {
 		if (group.id === "provider") return showProviderPicker ? group : null;
 		if (stripeActive) return group;
+		// Nothing chosen yet: no provider-specific cards until the merchant picks.
+		if (needsProviderChoice && (group.id === "stripe" || (group.id === "connect" && !connectEnabled))) {
+			return null;
+		}
 		if (group.id === "stripe") {
 			return stripeKeysSaved
 				? {
@@ -326,6 +342,13 @@ export function SettingsPage() {
 						dashboard.stripe.com/test/apikeys
 					</a>
 					.
+				</Alert>
+			)}
+
+			{needsProviderChoice && (
+				<Alert type="warning" title="Payments aren't set up yet">
+					Choose a payment provider under Payments. Customers can't check out until one
+					is set up.
 				</Alert>
 			)}
 
@@ -392,6 +415,17 @@ interface GroupBodyProps {
 	disabled: boolean;
 }
 
+/**
+ * The chosen payment provider. With a choice of providers, null until the
+ * merchant picks one (unless Stripe keys already exist); otherwise Stripe.
+ */
+function selectedProvider(saved: SettingsShape, draft: Draft, withPicker: boolean): string | null {
+	const chosen = eff("paymentProvider", saved, draft) as string | null | undefined;
+	if (chosen) return chosen;
+	if (!withPicker) return "stripe";
+	return saved._secrets?.stripeSecretKey?.isSet ? "stripe" : null;
+}
+
 function eff<K extends keyof Draft>(
 	key: K,
 	saved: SettingsShape,
@@ -455,18 +489,32 @@ function GroupBody({
 
 	if (group === "provider") {
 		const providers = saved._providers ?? [];
-		const selectedId = (eff("paymentProvider", saved, draft) as string | null) ?? "stripe";
+		const selectedId = selectedProvider(saved, draft, true);
 		const selected = providers.find((p) => p.id === selectedId);
 		return (
 			<>
-				<FormField label="Provider" error={errors.paymentProvider}>
-					<Select
-						value={selectedId}
-						options={providers.map((p) => ({ value: p.id, label: p.label }))}
-						onChange={(e) => setField("paymentProvider", e.currentTarget.value)}
-						disabled={disabled}
-					/>
-				</FormField>
+				<ProviderCards
+					providers={providers.map((p) => ({
+						id: p.id,
+						label: p.label,
+						description: p.description ?? null,
+						logo: p.logo ?? null,
+						brandColour: p.brandColour ?? null,
+					}))}
+					selectedId={selectedId}
+					onSelect={(id) => setField("paymentProvider", id)}
+					disabled={disabled}
+				/>
+				{errors.paymentProvider && (
+					<p role="alert" style={{ color: "#b91c1c", margin: "0 0 0.75rem" }}>
+						{errors.paymentProvider}
+					</p>
+				)}
+				{!selected && (
+					<p style={{ color: "#4b5563", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+						Pick a provider to set it up. Nothing is charged until you finish.
+					</p>
+				)}
 				{selected && selected.id !== "stripe" && (
 					<>
 						{selected.checkoutStyles?.includes("on_page") ? (
