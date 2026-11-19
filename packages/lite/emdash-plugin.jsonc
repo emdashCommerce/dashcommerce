@@ -13,7 +13,7 @@
 	"author": { "name": "Timchosen Uzua" },
 	"security": { "url": "https://github.com/emdashCommerce/dashcommerce/security" },
 	"name": "DashCommerce Lite",
-	"description": "Sell products from your EmDash content: a cart, Stripe Checkout, stock tracking, refunds, tax and shipping, and an orders admin.",
+	"description": "Sell products from your EmDash content: a cart, coupons, Stripe Checkout, stock tracking, refunds, tax and shipping, and an orders admin.",
 	"keywords": ["commerce", "ecommerce", "stripe", "cart", "checkout"],
 	"repo": "https://github.com/emdashCommerce/dashcommerce",
 	// Long-form listing copy, rendered on the registry page. Written into
@@ -44,7 +44,10 @@
 				"stripePaymentIntentId",
 				// Orders whose stock change is still running in cron tasks.
 				"stockPending",
-				["status", "createdAt"]
+				["status", "createdAt"],
+				// Coupon uses are the paid orders that carry the code (coupons.ts).
+				"couponCode",
+				["couponCode", "paymentStatus"]
 			],
 			"uniqueIndexes": ["stripeSessionId"]
 		},
@@ -55,6 +58,10 @@
 		"stock": {
 			"indexes": ["title", "updatedAt", "rev"]
 		},
+		// Keyed by the upper-cased code (coupons.ts).
+		"coupons": {
+			"indexes": ["createdAt"]
+		},
 		"stripe_events": {
 			"indexes": ["type", "createdAt"]
 		}
@@ -64,6 +71,7 @@
 		"pages": [
 			{ "path": "/orders", "label": "Orders", "icon": "shopping-bag" },
 			{ "path": "/stock", "label": "Stock", "icon": "package" },
+			{ "path": "/coupons", "label": "Coupons", "icon": "tag" },
 			{ "path": "/settings", "label": "Settings", "icon": "settings" }
 		],
 		"widgets": [{ "id": "recent-orders", "title": "Recent orders", "size": "half" }],

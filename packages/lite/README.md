@@ -1,10 +1,10 @@
 # DashCommerce Lite
 
 The registry build of DashCommerce for EmDash, listed as `dashcommerce-lite`.
-Simple products from the `products` collection, a token-based cart, Stripe
-hosted Checkout, a signed Stripe webhook, a stock ledger, refunds from
-Stripe, flat tax and shipping or Stripe Tax, and Block Kit pages for
-orders, stock and settings.
+Simple products from the `products` collection, a token-based cart,
+coupon codes, Stripe hosted Checkout, a signed Stripe webhook, a stock
+ledger, refunds from Stripe, flat tax and shipping or Stripe Tax, and Block
+Kit pages for orders, stock, coupons and settings.
 
 Install it from the EmDash plugin registry:
 [DashCommerce Lite on plugins.emdashcms.com](https://plugins.emdashcms.com/plugins/@dashcommerce.bsky.social/dashcommerce-lite).

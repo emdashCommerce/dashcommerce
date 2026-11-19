@@ -24,6 +24,17 @@ export interface Cart {
 	items: CartLine[];
 	itemCount: number;
 	subtotal: Money;
+	/** Coupon discount on the item subtotal. */
+	discountTotal: Money;
+	/** The coupon on the cart; `applied` is false while the cart is below its minimum. */
+	coupon: {
+		code: string;
+		type: "percent" | "fixed" | "free_shipping";
+		value: number;
+		applied: boolean;
+		freeShipping: boolean;
+		minSubtotal: Money | null;
+	} | null;
 	shippingTotal: Money;
 	taxTotal: Money;
 	total: Money;
@@ -54,6 +65,8 @@ export interface PublicOrder {
 		lineTotal: Money;
 	}>;
 	subtotal: Money;
+	discountTotal: Money;
+	couponCode: string | null;
 	shippingTotal: Money;
 	taxTotal: Money;
 	total: Money;
@@ -88,6 +101,8 @@ export interface DashCommerceClient {
 	updateItem(lineId: string, quantity: number): Promise<Cart>;
 	removeItem(lineId: string): Promise<Cart>;
 	clear(): Promise<Cart>;
+	applyCoupon(code: string): Promise<Cart>;
+	removeCoupon(): Promise<Cart>;
 	checkout(opts?: { email?: string }): Promise<CheckoutStart>;
 	redirectToCheckout(opts?: { email?: string }): Promise<CheckoutStart>;
 	getOrder(id: string, orderKey: string): Promise<PublicOrder>;

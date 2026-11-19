@@ -1,12 +1,14 @@
 DashCommerce Lite turns the entries in your `products` collection into a
 shop. Shoppers add items to a cart and pay on Stripe's hosted Checkout
-page. You manage orders, stock and settings in the EmDash admin. It runs
+page. You manage orders, stock, coupons and settings in the EmDash admin. It runs
 as a sandboxed plugin, so there is nothing to install from npm.
 
 ## What it does
 
 - Prices, SKU and stock settings come from each product entry.
 - A cart that needs no shopper account.
+- Coupon codes: a percentage or fixed amount off, or free shipping, with
+  an optional minimum, dates and use limit.
 - Stripe hosted Checkout, including methods that confirm later, such as
   SEPA Direct Debit.
 - A signed Stripe webhook: an order is marked paid only when Stripe says
@@ -15,14 +17,14 @@ as a sandboxed plugin, so there is nothing to install from npm.
   is cancelled or fully refunded.
 - Refunds made in the Stripe Dashboard show up on the order.
 - Flat tax and shipping, or Stripe Tax.
-- Admin pages for orders (search, cancel, CSV export), stock and
-  settings, plus a Recent orders widget.
+- Admin pages for orders (search, cancel, CSV export), stock, coupons
+  and settings, plus a Recent orders widget.
 
 ## Access it asks for
 
 Read content (product prices and stock), network requests to
-`api.stripe.com` only, and its own storage for orders, carts, stock and
-Stripe events.
+`api.stripe.com` only, and its own storage for orders, carts, stock,
+coupons and Stripe events.
 
 ## Before you install
 

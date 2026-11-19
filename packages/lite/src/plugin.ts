@@ -23,9 +23,11 @@ import { handleAdmin } from "./admin";
 import { metered } from "./budget";
 import {
 	addItemHandler,
+	applyCouponHandler,
 	CART_HEADER,
 	clearCartHandler,
 	getCartHandler,
+	removeCouponHandler,
 	updateItemHandler,
 } from "./cart-routes";
 import { createCheckoutHandler } from "./checkout";
@@ -73,6 +75,22 @@ const plugin: SandboxedPlugin = {
 			methods: ["POST"],
 			request: JSON_BODY,
 			handler: async (routeCtx, ctx) => clearCartHandler(ctx, routeCtx.request.headers),
+		}),
+
+		/** Apply a coupon code: { code }. One coupon per cart; a new code replaces the old one. */
+		"cart/coupon": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: JSON_BODY,
+			handler: async (routeCtx, ctx) =>
+				applyCouponHandler(ctx, routeCtx.request.headers, routeCtx.input),
+		}),
+
+		"cart/coupon/remove": pluginRoute({
+			public: true,
+			methods: ["POST"],
+			request: JSON_BODY,
+			handler: async (routeCtx, ctx) => removeCouponHandler(ctx, routeCtx.request.headers),
 		}),
 
 		"checkout/session": pluginRoute({
