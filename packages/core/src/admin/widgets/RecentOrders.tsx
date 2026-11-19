@@ -3,6 +3,7 @@ import { Loading, usePluginAPI } from "../kit";
 import { MoneyDisplay } from "../ui/MoneyDisplay";
 import { StatusBadge } from "../ui/StatusBadge";
 import type { Money } from "../../types";
+import { T } from "../theme";
 
 interface Row {
 	id: string;
@@ -36,13 +37,13 @@ export function RecentOrders() {
 						gridTemplateColumns: "auto auto 1fr auto",
 						gap: 8,
 						padding: "4px 0",
-						borderBottom: "1px solid #eee",
+						borderBottom: `1px solid ${T.hairline}`,
 						alignItems: "baseline",
 					}}
 				>
 					<a href={`#/orders/${r.id}`}>{r.orderNumber}</a>
 					<StatusBadge status={r.status} />
-					<span style={{ color: "#666" }}>{r.customerEmail}</span>
+					<span style={{ color: T.textMuted }}>{r.customerEmail}</span>
 					<span>
 						<MoneyDisplay value={r.total} />
 					</span>

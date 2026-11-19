@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { T } from "../theme";
 
 export interface ProviderCard {
 	id: string;
@@ -21,8 +22,6 @@ export interface ProviderCardsProps {
 	onSelect: (id: string) => void;
 	disabled: boolean;
 }
-
-const ACCENT = "#2563eb";
 
 const srOnly: React.CSSProperties = {
 	position: "absolute",
@@ -58,8 +57,8 @@ function Logo({ card }: { card: ProviderCard }) {
 				justifyContent: "center",
 				fontSize: 20,
 				fontWeight: 700,
-				color: "#ffffff",
-				background: card.brandColour ?? "#475569",
+				color: T.onFill,
+				background: card.brandColour ?? T.neutralFill,
 			}}
 		>
 			{card.label.charAt(0).toUpperCase()}
@@ -92,10 +91,10 @@ export function ProviderCards({ providers, selectedId, onSelect, disabled }: Pro
 								padding: 16,
 								borderRadius: 12,
 								cursor: disabled ? "default" : "pointer",
-								background: on ? "#f8fbff" : "#ffffff",
-								border: on ? `2px solid ${ACCENT}` : "1px solid #d1d5db",
-								boxShadow: on ? "0 0 0 4px rgba(37,99,235,0.10)" : "none",
-								outline: focused === card.id ? `3px solid ${ACCENT}` : "none",
+								background: on ? T.selected : T.surface,
+								border: on ? `2px solid ${T.accent}` : `1px solid ${T.border}`,
+								boxShadow: on ? `0 0 0 4px ${T.accentSoft}` : "none",
+								outline: focused === card.id ? `3px solid ${T.accent}` : "none",
 								outlineOffset: 2,
 							}}
 						>
@@ -112,16 +111,16 @@ export function ProviderCards({ providers, selectedId, onSelect, disabled }: Pro
 							/>
 							<span style={{ display: "flex", alignItems: "center", gap: 12 }}>
 								<Logo card={card} />
-								<span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: "#111827" }}>
+								<span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: T.textStrong }}>
 									{card.label}
 								</span>
 								{on && (
-									<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill={ACCENT}>
+									<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill={T.accent}>
 										<circle cx="12" cy="12" r="11" />
 										<path
 											d="M7 12.5l3.2 3.2L17 9"
 											fill="none"
-											stroke="#ffffff"
+											stroke={T.onFill}
 											strokeWidth="2.4"
 											strokeLinecap="round"
 											strokeLinejoin="round"
@@ -130,7 +129,7 @@ export function ProviderCards({ providers, selectedId, onSelect, disabled }: Pro
 								)}
 							</span>
 							{card.description && (
-								<span style={{ fontSize: 14, color: "#374151", lineHeight: 1.5 }}>
+								<span style={{ fontSize: 14, color: T.text, lineHeight: 1.5 }}>
 									{card.description}
 								</span>
 							)}

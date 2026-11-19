@@ -25,6 +25,7 @@ import {
 import { EmptyState } from "../ui/EmptyState";
 import { StatusBadge } from "../ui/StatusBadge";
 import type { Coupon, DiscountType } from "../../types";
+import { T } from "../theme";
 
 const DISCOUNT_TYPES: { value: DiscountType; label: string }[] = [
 	{ value: "percent_cart", label: "% off cart" },
@@ -282,7 +283,7 @@ function CouponEditor({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: T.scrim,
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -294,7 +295,7 @@ function CouponEditor({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: T.surface,
 					borderRadius: 8,
 					maxWidth: 560,
 					width: "100%",
