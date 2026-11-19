@@ -505,18 +505,18 @@ function GroupBody({
 					disabled={disabled}
 				/>
 				{errors.paymentProvider && (
-					<p role="alert" style={{ color: "#b91c1c", margin: "0 0 0.75rem" }}>
+					<p role="alert" style={{ color: T.danger, margin: "0 0 0.75rem" }}>
 						{errors.paymentProvider}
 					</p>
 				)}
 				{!selected && (
-					<p style={{ color: "#4b5563", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+					<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
 						Pick a provider to set it up. Nothing is charged until you finish.
 					</p>
 				)}
 				{selected && selected.id !== "stripe" && (
 					<>
-						<p style={{ color: "#666", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+						<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
 							Customers pay on {selected.label}'s hosted page and come back to your
 							store.
 						</p>

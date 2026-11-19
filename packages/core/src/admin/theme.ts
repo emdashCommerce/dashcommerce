@@ -87,6 +87,8 @@ export const T = {
 	dangerBorder: "#991b1b",
 	/** Text on solid danger or status fills. */
 	onFill: "#fff",
+	/** A solid neutral fill under white text (e.g. a provider's letter tile). */
+	neutralFill: "#475569",
 
 	info,
 	success,
