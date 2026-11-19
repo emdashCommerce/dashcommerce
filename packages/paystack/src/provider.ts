@@ -20,7 +20,7 @@ import type {
 	VerifyWebhookInput,
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
-import { call, type PaystackClientOptions } from "./client";
+import { call, callEnvelope, type PaystackClientOptions } from "./client";
 import { verifyPaystackSignature } from "./webhook-verify";
 
 const SUPPORTED_CURRENCIES = new Set(["KES", "NGN", "GHS", "ZAR", "USD"]);
@@ -139,6 +139,128 @@ interface PaystackRefundData {
 	status: string;
 	amount: number;
 	currency: string;
+	merchant_note?: string | null;
+	createdAt?: string;
+}
+
+interface PaystackRefundPage {
+	data: PaystackRefundData[];
+	pageCount: number;
+}
+
+/**
+ * Transaction statuses from https://paystack.com/docs/payments/verify-payments/,
+ * plus `reversal-pending`, which the docs omit but /transaction/verify returns
+ * once a refund has started (seen on the test account, 19 Nov 2026).
+ * A reversed transaction was paid; the refund is tracked on its own. Core
+ * reads only paid-or-not here, so a payment refunded in full from the Paystack
+ * dashboard before a late webhook retry would still be confirmed; core needs
+ * refunded amounts to close that (proposed upstream).
+ * `abandoned` is not final: the customer may still complete the payment.
+ */
+const TRANSACTION_STATUS: Record<string, "pending" | "succeeded" | "failed"> = {
+	success: "succeeded",
+	reversed: "succeeded",
+	"reversal-pending": "succeeded",
+	failed: "failed",
+	abandoned: "pending",
+	ongoing: "pending",
+	pending: "pending",
+	processing: "pending",
+	queued: "pending",
+};
+
+/** Refund statuses from https://paystack.com/docs/payments/refunds/. */
+const REFUND_STATUS: Record<string, RefundResult["status"]> = {
+	pending: "pending",
+	processing: "pending",
+	"needs-attention": "pending",
+	processed: "succeeded",
+	failed: "failed",
+};
+
+/**
+ * Paystack keeps no idempotency key for refunds, and assigns its own refund
+ * reference. `merchant_note` is the only field that keeps ours, so the request
+ * id goes there in a form that can be read back exactly.
+ */
+const REFUND_REQUEST_ID = /^[^\s()]+$/;
+// Anchored at the end, so text in `reason` cannot pose as the tag.
+const NOTE_REQUEST_ID = /\(refundRequestId=([^\s()]+)\)\s*$/;
+
+function merchantNoteFor(refundRequestId: string, reason?: string): string {
+	const tag = `(refundRequestId=${refundRequestId})`;
+	const text = reason?.replace(/[()]/g, "").trim();
+	return text ? `${text} ${tag}` : tag;
+}
+
+const REFUND_PAGE_SIZE = 100;
+const MAX_REFUND_PAGES = 20;
+
+/**
+ * Find a refund on this transaction already made for `refundRequestId`.
+ * Refunds are listed by the numeric transaction id: filtering by reference
+ * silently returns nothing. A failed refund does not count, so it can be
+ * retried. The earliest match wins.
+ */
+async function findRefundForRequest(
+	ctx: PaymentProviderRuntimeContext,
+	client: PaystackClientOptions,
+	transactionRef: string,
+	refundRequestId: string,
+): Promise<PaystackRefundData | undefined> {
+	const transaction = await call<PaystackVerifyData>(ctx, {
+		client,
+		method: "GET",
+		path: `/transaction/verify/${encodeURIComponent(transactionRef)}`,
+	});
+	if (!Number.isSafeInteger(transaction.id)) {
+		throw new Error("Paystack verify returned no numeric transaction id; refusing to refund blind");
+	}
+
+	const matches: PaystackRefundData[] = [];
+	for (let page = 1, pageCount = 1; page <= pageCount; page += 1) {
+		if (page > MAX_REFUND_PAGES) {
+			throw new Error(
+				`Paystack lists more than ${MAX_REFUND_PAGES} pages of refunds for one transaction`,
+			);
+		}
+		const result = await listRefundPage(ctx, client, transaction.id, page);
+		for (const refund of result.data) {
+			const tagged = NOTE_REQUEST_ID.exec(refund.merchant_note ?? "")?.[1];
+			if (tagged === refundRequestId && refund.status !== "failed") matches.push(refund);
+		}
+		pageCount = result.pageCount;
+	}
+
+	matches.sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id - b.id);
+	return matches[0];
+}
+
+async function listRefundPage(
+	ctx: PaymentProviderRuntimeContext,
+	client: PaystackClientOptions,
+	transactionId: number,
+	page: number,
+): Promise<PaystackRefundPage> {
+	const query = new URLSearchParams({
+		transaction: String(transactionId),
+		perPage: String(REFUND_PAGE_SIZE),
+		page: String(page),
+	});
+	const result = await callEnvelope<PaystackRefundData[]>(ctx, {
+		client,
+		method: "GET",
+		path: `/refund?${query}`,
+	});
+	if (!Array.isArray(result.data)) {
+		throw new Error("Paystack refund list returned no data array");
+	}
+	const pageCount = result.meta?.pageCount;
+	return {
+		data: result.data,
+		pageCount: typeof pageCount === "number" ? pageCount : 1,
+	};
 }
 
 export const paystackPaymentProvider: PaymentProvider = {
@@ -318,21 +440,13 @@ export const paystackPaymentProvider: PaymentProvider = {
 			path: `/transaction/verify/${encodeURIComponent(paymentOrCheckoutReference)}`,
 		});
 
-		let status: "pending" | "succeeded" | "failed";
-		if (data.status === "success") {
-			status = "succeeded";
-		} else if (data.status === "failed") {
-			status = "failed";
-		} else {
-			status = "pending";
-		}
-
+		const status = TRANSACTION_STATUS[data.status];
 		return {
-			status,
+			status: status ?? "pending",
 			paymentReference: data.reference,
 			amount: data.amount,
 			currency: data.currency?.toUpperCase(),
-			reason: data.gateway_response,
+			reason: status ? data.gateway_response : `Unrecognised Paystack status: ${data.status}`,
 		};
 	},
 
@@ -347,36 +461,39 @@ export const paystackPaymentProvider: PaymentProvider = {
 			);
 		}
 
+		if (!REFUND_REQUEST_ID.test(input.refundRequestId)) {
+			throw new Error(
+				"Paystack refund needs a refundRequestId without spaces or brackets, so the merchant note can carry it",
+			);
+		}
+
 		const client = toPaystackClient(credentials);
 		const transactionRef = input.paymentReference;
 		if (!transactionRef) {
 			throw new Error("Paystack refund requires paymentReference");
 		}
 
-		const note = input.reason ? `${input.refundRequestId}: ${input.reason}` : input.refundRequestId;
-
-		const data = await call<PaystackRefundData>(ctx, {
-			client,
-			path: "/refund",
-			body: {
-				transaction: transactionRef,
-				...(input.amount !== undefined ? { amount: input.amount } : {}),
-				currency: input.currency.toUpperCase(),
-				merchant_note: note,
-			},
-		});
-
-		const status: RefundResult["status"] =
-			data.status === "processed" || data.status === "success"
-				? "succeeded"
-				: data.status === "failed"
-					? "failed"
-					: "pending";
+		// Paystack accepts an identical second refund as a new one (tested on
+		// 19 Nov 2026), so a retry with the same refundRequestId must find the
+		// first refund rather than create another.
+		const existing = await findRefundForRequest(ctx, client, transactionRef, input.refundRequestId);
+		const data =
+			existing ??
+			(await call<PaystackRefundData>(ctx, {
+				client,
+				path: "/refund",
+				body: {
+					transaction: transactionRef,
+					...(input.amount !== undefined ? { amount: input.amount } : {}),
+					currency: input.currency.toUpperCase(),
+					merchant_note: merchantNoteFor(input.refundRequestId, input.reason),
+				},
+			}));
 
 		return {
 			providerRefundId: String(data.id),
 			refundRequestId: input.refundRequestId,
-			status,
+			status: REFUND_STATUS[data.status] ?? "pending",
 			amount: data.amount,
 			currency: (data.currency ?? input.currency).toUpperCase(),
 		};

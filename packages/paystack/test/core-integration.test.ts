@@ -113,16 +113,45 @@ function fakePaystack(options: FakePaystackOptions = {}) {
 				},
 			});
 		}
+		if (pathname === "/refund" && (init?.method ?? "GET") === "GET") {
+			// As the live API: filtering by a reference instead of the numeric
+			// transaction id silently returns nothing.
+			const filter = new URL(url).searchParams.get("transaction");
+			const created = refunds
+				.filter((r) => String(r.transactionId) === filter)
+				.map((r) => ({
+					id: r.id,
+					status: "pending",
+					amount: r.amount,
+					currency: r.currency,
+					merchant_note: r.merchant_note,
+					createdAt: r.createdAt,
+				}));
+			return json({
+				status: true,
+				message: "Refunds retrieved",
+				data: created,
+				meta: { total: created.length, page: 1, pageCount: created.length ? 1 : 0 },
+			});
+		}
 		if (pathname === "/refund") {
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			const tx = transactions.get(String(body.transaction));
 			if (!tx) return json({ status: false, message: "Transaction not found" }, 404);
-			refunds.push(body);
+			const id = 887766 + refunds.length;
+			refunds.push({
+				...body,
+				id,
+				transactionId: tx.id,
+				amount: body.amount ?? tx.amount,
+				currency: tx.currency,
+				createdAt: new Date(Date.UTC(2026, 10, 19, 2, refunds.length)).toISOString(),
+			});
 			return json({
 				status: true,
 				message: "Refund has been queued for processing",
 				data: {
-					id: 887766,
+					id,
 					status: "pending",
 					amount: body.amount ?? tx.amount,
 					currency: tx.currency,
@@ -527,5 +556,33 @@ describe("@dashcommerce/paystack on released core", () => {
 		expect(paystack.refunds[0]?.transaction).toBe(reference);
 		expect(paystack.refunds[0]?.amount).toBe(50000);
 		expect(refund.status).toBe("pending");
+
+		// A retry with the same request id (say the first response timed out)
+		// returns the first refund; Paystack itself would accept a second one.
+		const retry = await paystackPaymentProvider.refund(
+			{ http: ctx.http, log: ctx.log },
+			{
+				refundRequestId: "refund-req-1",
+				paymentReference: order.paymentReference ?? "",
+				amount: 50000,
+				currency: "KES",
+			},
+			{ secretKey: SECRET_KEY },
+		);
+		expect(paystack.refunds).toHaveLength(1);
+		expect(retry.providerRefundId).toBe(refund.providerRefundId);
+
+		// A different request for the same amount is a new, legitimate refund.
+		await paystackPaymentProvider.refund(
+			{ http: ctx.http, log: ctx.log },
+			{
+				refundRequestId: "refund-req-2",
+				paymentReference: order.paymentReference ?? "",
+				amount: 50000,
+				currency: "KES",
+			},
+			{ secretKey: SECRET_KEY },
+		);
+		expect(paystack.refunds).toHaveLength(2);
 	});
 });

@@ -47,6 +47,14 @@ export async function call<T = Record<string, unknown>>(
 	ctx: PaymentProviderRuntimeContext,
 	opts: PaystackCallOptions,
 ): Promise<T> {
+	return (await callEnvelope<T>(ctx, opts)).data;
+}
+
+/** As `call`, but returns the whole response, including list `meta`. */
+export async function callEnvelope<T = Record<string, unknown>>(
+	ctx: PaymentProviderRuntimeContext,
+	opts: PaystackCallOptions,
+): Promise<PaystackResponse<T> & { meta?: Record<string, unknown> }> {
 	const method = opts.method ?? "POST";
 	const base = opts.client.apiBase ?? PAYSTACK_API_BASE;
 	const headers: Record<string, string> = {
@@ -66,9 +74,9 @@ export async function call<T = Record<string, unknown>>(
 	});
 
 	const rawText = await res.text();
-	let parsed: PaystackResponse<T>;
+	let parsed: PaystackResponse<T> & { meta?: Record<string, unknown> };
 	try {
-		parsed = JSON.parse(rawText) as PaystackResponse<T>;
+		parsed = JSON.parse(rawText) as PaystackResponse<T> & { meta?: Record<string, unknown> };
 	} catch {
 		throw new PaystackApiError(
 			res.status,
@@ -85,5 +93,5 @@ export async function call<T = Record<string, unknown>>(
 		throw new PaystackApiError(res.status, parsed as unknown as Record<string, unknown>, msg);
 	}
 
-	return parsed.data;
+	return parsed;
 }

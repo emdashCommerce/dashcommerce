@@ -435,6 +435,11 @@ describe("paystackPaymentProvider", () => {
 		it("refunds by transaction reference with the request id in the merchant note", async () => {
 			let capturedBody: Record<string, unknown> = {};
 			const ctx = makeMockRuntimeContext(async (url, init) => {
+				// The double-refund guard looks first: verify for the numeric id, then list.
+				if (url.startsWith("https://api.paystack.co/transaction/verify/")) {
+					return paystackOk({ id: 6480092473, status: "success", reference: "dc-x" });
+				}
+				if (url.startsWith("https://api.paystack.co/refund?")) return paystackOk([]);
 				expect(url).toBe("https://api.paystack.co/refund");
 				capturedBody = JSON.parse(String(init?.body));
 				return paystackOk({ id: 990011, status: "processed", amount: 250000, currency: "KES" });
@@ -455,16 +460,18 @@ describe("paystackPaymentProvider", () => {
 			expect(capturedBody.transaction).toBe("dc-0123456789abcdef0123456789abcdef");
 			expect(capturedBody.amount).toBe(250000);
 			expect(capturedBody.currency).toBe("KES");
-			expect(capturedBody.merchant_note).toBe("refund-req-1: Event cancelled");
+			expect(capturedBody.merchant_note).toBe("Event cancelled (refundRequestId=refund-req-1)");
 			expect(result.status).toBe("succeeded");
 			expect(result.providerRefundId).toBe("990011");
 			expect(result.refundRequestId).toBe("refund-req-1");
 		});
 
 		it("reports a queued refund as pending", async () => {
-			const ctx = makeMockRuntimeContext(async () =>
-				paystackOk({ id: 1, status: "pending", amount: 100, currency: "KES" }),
-			);
+			const ctx = makeMockRuntimeContext(async (url) => {
+				if (url.includes("/transaction/verify/")) return paystackOk({ id: 1, status: "success" });
+				if (url.includes("/refund?")) return paystackOk([]);
+				return paystackOk({ id: 1, status: "pending", amount: 100, currency: "KES" });
+			});
 			const result = await paystackPaymentProvider.refund(
 				ctx,
 				{ refundRequestId: "r", paymentReference: "dc-x", amount: 100, currency: "KES" },
