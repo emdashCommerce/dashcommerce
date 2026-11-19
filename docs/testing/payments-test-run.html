@@ -130,7 +130,7 @@ pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflo
 
 <div class="wrap">
   <header class="top">
-    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · branch test/FIK-57-paystack-e2e</span>
+    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · FIK-60 · branch test/FIK-57-paystack-e2e</span>
     <h1>Payments test run</h1>
     <p class="muted" style="margin:0;max-width:65ch">Stripe and Paystack, each hosted and on-page, end to end in test mode. Record every step here: result, order number, notes and screenshots. Nothing goes to a PR or the upstream proposal until this run passes. Test keys only.</p>
     <div class="run-meta">
@@ -235,6 +235,11 @@ const GROUPS = [
   { id: "switching", title: "Switching provider", intro: "", steps: [
     { id: "W1", how: "With Paystack active, refund the Stripe order M2.", expect: "Works; Settings shows “Stripe (not active)”." },
     { id: "W2", how: "Resend an old Stripe webhook: <code>stripe events resend &lt;evt_…&gt;</code>.", expect: "Verified and accepted (200, duplicate). Nothing breaks." },
+  ]},
+  { id: "admin", title: "Admin readability, light and dark", intro: "FIK-60, fixes upstream issue #44. Use EmDash's light/dark switch (top right of the admin).", steps: [
+    { id: "A1", how: "<b>Dark mode.</b> Open DashCommerce › Settings, then Orders, Customers, Coupons, Shipping, Tax, Subscriptions, Reviews, Vendors, Menus, Reports and the Dashboard.", expect: "Every label, value, hint, card title and button is easy to read. Cards are dark, not white islands. Add a screenshot of anything faint." },
+    { id: "A2", how: "<b>Light mode.</b> The same pages.", expect: "Looks as before, with every text readable." },
+    { id: "A3", how: "Settings: the Payment provider cards, the warning and info callouts, and a Delete button (Shipping or Menus), in both modes.", expect: "Cards, callout text and white button text are clearly readable in both modes." },
   ]},
   { id: "findings", title: "Findings to record", intro: "Facts the package needs from this run. Mark pass when you've written the answer in notes.", steps: [
     { id: "H1", how: "Which Paystack signature headers arrive on the captures?", expect: "Write: <code>Paystack-Signature</code>, <code>x-paystack-signature</code>, or both." },
