@@ -105,6 +105,32 @@ export interface InitCheckoutInput {
 /** How customers pay: on the provider's hosted page, or over the store's page. */
 export type CheckoutStyle = "hosted" | "on_page";
 
+/**
+ * Browser side of on-page checkout. A provider package's client entry
+ * registers one on `window.DashCommerceCheckoutClients[providerId]`, and the
+ * storefront calls `open` with the `client` data from an `on_page` result.
+ * Callbacks only steer the customer: payment is confirmed by the signed
+ * webhook and the provider's live status, never by the browser.
+ */
+export interface OnPageCheckoutClient {
+	open(
+		client: Record<string, string>,
+		callbacks: {
+			/** The customer finished at the provider; go to the return URL. */
+			onFinished(): void;
+			/** The customer closed the provider's window without paying. */
+			onClosed(): void;
+			onError(message: string): void;
+		},
+	): void;
+}
+
+declare global {
+	interface Window {
+		DashCommerceCheckoutClients?: Record<string, OnPageCheckoutClient>;
+	}
+}
+
 export type InitCheckoutResult =
 	| {
 			kind: "redirect";

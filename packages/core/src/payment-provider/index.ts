@@ -31,6 +31,7 @@ export { stripePaymentProvider, toCreateCheckoutSessionInput } from "./stripe-pr
 export type {
 	CheckoutStyle,
 	CreateRefundInput,
+	OnPageCheckoutClient,
 	InitCheckoutInput,
 	InitCheckoutResult,
 	NormalizedPaymentEvent,
