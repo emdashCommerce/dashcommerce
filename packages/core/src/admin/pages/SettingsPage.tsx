@@ -55,8 +55,7 @@ const GROUPS: GroupSpec[] = [
 	{
 		id: "provider",
 		title: "Payment provider",
-		description:
-			"Who takes payment at checkout. Keep Stripe's keys below while Stripe orders can still be refunded or send webhooks.",
+		description: "Who takes payment at checkout.",
 	},
 	{
 		id: "stripe",
@@ -282,6 +281,32 @@ export function SettingsPage() {
 	const needsProviderKey =
 		activeProviderId !== "stripe" && activeProvider?.secrets?.secretKey.isSet === false;
 	const showProviderPicker = (saved._providers?.length ?? 0) > 1;
+	const stripeActive = activeProviderId === "stripe";
+	const stripeKeysSaved =
+		!!saved._secrets?.stripeSecretKey?.isSet || !!saved._secrets?.stripeWebhookSecret?.isSet;
+
+	/**
+	 * With another provider active, Stripe-only cards step back: Stripe shows
+	 * only while its keys are saved (earlier Stripe orders may still need
+	 * refunds and webhooks), and Connect only if it is already switched on.
+	 */
+	function groupView(group: GroupSpec): GroupSpec | null {
+		if (group.id === "provider") return showProviderPicker ? group : null;
+		if (stripeActive) return group;
+		if (group.id === "stripe") {
+			return stripeKeysSaved
+				? {
+						...group,
+						title: "Stripe (not active)",
+						description:
+							"Kept so earlier Stripe orders can still be refunded and their webhooks verified. Remove the keys once no Stripe orders need them.",
+					}
+				: null;
+		}
+		if (group.id === "connect" && !connectEnabled) return null;
+		return group;
+	}
+	const visibleGroups = GROUPS.map(groupView).filter((g): g is GroupSpec => g !== null);
 
 	return (
 		<div
@@ -314,7 +339,7 @@ export function SettingsPage() {
 				flat-rate, table, and Stripe Tax controls in one place.
 			</Alert>
 
-			{GROUPS.filter((group) => group.id !== "provider" || showProviderPicker).map((group) => (
+			{visibleGroups.map((group) => (
 				<Card key={group.id} title={group.title}>
 					{group.description && (
 						<p
@@ -334,6 +359,7 @@ export function SettingsPage() {
 						errors={errors}
 						enabledCurrencies={enabledCurrencies}
 						connectEnabled={connectEnabled}
+						stripeActive={stripeActive}
 						setField={setField}
 						disabled={saving}
 					/>
@@ -358,6 +384,8 @@ interface GroupBodyProps {
 	errors: Record<string, string>;
 	enabledCurrencies: string[];
 	connectEnabled: boolean;
+	/** False when another payment provider is active. */
+	stripeActive: boolean;
 	setField: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 	disabled: boolean;
 }
@@ -378,6 +406,7 @@ function GroupBody({
 	errors,
 	enabledCurrencies,
 	connectEnabled,
+	stripeActive,
 	setField,
 	disabled,
 }: GroupBodyProps) {
@@ -438,6 +467,23 @@ function GroupBody({
 				</FormField>
 				{selected && selected.id !== "stripe" && (
 					<>
+						<p style={{ color: "#666", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+							Customers pay on {selected.label}'s hosted page and come back to your
+							store.
+						</p>
+						{eff("checkoutMode", saved, draft) === "embedded" && (
+							<Alert type="warning" title="Checkout is set to embedded">
+								Embedded checkout works only with Stripe, so checkout will refuse
+								payments until it is hosted.{" "}
+								<Button
+									variant="secondary"
+									onClick={() => setField("checkoutMode", "hosted")}
+									disabled={disabled}
+								>
+									Switch to hosted
+								</Button>
+							</Alert>
+						)}
 						<SecretField
 							keyName={`${selected.id}SecretKey`}
 							label={selected.credentialFields?.secretKey?.label ?? `${selected.label} secret key`}
@@ -475,6 +521,7 @@ function GroupBody({
 			(eff("checkoutMode", saved, draft) as CheckoutMode | null) ?? "hosted";
 		return (
 			<>
+				{stripeActive && (
 				<FormField
 					label="Checkout flow"
 					description="Hosted redirects the customer to a Stripe-hosted page (less PCI scope, mobile-friendly, minimal UI to maintain). Embedded keeps the payment form on your storefront using Stripe Elements."
@@ -492,6 +539,7 @@ function GroupBody({
 						disabled={disabled}
 					/>
 				</FormField>
+				)}
 				<SecretField
 					keyName="stripeSecretKey"
 					label="Stripe secret key"
