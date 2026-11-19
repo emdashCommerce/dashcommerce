@@ -271,6 +271,13 @@ export interface PaymentProvider {
 	readonly webhookHeaders?: readonly string[];
 
 	/**
+	 * True when the provider's hosted page collects the customer's email and
+	 * address itself (Stripe Checkout does). Otherwise the storefront must
+	 * collect them, and checkout refuses to start a payment without them.
+	 */
+	readonly collectsCustomerDetails?: boolean;
+
+	/**
 	 * Credentials the merchant enters in admin settings, saved as
 	 * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
 	 */

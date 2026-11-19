@@ -16,6 +16,26 @@
  */
 
 import type { PluginContext, RouteContext } from "emdash";
+import {
+	DEFAULT_PAYMENT_PROVIDER_ID,
+	getPaymentProvider,
+	loadPaymentProviderCredentials,
+} from "../payment-provider";
+
+/** The active provider, for a storefront that isn't tied to Stripe. Never any secret. */
+async function activeProviderSummary(ctx: PluginContext) {
+	const id = (await ctx.kv.get<string>("settings:paymentProvider")) ?? DEFAULT_PAYMENT_PROVIDER_ID;
+	const checkoutMode = (await ctx.kv.get<string>("settings:checkoutMode")) ?? "hosted";
+	const provider = getPaymentProvider(id);
+	if (!provider) return { id, label: id, configured: false, registered: false, checkoutMode };
+	const creds = await loadPaymentProviderCredentials(ctx.kv, id);
+	return {
+		id,
+		label: provider.label,
+		configured: Boolean(creds?.secretKey && creds.webhookSecret),
+		checkoutMode,
+	};
+}
 
 export const configCheckRoutes = {
 	"config-check": {
@@ -37,6 +57,7 @@ export const configCheckRoutes = {
 				defaultCurrency: cur ?? null,
 				enabledCurrencies: Array.isArray(enabled) ? enabled : cur ? [cur] : [],
 				connectEnabled: Boolean(connect),
+				paymentProvider: await activeProviderSummary(ctx),
 			};
 			return new Response(JSON.stringify(body), {
 				status: 200,
