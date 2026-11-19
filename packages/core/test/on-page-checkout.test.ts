@@ -1,5 +1,5 @@
 /**
- * FIK-59 slice 4: on-page checkout for providers other than Stripe.
+ * On-page checkout for providers other than Stripe.
  * `checkoutMode = "embedded"` means on-page with the active provider.
  */
 
