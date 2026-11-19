@@ -473,8 +473,9 @@ function GroupBody({
 						</p>
 						{eff("checkoutMode", saved, draft) === "embedded" && (
 							<Alert type="warning" title="Checkout is set to embedded">
-								Embedded checkout works only with Stripe, so checkout will refuse
-								payments until it is hosted.{" "}
+								DashCommerce's embedded checkout is built on Stripe's payment form, so
+								it cannot run {selected.label} yet, and checkout will refuse payments
+								until it is set to hosted.{" "}
 								<Button
 									variant="secondary"
 									onClick={() => setField("checkoutMode", "hosted")}
