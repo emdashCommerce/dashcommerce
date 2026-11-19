@@ -536,4 +536,107 @@ describe("DashCommerce (sandboxed) in workerd", () => {
 		expect(h.http.requests()[0]?.headers.authorization).toBe(`Bearer ${SK}`);
 		env.EMDASH_ENCRYPTION_KEY = undefined;
 	});
+	it("applies a coupon, charges the discount through Stripe and counts the use", async () => {
+		const { h, productId } = await setup();
+		await h.fixtures.plugin.setting("stripeSecretKey", SK);
+		await h.fixtures.plugin.setting("stripeWebhookSecret", WH);
+
+		// Coupon from the admin page: 25% off, one use.
+		const saved = await h.admin.submit(
+			"/coupons",
+			"save_coupon",
+			{ code: "quarter", type: "percent", value: "25", usageLimit: 1, active: true },
+			{ blockId: "coupon:new" },
+		);
+		expect(saved.toast).toEqual({ message: "Coupon QUARTER saved", type: "success" });
+
+		const added = await call(h, "cart/items", { method: "POST", body: { productId, quantity: 2 } });
+		const token = (added.body.data as { token: string }).token;
+		const headers = { [HEADER]: token };
+		const applied = await call(h, "cart/coupon", {
+			method: "POST",
+			headers,
+			body: { code: "Quarter" },
+		});
+		expect(applied.body.data).toMatchObject({
+			ok: true,
+			cart: { discountTotal: { amount: 600 }, total: { amount: 1800 } },
+		});
+
+		await h.http.respond(
+			"https://api.stripe.com/v1/coupons",
+			new Response(
+				JSON.stringify({ id: "co_sbx", object: "coupon", duration: "once", valid: true }),
+			),
+		);
+		await h.http.respond(
+			"https://api.stripe.com/v1/checkout/sessions",
+			new Response(
+				JSON.stringify({
+					id: "cs_coupon",
+					object: "checkout.session",
+					url: "https://checkout.stripe.com/c/pay/cs_coupon",
+				}),
+			),
+		);
+		// The first request re-reads the coupon and asks for another request.
+		const first = await call(h, "checkout/session", { method: "POST", headers, body: {} });
+		expect(first.body.data).toMatchObject({ ok: false, error: { code: "CHECKOUT_CONTINUE" } });
+		const second = await call(h, "checkout/session", { method: "POST", headers, body: {} });
+		const co = second.body.data as { ok: boolean; orderId: string };
+		expect(co.ok).toBe(true);
+		const [couponReq, sessionReq] = h.http.requests();
+		expect(couponReq?.url).toBe("https://api.stripe.com/v1/coupons");
+		expect(new TextDecoder().decode(couponReq?.body)).toContain("amount_off=600");
+		expect(new TextDecoder().decode(sessionReq?.body)).toContain(
+			"discounts%5B0%5D%5Bcoupon%5D=co_sbx",
+		);
+
+		const payload = JSON.stringify({
+			id: "evt_coupon_1",
+			type: "checkout.session.completed",
+			data: {
+				object: {
+					id: "cs_coupon",
+					object: "checkout.session",
+					client_reference_id: co.orderId,
+					metadata: { orderId: co.orderId },
+					payment_status: "paid",
+					amount_total: 1800,
+					currency: "usd",
+					payment_intent: "pi_coupon",
+				},
+			},
+		});
+		const paid = await h.actions.routes.request("stripe/webhook", {
+			method: "POST",
+			headers: {
+				"stripe-signature": await sign(payload, WH, Math.floor(Date.now() / 1000)),
+				"content-type": "application/json",
+			},
+			rawBody: payload,
+		});
+		expect(paid.status).toBe(200);
+		expect(await h.inspect.storage.get("orders", co.orderId)).toMatchObject({
+			paymentStatus: "paid",
+			couponCode: "QUARTER",
+			discountTotal: { amount: 600 },
+		});
+
+		// The only use is taken: a new cart cannot apply the code.
+		const other = await call(h, "cart/items", { method: "POST", body: { productId } });
+		const otherToken = (other.body.data as { token: string }).token;
+		const refused = await call(h, "cart/coupon", {
+			method: "POST",
+			headers: { [HEADER]: otherToken },
+			body: { code: "QUARTER" },
+		});
+		expect(refused.body.data).toMatchObject({
+			ok: false,
+			error: { code: "COUPON_INVALID", message: "This coupon has been used up" },
+		});
+
+		const page = await h.admin.loadPage("/coupons");
+		expect(JSON.stringify(page.blocks)).toContain("QUARTER");
+	});
 });

@@ -23,10 +23,11 @@ import {
 	saveCart,
 	toCartView,
 } from "./cart";
+import { checkCoupon, type LiteCart, normalizeCode } from "./coupons";
 import { ensureCron } from "./cron";
 import { priceProduct } from "./products";
 import { type LiteConfig, loadConfig } from "./settings";
-import { type CartLineItem, type CartState, money, randomId } from "./shared";
+import { type CartLineItem, money, randomId } from "./shared";
 import { asId, asInt, asObject, fail } from "./validate";
 
 export { CART_HEADER };
@@ -36,7 +37,7 @@ type Headers = Record<string, string>;
 type Resolved = {
 	token: string;
 	cartId: string;
-	cart: CartState;
+	cart: LiteCart;
 	config: LiteConfig;
 };
 
@@ -183,8 +184,40 @@ export async function clearCartHandler(rawCtx: PluginContext, headers: Headers) 
 	return { ok: true as const, token: resolved.token, cart: toCartView(saved, config) };
 }
 
+/**
+ * Apply a coupon code to the cart, replacing any coupon already on it.
+ * Bridge calls: settings 1, cart 1, coupon 1, uses 1 (only for a coupon
+ * with a limit), write 1.
+ */
+export async function applyCouponHandler(rawCtx: PluginContext, headers: Headers, input: unknown) {
+	const ctx = metered(rawCtx);
+	const code = normalizeCode(asObject(input).code);
+	if (!code) return fail("INVALID_INPUT", "Enter a coupon code");
+	const { resolved } = await resolveCart(ctx, headers, { create: false });
+	if (!resolved || resolved.cart.items.length === 0) {
+		return fail("CART_EMPTY", "Add something to the cart before using a coupon");
+	}
+	const { token, cart, config } = resolved;
+	const { coupon: _previous, ...withoutCoupon } = cart;
+	const check = await checkCoupon(ctx, code, priceCart(withoutCoupon, config));
+	if (!check.ok) return fail(check.code, check.message);
+	const saved = await saveCart(ctx, { ...withoutCoupon, coupon: check.cartCoupon }, config);
+	return { ok: true as const, token, cart: toCartView(saved, config) };
+}
+
+/** Take the coupon off the cart. Settings 1, cart 1, write 1. */
+export async function removeCouponHandler(rawCtx: PluginContext, headers: Headers) {
+	const ctx = metered(rawCtx);
+	const { resolved } = await resolveCart(ctx, headers, { create: false });
+	if (!resolved) return fail("CART_NOT_FOUND", "No cart for this token");
+	const { token, cart, config } = resolved;
+	const { coupon: _previous, ...withoutCoupon } = cart;
+	const saved = await saveCart(ctx, withoutCoupon, config);
+	return { ok: true as const, token, cart: toCartView(saved, config) };
+}
+
 /** Show totals under the current shipping and tax settings without a write. */
-function priceCartForView(r: Resolved): CartState {
+function priceCartForView(r: Resolved): LiteCart {
 	return priceCart(r.cart, r.config);
 }
 

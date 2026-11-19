@@ -3,6 +3,30 @@
 Lite is published to the EmDash plugin registry only (it is `private` on
 npm), so it keeps its own changelog here.
 
+## Unreleased
+
+### Coupons
+
+- Shoppers can enter a coupon code on the cart. A coupon takes a
+  percentage or a fixed amount off the item subtotal, or removes the flat
+  shipping, with an optional minimum subtotal, start and end dates (UTC)
+  and a use limit. One coupon per cart.
+- New Coupons admin page to create, edit, turn off and delete codes.
+- New storefront routes `cart/coupon` and `cart/coupon/remove`; the cart
+  view gains `discountTotal` and `coupon`. The storefront kit gains
+  `applyCoupon` and `removeCoupon`, and `Cart.astro` a coupon field and a
+  discount line.
+- Checkout reads the coupon again and drops it (`COUPON_INVALID`) if it
+  was turned off, expired or used up. With a coupon, checkout takes at
+  least 2 requests; the storefront kit already repeats them.
+- Stripe Checkout charges the discounted total through a single-use
+  Stripe coupon. Orders record `couponCode` and `discountTotal`; the order
+  page and the CSV export show them.
+- Uses are the paid orders that carry the code, so a fully refunded order
+  gives its use back.
+- New storage: a `coupons` collection and a `couponCode` index on orders.
+  No new permissions.
+
 ## 0.2.0
 
 First registry release of the sandboxed store: simple products from

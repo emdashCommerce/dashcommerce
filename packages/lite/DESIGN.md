@@ -4,9 +4,9 @@ This package is the sandboxed build of DashCommerce. It is listed on the
 EmDash plugin registry as `dashcommerce-lite` (publisher
 `did:plc:yakxzbkuhphkc5eepv7p4wrc`, dashcommerce.bsky.social) and installs
 from the admin UI. It covers a part of the native plugin (`packages/core`):
-simple products read from content, a cart, Stripe hosted Checkout, a signed
+simple products read from content, a cart with coupons, Stripe hosted Checkout, a signed
 Stripe webhook, a stock ledger, refunds, flat tax and shipping, cleanup
-cron, and Block Kit pages for orders, stock and settings.
+cron, and Block Kit pages for orders, stock, coupons and settings.
 
 The package directory and npm name stay `packages/lite` and
 `@dashcommerce/lite` (private) inside this repo. Everything a site sees uses
@@ -58,7 +58,8 @@ Source layout (`packages/lite/src`):
 | --- | --- |
 | `plugin.ts` | Route table and hooks (`SandboxedPlugin` default export). |
 | `cart.ts` | Token minting and hashing, the `carts` collection, expiry, pricing with flat tax and shipping, cart view. |
-| `cart-routes.ts` | `cart`, `cart/items`, `cart/item`, `cart/clear`. |
+| `cart-routes.ts` | `cart`, `cart/items`, `cart/item`, `cart/clear`, `cart/coupon`, `cart/coupon/remove`. |
+| `coupons.ts` | Coupon shape, the `coupons` collection, use counting, the check against core's coupon rules. |
 | `products.ts` | Reads `products` content entries, checks sellability against the stock ledger, prices them. |
 | `stock.ts` | Stock ledger: available stock, deduct at payment, restore on cancel or full refund, sync and manual adjust. |
 | `checkout.ts` | Re-prices the cart, writes a pending order, creates the Stripe Checkout Session. |
@@ -67,6 +68,7 @@ Source layout (`packages/lite/src`):
 | `cron.ts` | Hourly cleanup of expired carts, stale pending orders and old webhook event ids. |
 | `export.ts` | One-time CSV export links and the CSV writer. |
 | `admin.ts` | Block Kit Orders, Stock and Settings pages and the recent-orders widget. |
+| `admin-coupons.ts` | Block Kit Coupons page: list, create, edit, delete. |
 | `settings.ts` | Settings defaults, parsing and validation. One `settings.list()` call per request. |
 | `shared.ts` | The list of modules imported from core. |
 
@@ -108,6 +110,47 @@ cookie used by core is replaced by a cart token.
 Public routes still get EmDash's cross-origin protection: a request with a
 different `Origin` gets 403, so another site cannot drive a shopper's cart
 from the browser. Same-origin theme code and server-side calls work.
+
+## Coupons
+
+The shopper types a code on the cart (`cart/coupon`). A coupon takes a
+percentage or a fixed amount off the item subtotal, or removes the flat
+shipping. It can have a minimum item subtotal, a start and an end date
+(UTC days) and a limit on how many paid orders may use it. One coupon per
+cart; a new code replaces the old one. Codes are 2 to 32 characters
+(`A-Z`, `0-9`, `-`, `_`) and not case sensitive.
+
+- Coupons live in the `coupons` collection, keyed by the upper-cased code,
+  and are managed on the Coupons admin page.
+- The rules are core's `validateCoupon` and `resolveDiscount`
+  (`coupons/validate.ts`): Lite maps its coupon onto core's `Coupon` as a
+  `percent_cart`, `fixed_cart` or `free_shipping` coupon. Product and
+  category filters, per-customer limits and combining coupons are not
+  offered.
+- Uses are counted, not stored: they are the orders with the code in
+  `couponCode` and `paymentStatus` `paid` or `partially-refunded`
+  (indexed), counted with one `count` call when the coupon has a limit. A
+  paid order needs no extra write, so the webhook budget is unchanged, and
+  a fully refunded order gives its use back. The limit is checked when the
+  code is applied and again at checkout, so two shoppers paying at the
+  same moment can both get the last use.
+- The cart keeps the rules it needs to price itself (`cart.coupon`), so
+  changing quantities does not read the coupon again. The discount comes
+  off the item subtotal before flat tax. Below the coupon's minimum the
+  coupon stays on the cart without applying, and the cart view says so
+  (`coupon.applied: false`).
+- Checkout reads the coupon again (see below) and drops it with
+  `COUPON_INVALID` if it was turned off, expired or used up. If the
+  merchant changed it, the new rules give a new total and the cart comes
+  back with `CART_CHANGED`.
+- Stripe gets the discount as a single-use coupon
+  (`POST /v1/coupons`, `amount_off` = the cart discount, `duration=once`,
+  through core's `createOneTimeCoupon`) passed in `discounts`, so the
+  hosted page charges exactly the order total and the webhook's amount
+  check is unchanged. Stripe spreads the amount over the line items it
+  shows, including the flat tax line; the total is the same. A
+  free-shipping coupon needs no Stripe coupon: the session simply has no
+  shipping rate.
 
 ## Stock ledger
 
@@ -197,11 +240,17 @@ them).
 
 1. Loads settings once and the cart by token. Fails with `CART_EMPTY`,
    `STRIPE_NOT_CONFIGURED` and similar codes before any Stripe call.
-2. Re-prices every line from the `products` collection and reads the ledger
+2. With a coupon on the cart, reads the coupon (and its use count when it
+   has a limit) and keeps the result on the cart record next to the
+   products read, then answers `CHECKOUT_CONTINUE`. The next request uses
+   that copy for 5 minutes, for the same cart version.
+3. Re-prices every line from the `products` collection and reads the ledger
    for tracked lines in one `getMany`. The browser never supplies prices. If
    the total changed it saves the corrected cart and returns `CART_CHANGED`
    with the new cart so the shopper can review it.
-3. Writes a `pending` order, then creates a Checkout Session with core's
+4. Writes a `pending` order (with `couponCode` and `discountTotal` when a
+   coupon applied), creates the single-use Stripe coupon when there is a
+   discount, then creates a Checkout Session with core's
    `createCheckoutSession()` (`mode=payment`, `client_reference_id` and
    `metadata.orderId` set to the order id,
    `metadata.source=dashcommerce-lite`).
@@ -214,7 +263,7 @@ them).
    and starts a new attempt. A shipping address is collected only when the
    cart has a physical item (read from the product, not the cart line) and
    shipping countries are configured.
-4. Returns `{ url, orderId, orderKey, orderNumber }`. The storefront
+5. Returns `{ url, orderId, orderKey, orderNumber }`. The storefront
    redirects to `url`.
 
 `stripe/webhook` (`body: "text"`, header allowlist `stripe-signature`):
@@ -311,11 +360,12 @@ over several runs.
 - Orders page: totals for paid, awaiting payment and refunded; a status
   filter; a paged table that keeps the filter; search by exact order
   number, email, PaymentIntent id or Checkout Session id; CSV export.
-- Order detail: items, subtotal, shipping, tax, refunded amount, stock
+- Order detail: items, subtotal, coupon discount, shipping, tax, refunded amount, stock
   state, banners for amount mismatch, stock shortfall and refunds, a link to
   the payment in Stripe, and allowed status changes.
 - Recent orders widget (`recent-orders`) for the dashboard.
-- Stock page and Settings page.
+- Stock, Coupons and Settings pages. Coupons lists codes newest first and
+  shows the use count of a coupon with a limit when it is opened.
 
 CSV export: private plugin routes need the `X-EmDash-Request` header, which
 a plain download link cannot send. The Export button writes a single-use
@@ -354,9 +404,13 @@ Also used: `derivePaymentStatus` and `deriveOrderStatusFromRefunds`
 (`orders/status.ts`) for refunds, and the `PricingPolicy` option of
 `recalculate` for flat or Stripe tax.
 
+Also used: `validateCoupon` and `resolveDiscount` (`coupons/validate.ts`)
+for coupon rules, and `createOneTimeCoupon` (`stripe/checkout-sessions.ts`)
+for the Stripe side of a discount.
+
 Not shared (native-only or out of scope here): React admin, Astro
-components, cookie session helpers, coupons, shipping zones, tax tables,
-variants, subscriptions, Connect, emails, downloads.
+components, cookie session helpers, shipping zones, tax tables, variants,
+subscriptions, Connect, emails, downloads.
 
 ## Permissions
 
@@ -396,25 +450,31 @@ Base path: `/_emdash/api/plugins/dashcommerce-lite`.
 | `cart/items` | POST | `{ productId, quantity? }` | `{ ok, token, cart }` |
 | `cart/item` | POST | `{ lineId, quantity }` (0 removes) | `{ ok, token, cart }` |
 | `cart/clear` | POST | `{}` | `{ ok, token, cart }` |
+| `cart/coupon` | POST | `{ code }` | `{ ok, token, cart }`, or `COUPON_NOT_FOUND` / `COUPON_INVALID` with a message for the shopper |
+| `cart/coupon/remove` | POST | `{}` | `{ ok, token, cart }` |
 | `checkout/session` | POST | `{ email? }` | `{ ok, url, orderId, orderKey, orderNumber }` |
 | `order` | GET | `?id=&key=` | `{ ok, order }` |
 
 `productId` is the content entry id of a published `products` entry. The
-cart view has `subtotal`, `shippingTotal`, `taxTotal`, `total` and
-`taxAtCheckout`.
+cart view has `subtotal`, `discountTotal`, `coupon`, `shippingTotal`,
+`taxTotal`, `total` and `taxAtCheckout`. Checkout can also answer
+`COUPON_INVALID` with the cart (coupon removed) in `cart`.
 
 Sandboxed plugins cannot inject scripts into pages, so themes include the
 storefront kit themselves (`storefront/`):
 
 - `dashcommerce.js` (with `dashcommerce.d.ts`): a dependency-free ES module,
   about 6.5 KB unminified. `createClient()` returns `getCart`, `addItem`,
-  `updateItem`, `removeItem`, `clear`, `checkout`, `redirectToCheckout`,
+  `updateItem`, `removeItem`, `clear`, `applyCoupon`, `removeCoupon`,
+  `checkout`, `redirectToCheckout`,
   `getOrder` and `waitForPayment`. It stores the token, checks `data.ok`,
   throws `DashCommerceError` with the route's `code`, and fires a
   `dashcommerce:cart` event on `window` after every change. Helpers:
   `orderFromQuery`, `formatMoney`.
 - `astro/AddToCart.astro`, `astro/CartCount.astro`, `astro/Cart.astro`,
   `astro/CheckoutSuccess.astro`: unstyled components built on the module.
+  `Cart.astro` has a coupon field and a discount line (`coupons={false}`
+  hides the field).
   Copy them to `src/components/` and the module to `src/lib/` in a theme.
 
 ```js
@@ -465,6 +525,12 @@ calls of headroom on every path, whatever the cart size:
   `CHECKOUT_CONTINUE`; the storefront kit repeats the request (up to
   `MAX_CHECKOUT_REQUESTS`, 8). A 20-line cart takes 2 requests in a
   146-product catalog and 5 in a 1,000-product one. The 20-line cap stays.
+- A coupon on the cart costs up to 2 reads (the coupon and its use count)
+  and 1 Stripe call. The reads happen in a request of their own, kept on
+  the cart like the products, and the final request has room for the
+  Stripe coupon because it then reads no products. A cart with a coupon
+  takes at least 2 requests; a 20-line cart that reads its products one
+  by one takes 6.
 - Marking an order paid takes 6 calls, so a paid webhook does no stock row
   writes. It schedules the follow-up tasks (see Stock ledger): one task
   for up to 5 lines, or slice tasks of 5 products each, which EmDash runs
@@ -489,6 +555,8 @@ most 8 per invocation:
 | `cart/items` | 4, or 5 for a stock-tracked product |
 | `checkout/session`, catalog up to 100 products | 7, or 8 with tracked lines, in one request |
 | `checkout/session`, 20 lines, 146 / 1,000 products | 2 / 5 requests, at most 8 each |
+| `checkout/session` with a coupon | 2 requests (6 and 7 calls); 6 requests for 20 lines read one by one, at most 8 each |
+| `cart/coupon`, `cart/coupon/remove` | at most 5 and 3 |
 | `stripe/webhook` paid or async succeeded | 7 or 8, then stock tasks of at most 8 |
 | `stripe/webhook` full refund | 6 to 8, then stock tasks of at most 8 |
 | `stripe/webhook` replay, early refund (500), delayed payment on hold | 4 to 5 |
@@ -504,5 +572,7 @@ JSON work. Unit timings are well under a millisecond.
 `emdash-plugin bundle` output for 0.2.0: `backend.js` 60.6 KB, total
 68.5 KB across 4 files (caps: 128 KB per file, 256 KB total). The tarball
 is about 22 KB gzipped. No zod; input validation is hand-written in `validate.ts`.
+With coupons, `backend.js` is 73.5 KB and the total 82.4 KB (26.5 KB
+gzipped).
 `bun run size` prints the numbers and fails above a 96 KB working budget
 for `backend.js`. The storefront kit is not part of the bundle.

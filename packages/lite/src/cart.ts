@@ -15,11 +15,14 @@
  *
  * Totals use core's `recalculate()` with the store's flat shipping and
  * flat tax settings. With Stripe Tax on, tax is added on the hosted page.
+ * A coupon on the cart (coupons.ts) comes off the item subtotal before
+ * tax, or removes the flat shipping.
  */
 
 import type { PluginContext } from "emdash/plugin";
+import { type CartCoupon, discountFor, type LiteCart } from "./coupons";
 import type { LiteConfig } from "./settings";
-import { type CartState, money, newCart, type ProductFields, recalculate } from "./shared";
+import { add, money, newCart, type ProductFields, recalculate } from "./shared";
 
 export const CART_HEADER = "x-dashcommerce-cart";
 export const CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -29,7 +32,7 @@ export const MAX_QUANTITY = 99;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 export interface StoredCart {
-	cart: CartState;
+	cart: LiteCart;
 	expiresAt: string;
 	/**
 	 * Products checkout already read from content for this cart version,
@@ -39,6 +42,8 @@ export interface StoredCart {
 	checkoutPrep?: {
 		cartUpdatedAt: string;
 		products: Record<string, { fields: ProductFields; at: string }>;
+		/** The cart's coupon as checkout last read it, trusted like `products`. */
+		coupon?: { snapshot: CartCoupon; at: string };
 	};
 }
 
@@ -88,7 +93,7 @@ export async function loadCart(
 	ctx: PluginContext,
 	cartId: string,
 	now = Date.now(),
-): Promise<CartState | null> {
+): Promise<LiteCart | null> {
 	return (await loadStoredCart(ctx, cartId, now))?.cart ?? null;
 }
 
@@ -109,41 +114,50 @@ export async function loadStoredCart(
 
 /**
  * Totals for a cart under the current settings. Flat shipping applies when
- * at least one line is physical. Flat tax applies to the item subtotal.
+ * at least one line is physical, unless a free-shipping coupon applies.
+ * The coupon discount comes off the item subtotal, and flat tax applies to
+ * what is left.
  */
-export function priceCart(cart: CartState, config: LiteConfig): CartState {
-	const physical = cart.items.some((i) => !i.isDigital);
+export function priceCart(cart: LiteCart, config: LiteConfig): LiteCart {
 	const { shippingMethod: _previous, ...rest } = cart;
-	const next: CartState =
-		physical && config.flatShipping > 0
+	const subtotal = cart.items.reduce(
+		(sum, i) => add(sum, money(cart.currency, i.unitPrice.amount * i.quantity)),
+		money(cart.currency, 0),
+	);
+	const applied = cart.coupon ? discountFor(cart.coupon, { ...cart, subtotal }) : null;
+	const physical = cart.items.some((i) => !i.isDigital);
+	const next: LiteCart = {
+		...rest,
+		coupons: applied ? [applied] : [],
+		...(physical && config.flatShipping > 0 && !applied?.freeShipping
 			? {
-					...rest,
 					shippingMethod: {
 						id: "flat",
 						label: "Shipping",
 						amount: money(cart.currency, config.flatShipping),
 					},
 				}
-			: rest;
+			: {}),
+	};
 	return recalculate(
 		next,
 		config.automaticTax
 			? { taxMode: "stripe_tax" }
 			: { taxMode: "flat", flatTaxPercent: config.flatTaxPercent },
-	);
+	) as LiteCart;
 }
 
 export async function saveCart(
 	ctx: PluginContext,
-	cart: CartState,
+	cart: LiteCart,
 	config: LiteConfig,
 	now = Date.now(),
-): Promise<CartState> {
+): Promise<LiteCart> {
 	// `updatedAt` strictly increases on every write: checkout derives its
 	// order id and Stripe idempotency key from it (see checkout.ts).
 	const previous = Date.parse(cart.updatedAt);
 	const at = Number.isFinite(previous) && previous >= now ? previous + 1 : now;
-	const next: CartState = { ...priceCart(cart, config), updatedAt: new Date(at).toISOString() };
+	const next: LiteCart = { ...priceCart(cart, config), updatedAt: new Date(at).toISOString() };
 	await cartsStore(ctx).put(cart.sessionId, {
 		cart: next,
 		expiresAt: new Date(at + CART_TTL_MS).toISOString(),
@@ -151,7 +165,7 @@ export async function saveCart(
 	return next;
 }
 
-export function emptyCart(cartId: string, currency: string): CartState {
+export function emptyCart(cartId: string, currency: string): LiteCart {
 	return newCart(cartId, currency);
 }
 
@@ -170,6 +184,20 @@ export interface CartView {
 	}>;
 	itemCount: number;
 	subtotal: MoneyView;
+	/** Coupon discount on the item subtotal. */
+	discountTotal: MoneyView;
+	/**
+	 * The coupon on the cart. `applied` is false while the cart does not
+	 * qualify yet (below the coupon's minimum).
+	 */
+	coupon: {
+		code: string;
+		type: CartCoupon["type"];
+		value: number;
+		applied: boolean;
+		freeShipping: boolean;
+		minSubtotal: MoneyView | null;
+	} | null;
 	shippingTotal: MoneyView;
 	taxTotal: MoneyView;
 	total: MoneyView;
@@ -178,8 +206,9 @@ export interface CartView {
 	updatedAt: string;
 }
 
-export function toCartView(cart: CartState, config?: Pick<LiteConfig, "automaticTax">): CartView {
+export function toCartView(cart: LiteCart, config?: Pick<LiteConfig, "automaticTax">): CartView {
 	const zero = { currency: cart.currency, amount: 0 };
+	const applied = cart.coupon ? cart.coupons.find((c) => c.code === cart.coupon?.code) : undefined;
 	return {
 		currency: cart.currency,
 		items: cart.items.map((i) => ({
@@ -192,6 +221,19 @@ export function toCartView(cart: CartState, config?: Pick<LiteConfig, "automatic
 		})),
 		itemCount: cart.items.reduce((n, i) => n + i.quantity, 0),
 		subtotal: cart.subtotal,
+		discountTotal: cart.discountTotal ?? zero,
+		coupon: cart.coupon
+			? {
+					code: cart.coupon.code,
+					type: cart.coupon.type,
+					value: cart.coupon.value,
+					applied: Boolean(applied),
+					freeShipping: Boolean(applied?.freeShipping),
+					minSubtotal: cart.coupon.minSubtotal
+						? { currency: cart.coupon.currency, amount: cart.coupon.minSubtotal }
+						: null,
+				}
+			: null,
 		shippingTotal: cart.shippingTotal ?? zero,
 		taxTotal: cart.taxTotal ?? zero,
 		total: cart.total,

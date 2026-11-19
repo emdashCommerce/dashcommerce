@@ -5,12 +5,14 @@
  *
  *   <Cart />                       on src/pages/cart.astro
  *   <Cart askEmail={false} />      skip the email field (Stripe asks for it)
+ *   <Cart coupons={false} />       hide the coupon field
  */
 interface Props {
 	askEmail?: boolean;
+	coupons?: boolean;
 	emptyText?: string;
 }
-const { askEmail = true, emptyText = "Your cart is empty." } = Astro.props;
+const { askEmail = true, coupons = true, emptyText = "Your cart is empty." } = Astro.props;
 ---
 
 <section class="dc-cart" data-dc-cart data-dc-empty-text={emptyText}>
@@ -18,10 +20,21 @@ const { askEmail = true, emptyText = "Your cart is empty." } = Astro.props;
 	<ul class="dc-cart-lines" data-dc-lines></ul>
 	<dl class="dc-cart-totals" data-dc-totals hidden>
 		<dt>Subtotal</dt><dd data-dc-subtotal></dd>
+		<dt data-dc-discount-row hidden>Discount</dt><dd data-dc-discount hidden></dd>
 		<dt data-dc-shipping-row>Shipping</dt><dd data-dc-shipping></dd>
 		<dt data-dc-tax-row>Tax</dt><dd data-dc-tax></dd>
 		<dt>Total</dt><dd data-dc-total></dd>
 	</dl>
+	{coupons && (
+		<form class="dc-coupon" data-dc-coupon hidden>
+			<label>Coupon <input name="code" autocomplete="off" data-dc-coupon-input /></label>
+			<button type="submit" data-dc-coupon-apply>Apply</button>
+			<p class="dc-coupon-current" data-dc-coupon-current hidden>
+				<span data-dc-coupon-label></span>
+				<button type="button" data-dc-coupon-remove>Remove</button>
+			</p>
+		</form>
+	)}
 	<form class="dc-checkout" data-dc-checkout hidden>
 		{askEmail && (
 			<label>Email <input type="email" name="email" autocomplete="email" /></label>
@@ -80,6 +93,29 @@ const { askEmail = true, emptyText = "Your cart is empty." } = Astro.props;
 		totals.hidden = empty;
 		form.hidden = empty;
 		text("[data-dc-subtotal]", formatMoney(cart.subtotal));
+		const discounted = (cart.discountTotal?.amount ?? 0) > 0;
+		for (const sel of ["[data-dc-discount-row]", "[data-dc-discount]"]) {
+			const el = root.querySelector<HTMLElement>(sel);
+			if (el) el.hidden = !discounted;
+		}
+		if (discounted) text("[data-dc-discount]", `-${formatMoney(cart.discountTotal)}`);
+		const couponForm = root.querySelector<HTMLFormElement>("[data-dc-coupon]");
+		if (couponForm) {
+			couponForm.hidden = empty;
+			const current = couponForm.querySelector<HTMLElement>("[data-dc-coupon-current]");
+			if (current) current.hidden = !cart.coupon;
+			if (cart.coupon) {
+				const c = cart.coupon;
+				const note = c.applied
+					? c.freeShipping
+						? "free shipping"
+						: "applied"
+					: c.minSubtotal
+						? `spend ${formatMoney(c.minSubtotal)} to use it`
+						: "not applied";
+				text("[data-dc-coupon-label]", `${c.code}: ${note}`);
+			}
+		}
 		text("[data-dc-shipping]", formatMoney(cart.shippingTotal));
 		text("[data-dc-tax]", cart.taxAtCheckout ? "Calculated at checkout" : formatMoney(cart.taxTotal));
 		text("[data-dc-total]", formatMoney(cart.total));
@@ -95,6 +131,28 @@ const { askEmail = true, emptyText = "Your cart is empty." } = Astro.props;
 	}
 
 	window.addEventListener(CART_EVENT, (e) => render((e as CustomEvent<Cart>).detail));
+
+	const couponForm = root?.querySelector<HTMLFormElement>("[data-dc-coupon]");
+	couponForm?.addEventListener("submit", async (e) => {
+		e.preventDefault();
+		const input = couponForm.querySelector<HTMLInputElement>("[data-dc-coupon-input]");
+		const code = input?.value.trim() ?? "";
+		if (!code) return;
+		try {
+			await shop.applyCoupon(code);
+			if (input) input.value = "";
+			text("[data-dc-message]", "");
+		} catch (err) {
+			text("[data-dc-message]", err instanceof Error ? err.message : "Could not apply the coupon");
+		}
+	});
+	couponForm?.querySelector("[data-dc-coupon-remove]")?.addEventListener("click", async () => {
+		try {
+			await shop.removeCoupon();
+		} catch (err) {
+			text("[data-dc-message]", err instanceof Error ? err.message : "Could not remove the coupon");
+		}
+	});
 
 	root?.querySelector<HTMLFormElement>("[data-dc-checkout]")?.addEventListener("submit", async (e) => {
 		e.preventDefault();

@@ -149,9 +149,24 @@ export function createClient(options = {}) {
 		},
 
 		/**
+		 * Apply a coupon code (not case sensitive). Replaces any coupon on the
+		 * cart. Throws `COUPON_NOT_FOUND` or `COUPON_INVALID` with a message
+		 * for the shopper.
+		 */
+		async applyCoupon(code) {
+			return emit((await call("cart/coupon", { body: { code } })).cart);
+		},
+
+		async removeCoupon() {
+			return emit((await call("cart/coupon/remove", {})).cart);
+		},
+
+		/**
 		 * Start Stripe Checkout. Resolves to `{ url, orderId, orderKey, orderNumber }`.
 		 * Throws `CART_CHANGED` (with the corrected cart in `details.cart`)
-		 * when prices, shipping or tax changed since the cart was built.
+		 * when prices, shipping or tax changed since the cart was built, and
+		 * `COUPON_INVALID` (coupon removed, cart in `details.cart`) when the
+		 * cart's coupon stopped being valid.
 		 * Repeats the request while the server answers `CHECKOUT_CONTINUE`.
 		 */
 		async checkout({ email } = {}) {
