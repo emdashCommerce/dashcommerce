@@ -270,6 +270,17 @@ export interface PaymentProvider {
 	 */
 	readonly webhookHeaders?: readonly string[];
 
+	/** One line for the provider card in Settings, e.g. "Card and M-Pesa in Kenya". */
+	readonly description?: string;
+
+	/**
+	 * The provider's official logo for its card in Settings: an https URL or
+	 * a `data:image/…` URI. Core ships no third-party logos; without one the
+	 * card shows a lettered tile in `brandColour` (#rrggbb).
+	 */
+	readonly logo?: string;
+	readonly brandColour?: string;
+
 	/**
 	 * Credentials the merchant enters in admin settings, saved as
 	 * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.

@@ -130,6 +130,14 @@ function secretHint(value: unknown): string {
 	return `${MASKED_SECRET_PREFIX}${value.slice(-4)}`;
 }
 
+/** Only https URLs and image data URIs may reach an <img src>. */
+function safeLogo(logo: string | undefined): string | null {
+	if (!logo) return null;
+	return /^https:\/\//i.test(logo) || /^data:image\/(svg\+xml|png|webp|jpeg);/i.test(logo)
+		? logo
+		: null;
+}
+
 /** A registered non-Stripe provider's credential setting, for validation. */
 function providerCredentialSpec(key: string): { prefixes?: readonly string[] } | undefined {
 	return providerCredentialSetting(key)?.spec;
@@ -153,13 +161,19 @@ async function secretStatus(ctx: PluginContext, key: string) {
 async function providerSettingsRows(ctx: PluginContext) {
 	const rows: Array<Record<string, unknown>> = [];
 	for (const provider of listPaymentProviders()) {
+		const card = {
+			id: provider.id,
+			label: provider.label,
+			description: provider.description ?? null,
+			logo: safeLogo(provider.logo),
+			brandColour: /^#[0-9a-f]{6}$/i.test(provider.brandColour ?? "") ? provider.brandColour : null,
+		};
 		if (provider.id === "stripe") {
-			rows.unshift({ id: provider.id, label: provider.label });
+			rows.unshift(card);
 			continue;
 		}
 		rows.push({
-			id: provider.id,
-			label: provider.label,
+			...card,
 			credentialFields: provider.credentialFields ?? {},
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
