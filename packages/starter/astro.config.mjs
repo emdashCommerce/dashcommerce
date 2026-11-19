@@ -81,7 +81,12 @@ export default defineConfig({
 		emdash({
 			database,
 			storage,
-			plugins: edition === "native" ? [dashcommerce()] : [],
+			// Paystack test wiring (FIK-57): allow its API host. The provider
+			// itself registers from src/middleware.ts at runtime.
+			plugins:
+				edition === "native"
+					? [dashcommerce({ allowedHosts: ["api.paystack.co"] })]
+					: [],
 			// Registry installs need a sandbox runner. On Cloudflare this is
 			// the Worker Loader runner, which needs the LOADER binding in
 			// wrangler.jsonc (paid plan); without it sandbox() returns
