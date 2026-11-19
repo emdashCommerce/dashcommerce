@@ -271,3 +271,55 @@ export async function recordRefundFromWebhook(
 	await sendRefundReceipt(ctx, order, refund);
 	return refund;
 }
+
+export type ProviderRefundUpdateOutcome = "updated" | "unchanged" | "unknown" | "other-provider";
+
+/**
+ * Apply a provider's report that one of its refunds changed status.
+ * Matches the stored refund by the provider's refund id, and only when its
+ * order was paid through that provider. A settled refund (succeeded or
+ * failed) never moves again.
+ *
+ * A failed refund is marked failed and logged as an error, but the order's
+ * refunded total is not reduced: the operator decides, as with any refund
+ * that fails at the provider.
+ */
+export async function applyProviderRefundUpdate(
+	ctx: PluginContext,
+	update: { providerId: string; providerRefundId: string; status: Refund["status"] },
+): Promise<ProviderRefundUpdateOutcome> {
+	const found = await refundsStore(ctx).query({
+		where: { stripeRefundId: update.providerRefundId },
+		limit: 1,
+	});
+	const row = found.items[0];
+	if (!row) {
+		ctx.log.warn("Provider reported an unknown refund", {
+			providerId: update.providerId,
+			providerRefundId: update.providerRefundId,
+		});
+		return "unknown";
+	}
+	const refund = { ...(row.data as Refund), id: row.id };
+	const order = await loadOrder(ctx, refund.orderId);
+	if ((order?.providerId ?? "stripe") !== update.providerId) {
+		ctx.log.warn("Refund update from a provider that did not take the payment", {
+			providerId: update.providerId,
+			providerRefundId: update.providerRefundId,
+			orderId: refund.orderId,
+		});
+		return "other-provider";
+	}
+	if (refund.status !== "pending" || update.status === "pending") return "unchanged";
+
+	await refundsStore(ctx).put(refund.id, { ...refund, status: update.status });
+	if (update.status === "failed") {
+		ctx.log.error("Refund failed at the payment provider; the order still counts it as refunded", {
+			providerId: update.providerId,
+			providerRefundId: update.providerRefundId,
+			refundId: refund.id,
+			orderId: refund.orderId,
+		});
+	}
+	return "updated";
+}

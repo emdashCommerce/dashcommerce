@@ -163,6 +163,20 @@ export type NormalizedPaymentEvent =
 			raw: unknown;
 	  }
 	| {
+			/**
+			 * A refund this store created moved on at the provider (e.g.
+			 * Paystack's `refund.processed`). `providerRefundId` is the id
+			 * `refund()` returned. Settled refunds never move back to pending.
+			 */
+			type: "refund.updated";
+			providerId: string;
+			providerEventId: string;
+			providerRefundId: string;
+			status: "pending" | "succeeded" | "failed";
+			paymentReference?: string;
+			raw: unknown;
+	  }
+	| {
 			type: "unhandled";
 			providerEventType: string;
 			providerEventId?: string;

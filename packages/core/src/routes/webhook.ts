@@ -30,7 +30,7 @@ import { deleteLock, getLock } from "../cart/lock";
 import { clear as clearCart } from "../cart/store";
 import { sendSubscriptionRenewed, sendVendorActivated, sendVendorPayout } from "../emails";
 import { createOrderFromPaymentIntent, findOrderByPaymentIntent } from "../orders/create";
-import { recordRefundFromWebhook } from "../orders/refund";
+import { applyProviderRefundUpdate, recordRefundFromWebhook } from "../orders/refund";
 import {
 	type NormalizedPaymentEvent,
 	type PaymentProvider,
@@ -894,6 +894,27 @@ export const webhookRoutes = {
 					}
 					if (normalized.type === "charge.failed") {
 						return await handleNormalizedChargeFailed(ctx, normalized);
+					}
+					if (normalized.type === "refund.updated") {
+						if (normalized.providerId !== provider.id) {
+							return new Response(JSON.stringify({ error: "Refund event from another provider" }), {
+								status: 400,
+								headers: { "Content-Type": "application/json" },
+							});
+						}
+						const outcome = await applyProviderRefundUpdate(ctx, {
+							providerId: provider.id,
+							providerRefundId: normalized.providerRefundId,
+							status: normalized.status,
+						});
+						return new Response(
+							JSON.stringify({
+								received: true,
+								refund: outcome,
+								...(outcome === "unknown" ? { orphan: true } : {}),
+							}),
+							{ status: 200, headers: { "Content-Type": "application/json" } },
+						);
 					}
 					return new Response(
 						JSON.stringify({
