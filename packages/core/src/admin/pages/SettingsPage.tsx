@@ -133,6 +133,7 @@ interface ProviderRow {
 	logo?: string | null;
 	brandColour?: string | null;
 	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
+	canCheckConnection?: boolean;
 	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
 	/** Absent from servers before on-page checkout: treat as hosted only. */
 	checkoutStyles?: Array<"hosted" | "on_page">;
@@ -579,6 +580,9 @@ function GroupBody({
 							setField={setField}
 							disabled={disabled}
 						/>
+						{selected.canCheckConnection && (
+							<ProviderConnectionCheck providerId={selected.id} label={selected.label} />
+						)}
 					</>
 				)}
 			</>
@@ -910,6 +914,52 @@ function StripePing() {
 			{result && !result.ok && (
 				<Alert type="error" title="Stripe rejected the credentials">
 					{result.error}
+				</Alert>
+			)}
+		</div>
+	);
+}
+
+/** "Test connection" for a registered provider that declares checkConnection. */
+function ProviderConnectionCheck({ providerId, label }: { providerId: string; label: string }) {
+	const api = usePluginAPI();
+	const [pending, setPending] = useState(false);
+	const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+	async function run(): Promise<void> {
+		setPending(true);
+		setResult(null);
+		try {
+			const res = await api.post<{ ok: boolean; message: string }>(
+				"admin/payments/check-connection",
+				{ providerId },
+			);
+			setResult(res);
+			if (res.ok) toast.success(`${label} connection verified`);
+			else toast.error(`${label} check failed`, res.message);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Request failed";
+			setResult({ ok: false, message });
+			toast.error(`${label} check failed`, message);
+		} finally {
+			setPending(false);
+		}
+	}
+
+	return (
+		<div style={{ marginTop: 12 }}>
+			<Button variant="secondary" onClick={run} disabled={pending}>
+				{pending ? "Testing…" : `Test ${label} connection`}
+			</Button>
+			<p style={{ color: T.textMuted, margin: "0.5rem 0 0", fontSize: "0.85em" }}>
+				Uses the saved keys, so save changes first.
+			</p>
+			{result && (
+				<Alert
+					type={result.ok ? "success" : "error"}
+					title={result.ok ? "Connected" : `${label} rejected the credentials`}
+				>
+					{result.message}
 				</Alert>
 			)}
 		</div>

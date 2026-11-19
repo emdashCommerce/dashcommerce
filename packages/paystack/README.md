@@ -56,6 +56,8 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
    | Secret or restricted key | best: a restricted key (`rk_test_…`) with only `transactions:write` and `disputes_refunds:write`; or the secret key (`sk_test_…`) |
    | Webhook signing secret | the `whsec_…` secret from Developers → API configuration; or, if you have none yet, the `sk_` secret key |
 
+   Save, then press **Test Paystack connection**. It makes one read-only call (verifying a reference that can't exist) and says whether Paystack accepts the key, in test or live mode, and whether it can read transactions.
+
    Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). Do not delete the `sk_` key from Paystack before your webhooks verify with `whsec_`: Paystack stops sending `x-paystack-signature` once it is gone.
 
 4. **For on-page checkout, load the browser client** in your checkout page's client script, so Vite bundles it:
@@ -82,6 +84,7 @@ From core (the companion core PR, proposed together with this package):
 2. **Per-provider credentials** in the settings API and admin, accepting the `rk_` and `whsec_` prefixes this package declares in `credentialFields`.
 3. **All request headers in `verifyWebhook`** plus `webhookHeaders` routing, so `Paystack-Signature` reaches the provider.
 4. **`refund.updated`**, so `refund.*` webhooks move a refund out of `pending`. Live refunds can take days.
+5. **`checkConnection`**, for the Test connection button in Settings. Optional: without it the button doesn't show.
 
 ## Develop
 

@@ -9,6 +9,7 @@
  */
 
 import type {
+	ConnectionCheckResult,
 	CreateRefundInput,
 	InitCheckoutInput,
 	InitCheckoutResult,
@@ -20,7 +21,7 @@ import type {
 	VerifyWebhookInput,
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
-import { call, callEnvelope, type PaystackClientOptions } from "./client";
+import { call, callEnvelope, PaystackApiError, type PaystackClientOptions } from "./client";
 import { PAYSTACK_LOGO } from "./logo";
 import { verifyPaystackSignature } from "./webhook-verify";
 
@@ -502,6 +503,48 @@ export const paystackPaymentProvider: PaymentProvider = {
 			providerEventType: event.event,
 			raw: event,
 		};
+	},
+
+	/**
+	 * Verifies a reference that can't exist. Paystack answers
+	 * `transaction_not_found` only for a key it accepts that can read
+	 * transactions, which checkout needs; nothing is created.
+	 */
+	async checkConnection(
+		ctx: PaymentProviderRuntimeContext,
+		credentials: PaymentProviderCredentials,
+	): Promise<ConnectionCheckResult> {
+		const mode: ConnectionCheckResult["mode"] = /^(sk|rk)_live_/.test(credentials.secretKey)
+			? "live"
+			: /^(sk|rk)_test_/.test(credentials.secretKey)
+				? "test"
+				: undefined;
+		const modeResult = mode ? { mode } : {};
+		try {
+			await call(ctx, {
+				client: toPaystackClient(credentials),
+				method: "GET",
+				path: "/transaction/verify/dashcommerce-connection-check",
+			});
+		} catch (err) {
+			if (!(err instanceof PaystackApiError)) throw err;
+			if (err.body.code === "transaction_not_found") {
+				return {
+					ok: true,
+					...modeResult,
+					message: `Connected${mode ? ` in ${mode} mode` : ""}. The key can read transactions.`,
+				};
+			}
+			if (err.status === 401 || err.status === 403) {
+				return { ok: false, ...modeResult, message: `Paystack refused the key: ${err.message}` };
+			}
+			return {
+				ok: false,
+				...modeResult,
+				message: `Paystack answered ${err.status}: ${err.message}`,
+			};
+		}
+		return { ok: true, ...modeResult, message: `Connected${mode ? ` in ${mode} mode` : ""}.` };
 	},
 
 	async getPaymentStatus(
