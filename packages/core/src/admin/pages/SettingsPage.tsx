@@ -29,6 +29,7 @@ import {
 	usePluginAPI,
 } from "../kit";
 import type { CheckoutMode, TaxMode } from "../../settings/schema";
+import { T } from "../theme";
 import { ProviderCards } from "./ProviderCards";
 
 type Group =
@@ -369,7 +370,7 @@ export function SettingsPage() {
 					{group.description && (
 						<p
 							style={{
-								color: "#666",
+								color: T.textMuted,
 								margin: "0 0 0.75rem",
 								fontSize: "0.9em",
 							}}
@@ -506,12 +507,12 @@ function GroupBody({
 					disabled={disabled}
 				/>
 				{errors.paymentProvider && (
-					<p role="alert" style={{ color: "#b91c1c", margin: "0 0 0.75rem" }}>
+					<p role="alert" style={{ color: T.danger, margin: "0 0 0.75rem" }}>
 						{errors.paymentProvider}
 					</p>
 				)}
 				{!selected && (
-					<p style={{ color: "#4b5563", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+					<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
 						Pick a provider to set it up. Nothing is charged until you finish.
 					</p>
 				)}
@@ -534,7 +535,7 @@ function GroupBody({
 								/>
 							</FormField>
 						) : (
-							<p style={{ color: "#666", margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+							<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
 								Customers pay on {selected.label}'s hosted page and come back to your
 								store.
 							</p>
@@ -935,19 +936,19 @@ function StickyBar({
 				bottom: 0,
 				left: 0,
 				right: 0,
-				background: "#fff",
-				borderTop: "1px solid #e4e4e7",
+				background: T.surface,
+				borderTop: `1px solid ${T.hairline}`,
 				padding: "0.75rem 1rem",
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "space-between",
 				gap: 12,
-				boxShadow: "0 -4px 12px rgba(0,0,0,0.04)",
+				boxShadow: T.shadowSm,
 				zIndex: 10,
 				marginTop: "auto",
 			}}
 		>
-			<span style={{ color: isDirty ? "#c08a00" : "#888", fontSize: "0.9em" }}>
+			<span style={{ color: isDirty ? T.warning : T.textSubtle, fontSize: "0.9em" }}>
 				{saving
 					? "Saving…"
 					: isDirty

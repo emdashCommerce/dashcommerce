@@ -206,6 +206,10 @@ React pages served at `/_emdash/admin/plugins/dashcommerce/*`:
 - Settings (all `settings:*` keys with per-key validation)
 - Dashboard widgets: Revenue, Low Stock, Recent Orders, Pending Reviews, Failed Renewals
 
+The admin follows the EmDash admin's light or dark mode: its colours come from EmDash's theme tokens, with light fallbacks for hosts without them. It uses CSS `color-mix()`, so it needs a browser from 2023 or later (Chrome 111, Safari 16.2, Firefox 113).
+
+To restyle it, set any of these CSS variables in your admin: `--dc-card-bg`, `--dc-card-fg`, `--dc-text-muted`, `--dc-text-subtle`, `--dc-label`, `--dc-input-bg`, `--dc-input-fg`, `--dc-border`, `--dc-hairline`. Status badges, destructive buttons, dialog backdrops and shadows use fixed colours that read the same in both modes.
+
 Field widgets (for use in any collection via `widget: "dashcommerce:<name>"`):
 
 - `vendor-select` — picks a vendor from `vendors` storage
