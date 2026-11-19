@@ -25,6 +25,7 @@ import {
 	DEFAULT_PAYMENT_PROVIDER_ID,
 	type InitCheckoutInput,
 	loadPaymentProviderCredentials,
+	providerCheckoutStyles,
 	resolveProvider,
 	unsupportedHostedCheckoutFeatures,
 } from "../payment-provider";
@@ -448,11 +449,14 @@ export const checkoutRoutes = {
 			const provider = await resolveProvider(ctx.kv);
 			const checkoutMode =
 				(await ctx.kv.get<CheckoutMode>("settings:checkoutMode")) ?? DEFAULT_CHECKOUT_MODE;
-			if (provider.id !== "stripe" && checkoutMode === "embedded") {
+			// For providers other than Stripe, "embedded" means on-page checkout
+			// with that provider. (Stripe's on-page flow is Elements, through
+			// checkout/create-intent; create-session stays hosted for Stripe.)
+			const onPage = provider.id !== "stripe" && checkoutMode === "embedded";
+			if (onPage && !providerCheckoutStyles(provider).includes("on_page")) {
 				return new Response(
 					JSON.stringify({
-						error:
-							"Embedded checkout is Stripe-only. Switch checkoutMode to hosted before using another payment provider so in-flight Stripe PaymentIntents can still complete.",
+						error: `${provider.label} doesn't offer on-page checkout. Set the checkout flow to hosted in DashCommerce settings.`,
 					}),
 					{ status: 409, headers: { "Content-Type": "application/json" } },
 				);
@@ -533,6 +537,22 @@ export const checkoutRoutes = {
 					}),
 					{ status: 400, headers: { "Content-Type": "application/json" } },
 				);
+			}
+			if (!provider.collectsCustomerDetails) {
+				const missing = [
+					...(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recalculated.customerEmail ?? "") ? [] : ["email"]),
+					...(recalculated.billingAddress || recalculated.shippingAddress ? [] : ["address"]),
+				];
+				if (missing.length > 0) {
+					return new Response(
+						JSON.stringify({
+							error: `${provider.label} needs the customer's ${missing.join(" and ")} before payment. Send them with cart/contact.`,
+							code: "customer_details_required",
+							missing,
+						}),
+						{ status: 409, headers: { "Content-Type": "application/json" } },
+					);
+				}
 			}
 			await save(ctx, recalculated);
 
@@ -823,7 +843,39 @@ export const checkoutRoutes = {
 					: {}),
 			};
 
-			const checkoutResult = await provider.initCheckout(ctx, initCheckout, creds);
+			const checkoutResult = await provider.initCheckout(
+				ctx,
+				{ ...initCheckout, checkoutStyle: onPage ? "on_page" : "hosted" },
+				creds,
+			);
+			if (onPage) {
+				if (checkoutResult.kind !== "on_page") {
+					return new Response(
+						JSON.stringify({ error: `${provider.label} did not return on-page checkout data` }),
+						{ status: 502, headers: { "Content-Type": "application/json" } },
+					);
+				}
+				await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
+					cart: recalculated,
+					ttlMs: DRAFT_TTL_MS,
+					createdAt: new Date().toISOString(),
+					providerId: provider.id,
+					checkoutReference: checkoutResult.checkoutReference,
+				});
+				return new Response(
+					JSON.stringify({
+						kind: "on_page",
+						providerId: provider.id,
+						client: checkoutResult.client,
+						returnUrl: `${siteUrl}/thank-you/${encodeURIComponent(orderDraftId)}`,
+						sessionId: checkoutResult.checkoutReference,
+						orderDraftId,
+						total: recalculated.total,
+						currency: recalculated.currency,
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			if (checkoutResult.kind !== "redirect" || !checkoutResult.redirectUrl) {
 				return new Response(
 					JSON.stringify({
@@ -846,6 +898,7 @@ export const checkoutRoutes = {
 
 			return new Response(
 				JSON.stringify({
+					kind: "redirect",
 					url: checkoutResult.redirectUrl,
 					sessionId: checkoutResult.checkoutReference,
 					orderDraftId,

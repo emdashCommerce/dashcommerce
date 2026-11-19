@@ -3,7 +3,7 @@ export {
 	splitPersonName,
 	withBillingShippingFallback,
 } from "./addresses";
-export { unsupportedHostedCheckoutFeatures } from "./capabilities";
+export { providerCheckoutStyles, unsupportedHostedCheckoutFeatures } from "./capabilities";
 export type { RequestedHostedCheckoutFeatures } from "./capabilities";
 export {
 	loadPaymentProviderCredentials,
@@ -29,7 +29,9 @@ export {
 export type { RegisterProviderOptions } from "./registry";
 export { stripePaymentProvider, toCreateCheckoutSessionInput } from "./stripe-provider";
 export type {
+	CheckoutStyle,
 	CreateRefundInput,
+	OnPageCheckoutClient,
 	InitCheckoutInput,
 	InitCheckoutResult,
 	NormalizedPaymentEvent,
