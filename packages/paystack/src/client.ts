@@ -54,8 +54,12 @@ export async function call<T = Record<string, unknown>>(
 		"Content-Type": "application/json",
 	};
 
-	const fetchFn = ctx.http?.fetch ?? fetch;
-	const res = await fetchFn(`${base}${opts.path}`, {
+	// Only the runtime's fetch, which enforces the plugin's allowedHosts.
+	// Never fall back to global fetch: that would bypass the sandbox.
+	if (!ctx.http?.fetch) {
+		throw new Error("Paystack provider needs ctx.http.fetch (network:request capability)");
+	}
+	const res = await ctx.http.fetch(`${base}${opts.path}`, {
 		method,
 		headers,
 		...(opts.body ? { body: JSON.stringify(opts.body) } : {}),

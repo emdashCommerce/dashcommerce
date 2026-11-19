@@ -11,10 +11,14 @@ A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hoste
 | Checkout | `POST /transaction/initialize`, then a redirect to Paystack's hosted page. The reference is `dc-<orderDraftId>`, since Paystack allows only `-`, `.`, `=` and alphanumerics |
 | Webhook | Verifies `x-paystack-signature`, an HMAC-SHA512 of the raw body keyed on the secret key, in constant time with Web Crypto. Core routes the webhook here from that header |
 | Confirmation | Core calls `getPaymentStatus`, which uses `GET /transaction/verify/:reference`, before creating the order. The amount and currency come from Paystack's record, not the webhook body |
-| Duplicates | `providerEventId` is `charge.success:<transaction id>`, and core ignores a repeat delivery |
-| Refunds | `POST /refund` by transaction reference. The `refundRequestId` goes in `merchant_note`. Paystack has no idempotency key, so a retried refund request can refund twice. Check the Paystack dashboard before retrying |
+| Duplicates | Paystack webhooks carry no event id, so `providerEventId` is left empty and core relies on its unique index on the payment reference: a repeat delivery never creates a second order. This also lets Paystack's retry succeed after a first delivery failed (core records event ids before handling and never releases them) |
+| Draft lookup | From `metadata.orderDraftId`, or from the `dc-<draftId>` reference if Paystack returns no metadata |
+| Return URL | Core's success URL minus Stripe's `{CHECKOUT_SESSION_ID}` placeholder; Paystack appends its own `trxref` and `reference` |
+| Refunds | `POST /refund` by transaction reference, with the `refundRequestId` in `merchant_note`. Paystack's Create Refund takes no idempotency key or refund reference (OpenAPI spec, Nov 2026), so a retried request can refund twice. Check the Paystack dashboard before retrying. Paystack's `refund.*` webhooks are not handled yet, so a refund stays `pending` in DashCommerce |
 | Currencies | KES, NGN, GHS, ZAR and USD. Your Paystack account must be enabled for the currency you sell in |
 | Not supported | Embedded checkout (core's embedded mode is Stripe-only), coupons on the hosted page, Connect splits and subscriptions. `capabilities` declares all three as `false` |
+
+Webhooks are verified with the `x-paystack-signature` header, which has no timestamp. A captured webhook can be replayed, but it cannot create a second order or an order Paystack's own records do not confirm.
 
 Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned leaves the checkout draft unpaid, and no order is created.
 
@@ -34,7 +38,7 @@ Settings, all in DashCommerce's plugin KV:
 | `settings:paymentProvider` | `paystack` |
 | `settings:checkoutMode` | `hosted` |
 | `settings:paystackSecretKey` | your Paystack secret key (`sk_test_…` while testing) |
-| `settings:paystackWebhookSecret` | **the same secret key.** Paystack signs webhooks with the secret key; core reads the signing secret from this setting |
+| `settings:paystackWebhookSecret` | **the same secret key.** Paystack signs webhooks with the secret key; core reads the signing secret from this setting. If you rotate the secret key, update both |
 
 Webhook URL to enter in the Paystack dashboard:
 

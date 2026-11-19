@@ -38,7 +38,42 @@ const PAYSTACK_CHANNEL_MAP: Record<string, string> = {
  * anything else is replaced rather than sent and rejected.
  */
 export function paystackReferenceFor(orderDraftId: string): string {
-	return `dc-${orderDraftId.replace(/[^A-Za-z0-9.=-]/g, "-")}`;
+	return `${REFERENCE_PREFIX}${orderDraftId.replace(/[^A-Za-z0-9.=-]/g, "-")}`;
+}
+
+const REFERENCE_PREFIX = "dc-";
+
+/** Recover a core draft id from a reference this provider issued. */
+function draftIdFromReference(reference: string): string | undefined {
+	if (!reference.startsWith(REFERENCE_PREFIX)) return undefined;
+	const id = reference.slice(REFERENCE_PREFIX.length);
+	return /^[0-9a-f]{32}$/.test(id) ? id : undefined;
+}
+
+/**
+ * Core builds the success URL for Stripe, with a `{CHECKOUT_SESSION_ID}`
+ * placeholder that Stripe fills in. Paystack does not, so drop it and let
+ * Paystack append its own `trxref` and `reference` parameters.
+ */
+function paystackCallbackUrl(successUrl: string): string {
+	const url = new URL(successUrl);
+	for (const [key, value] of [...url.searchParams]) {
+		if (value === "{CHECKOUT_SESSION_ID}") url.searchParams.delete(key);
+	}
+	return url.toString();
+}
+
+/** Paystack documents metadata as a JSON object, but tolerate a string. */
+function metadataOf(raw: unknown): Record<string, unknown> | undefined {
+	if (typeof raw === "string") {
+		try {
+			const parsed = JSON.parse(raw) as unknown;
+			return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+	return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined;
 }
 
 function toPaystackClient(credentials: PaymentProviderCredentials): PaystackClientOptions {
@@ -152,7 +187,7 @@ export const paystackPaymentProvider: PaymentProvider = {
 				amount: input.amount,
 				currency: input.currency.toUpperCase(),
 				reference: checkoutRef,
-				callback_url: input.successUrl,
+				callback_url: paystackCallbackUrl(input.successUrl),
 				metadata: {
 					...input.metadata,
 					orderDraftId: input.orderDraftId,
@@ -201,7 +236,11 @@ export const paystackPaymentProvider: PaymentProvider = {
 		// `charge.failed` webhook, so failures are left to the draft expiring.
 		if (event.event === "charge.success") {
 			const d = event.data;
-			const orderDraftId = d?.metadata?.orderDraftId;
+			const metaDraftId = metadataOf(d?.metadata)?.orderDraftId;
+			const orderDraftId =
+				typeof metaDraftId === "string" && metaDraftId
+					? metaDraftId
+					: draftIdFromReference(d?.reference ?? "");
 			if (!orderDraftId || !d.reference || !d.currency || typeof d.amount !== "number") {
 				return {
 					type: "unhandled",
@@ -227,7 +266,14 @@ export const paystackPaymentProvider: PaymentProvider = {
 				// reference. /refund accepts either.
 				checkoutReference: d.reference,
 				paymentReference: d.reference,
-				providerEventId: `${event.event}:${d.id}`,
+				// Paystack webhooks carry no event id (`data.id` is the transaction).
+				// Leaving this empty makes core skip event-level dedup, which it
+				// records before the handler runs and never releases: a delivery
+				// that failed (say Paystack's verify was briefly down) would turn
+				// every retry into a "duplicate" and the paid order would never be
+				// created. Core still refuses a second order for the same payment
+				// through its unique index on the payment reference.
+				providerEventId: "",
 				amount: d.amount,
 				currency: d.currency.toUpperCase(),
 				customer: {

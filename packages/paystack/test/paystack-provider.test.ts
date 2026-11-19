@@ -166,6 +166,32 @@ describe("paystackPaymentProvider", () => {
 			expect(calls).toBe(0);
 		});
 
+		it("drops Stripe's session placeholder from the callback URL", async () => {
+			let body: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (_url, init) => {
+				body = JSON.parse(String(init?.body));
+				return paystackOk({
+					authorization_url: "https://checkout.paystack.com/x",
+					reference: body.reference,
+				});
+			});
+			await paystackPaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({
+					successUrl: "https://shop.example/thank-you/abc?session_id={CHECKOUT_SESSION_ID}&keep=1",
+				}),
+				credentials,
+			);
+			expect(body.callback_url).toBe("https://shop.example/thank-you/abc?keep=1");
+		});
+
+		it("refuses to call Paystack without the runtime's fetch", async () => {
+			const ctx: PaymentProviderRuntimeContext = { log: { info() {}, warn() {}, error() {} } };
+			await expect(
+				paystackPaymentProvider.initCheckout(ctx, checkoutInput(), credentials),
+			).rejects.toThrow(/ctx\.http\.fetch/);
+		});
+
 		it("surfaces a Paystack API error", async () => {
 			const ctx = makeMockRuntimeContext(
 				async () =>
@@ -279,7 +305,9 @@ describe("paystackPaymentProvider", () => {
 			// passes paymentReference to getPaymentStatus before creating the order.
 			expect(parsed.paymentReference).toBe("dc-0123456789abcdef0123456789abcdef");
 			expect(parsed.checkoutReference).toBe("dc-0123456789abcdef0123456789abcdef");
-			expect(parsed.providerEventId).toBe("charge.success:99887766");
+			// Paystack sends no event id; an empty one makes core rely on its
+			// per-payment unique index, so a failed delivery can be retried.
+			expect(parsed.providerEventId).toBe("");
 			expect(parsed.providerId).toBe("paystack");
 			expect(parsed.amount).toBe(350000);
 			expect(parsed.currency).toBe("KES");
@@ -287,6 +315,40 @@ describe("paystackPaymentProvider", () => {
 			expect(parsed.customer.name).toBe("Biko Adema");
 			expect(parsed.customer.phone).toBe("+254711223344");
 			expect(parsed.channel).toBe("M-Pesa");
+		});
+
+		it("recovers the draft id from the reference when metadata is missing", () => {
+			const { metadata: _omitted, ...data } = successPayload.data;
+			const parsed = paystackPaymentProvider.parseWebhookEvent(
+				JSON.stringify({ ...successPayload, data }),
+			);
+			expect(parsed.type).toBe("charge.succeeded");
+			if (parsed.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(parsed.orderDraftId).toBe("0123456789abcdef0123456789abcdef");
+		});
+
+		it("reads metadata sent back as a JSON string", () => {
+			const parsed = paystackPaymentProvider.parseWebhookEvent(
+				JSON.stringify({
+					...successPayload,
+					data: {
+						...successPayload.data,
+						reference: "not-ours",
+						metadata: JSON.stringify({ orderDraftId: "draft-from-string" }),
+					},
+				}),
+			);
+			expect(parsed.type).toBe("charge.succeeded");
+			if (parsed.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(parsed.orderDraftId).toBe("draft-from-string");
+		});
+
+		it("does not guess a draft id from a reference it did not issue", () => {
+			const { metadata: _omitted, ...data } = successPayload.data;
+			const parsed = paystackPaymentProvider.parseWebhookEvent(
+				JSON.stringify({ ...successPayload, data: { ...data, reference: "T685312322670591" } }),
+			);
+			expect(parsed.type).toBe("unhandled");
 		});
 
 		it("does not invent a currency when Paystack omits it", () => {

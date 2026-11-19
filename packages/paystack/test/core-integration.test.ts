@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { CartState, Order } from "@dashcommerce/core";
+import { type CartState, dashcommerce, type Order } from "@dashcommerce/core";
 import {
 	getPaymentProvider,
 	registerPaymentProvider,
@@ -43,13 +43,31 @@ function json(body: unknown, status = 200): Response {
 	});
 }
 
-/** A Paystack stand-in that only knows the transactions it initialised. */
-function fakePaystack(chargedAmount = 150000) {
+interface FakePaystackOptions {
+	/** Amount Paystack records as charged. Defaults to what initialize was asked for. */
+	chargedAmount?: number;
+	/** Status verify reports. Defaults to "success". */
+	verifyStatus?: string;
+	/** Number of verify calls that fail with a 503 before Paystack recovers. */
+	verifyOutages?: number;
+}
+
+/**
+ * A Paystack stand-in that only knows the transactions it initialised,
+ * requires the secret key on every call, and records what it charged.
+ */
+function fakePaystack(options: FakePaystackOptions = {}) {
 	const transactions = new Map<string, { id: number; amount: number; currency: string }>();
+	const refunds: Array<Record<string, unknown>> = [];
 	let nextId = 55443322;
 	let lastInit: Record<string, unknown> | null = null;
+	let outagesLeft = options.verifyOutages ?? 0;
 
 	async function fetch(url: string, init?: RequestInit): Promise<Response> {
+		const headers = new Headers(init?.headers);
+		if (headers.get("Authorization") !== `Bearer ${SECRET_KEY}`) {
+			return json({ status: false, message: "Invalid key" }, 401);
+		}
 		const { pathname } = new URL(url);
 		if (pathname === "/transaction/initialize") {
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -58,9 +76,12 @@ function fakePaystack(chargedAmount = 150000) {
 			if (!/^[A-Za-z0-9.=-]+$/.test(reference)) {
 				return json({ status: false, message: "Invalid transaction reference" }, 400);
 			}
+			if (!Number.isInteger(body.amount)) {
+				return json({ status: false, message: "Amount must be an integer in subunits" }, 400);
+			}
 			transactions.set(reference, {
 				id: nextId++,
-				amount: chargedAmount,
+				amount: options.chargedAmount ?? (body.amount as number),
 				currency: String(body.currency),
 			});
 			return json({
@@ -74,20 +95,49 @@ function fakePaystack(chargedAmount = 150000) {
 			});
 		}
 		if (pathname.startsWith("/transaction/verify/")) {
+			if (outagesLeft > 0) {
+				outagesLeft--;
+				return json({ status: false, message: "Service unavailable" }, 503);
+			}
 			const reference = decodeURIComponent(pathname.slice("/transaction/verify/".length));
 			const tx = transactions.get(reference);
 			if (!tx) return json({ status: false, message: "Transaction reference not found" }, 404);
 			return json({
 				status: true,
 				message: "Verification successful",
-				data: { ...tx, status: "success", reference, channel: "mobile_money" },
+				data: {
+					...tx,
+					status: options.verifyStatus ?? "success",
+					reference,
+					channel: "mobile_money",
+				},
+			});
+		}
+		if (pathname === "/refund") {
+			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			const tx = transactions.get(String(body.transaction));
+			if (!tx) return json({ status: false, message: "Transaction not found" }, 404);
+			refunds.push(body);
+			return json({
+				status: true,
+				message: "Refund has been queued for processing",
+				data: {
+					id: 887766,
+					status: "pending",
+					amount: body.amount ?? tx.amount,
+					currency: tx.currency,
+				},
 			});
 		}
 		return json({ status: false, message: "Not found" }, 404);
 	}
 
-	return { fetch, transactions, getLastInit: () => lastInit };
+	return { fetch, transactions, refunds, getLastInit: () => lastInit };
 }
+
+// Core's real storage config, so the stub enforces the same unique indexes
+// the database does (dedup relies on them).
+const CORE_STORAGE = dashcommerce().storage as Record<string, { uniqueIndexes?: string[] }>;
 
 function makeContext(
 	initialKv: Record<string, unknown>,
@@ -114,6 +164,15 @@ function makeContext(
 						return col.get(id) ?? null;
 					},
 					async put(id: string, data: unknown) {
+						const row = data as Record<string, unknown>;
+						for (const field of CORE_STORAGE[prop]?.uniqueIndexes ?? []) {
+							if (row[field] === undefined || row[field] === null) continue;
+							for (const [otherId, other] of col) {
+								if (otherId !== id && (other as Record<string, unknown>)[field] === row[field]) {
+									throw new Error(`UNIQUE constraint failed: ${prop}.${field}`);
+								}
+							}
+						}
 						col.set(id, data);
 					},
 					async putMany(items: Array<{ id: string; data: unknown }>) {
@@ -350,7 +409,7 @@ describe("@dashcommerce/paystack on released core", () => {
 
 	it("holds the order when Paystack confirms a different amount than the cart", async () => {
 		// The payload claims the full amount; Paystack's own record says less.
-		const paystack = fakePaystack(100);
+		const paystack = fakePaystack({ chargedAmount: 100 });
 		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
 		const initRes = await startCheckout(ctx, "sess_paystack_4");
 		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
@@ -371,5 +430,102 @@ describe("@dashcommerce/paystack on released core", () => {
 		expect(order.status).toBe("on-hold");
 		expect(order.metadata?.paymentAmountMismatch).toBe(true);
 		expect(order.metadata?.receivedAmount).toBe(100);
+	});
+	it("creates the order when Paystack's retry follows a failed first delivery", async () => {
+		// Paystack is briefly down when core confirms the first delivery, so
+		// core answers 500. Paystack's retry must still produce the order.
+		const paystack = fakePaystack({ verifyOutages: 1 });
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_5");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+		const signature = await sign(SECRET_KEY, payload);
+
+		const first = await deliverWebhook(ctx, payload, signature);
+		expect(first.status).toBe(500);
+		expect(getCol("orders").size).toBe(0);
+
+		const retry = await deliverWebhook(ctx, payload, signature);
+		expect(retry.status).toBe(200);
+		expect(getCol("orders").size).toBe(1);
+	});
+
+	it("creates no order when Paystack reports the transaction as not successful", async () => {
+		const paystack = fakePaystack({ verifyStatus: "abandoned" });
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_6");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+		const res = await deliverWebhook(ctx, payload, await sign(SECRET_KEY, payload));
+		expect(res.status).not.toBe(200);
+		expect(getCol("orders").size).toBe(0);
+	});
+
+	it("finds the draft from the reference when Paystack returns no metadata", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_7");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+
+		const event = JSON.parse(chargeSuccess(reference, orderDraftId, tx.id));
+		const { metadata: _omitted, ...data } = event.data;
+		const payload = JSON.stringify({ ...event, data });
+		const res = await deliverWebhook(ctx, payload, await sign(SECRET_KEY, payload));
+		expect(res.status).toBe(200);
+		expect(getCol("orders").size).toBe(1);
+	});
+
+	it("sends Paystack a callback URL without Stripe's session placeholder", async () => {
+		const paystack = fakePaystack();
+		const { ctx } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_8");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+
+		const callback = new URL(String(paystack.getLastInit()?.callback_url));
+		expect(callback.pathname).toBe(`/thank-you/${orderDraftId}`);
+		expect(callback.search).toBe("");
+		expect(String(paystack.getLastInit()?.callback_url)).not.toContain("CHECKOUT_SESSION_ID");
+	});
+
+	it("charges the cart total in subunits and refunds the order's payment", async () => {
+		const paystack = fakePaystack();
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_9");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		expect(paystack.getLastInit()?.amount).toBe(150000);
+		expect(paystack.getLastInit()?.currency).toBe("KES");
+
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+		await deliverWebhook(ctx, payload, await sign(SECRET_KEY, payload));
+		const order = Array.from(getCol("orders").values())[0] as Order;
+
+		const refund = await paystackPaymentProvider.refund(
+			{ http: ctx.http, log: ctx.log },
+			{
+				refundRequestId: "refund-req-1",
+				paymentReference: order.paymentReference ?? "",
+				amount: 50000,
+				currency: "KES",
+			},
+			{ secretKey: SECRET_KEY },
+		);
+		expect(paystack.refunds).toHaveLength(1);
+		expect(paystack.refunds[0]?.transaction).toBe(reference);
+		expect(paystack.refunds[0]?.amount).toBe(50000);
+		expect(refund.status).toBe("pending");
 	});
 });
