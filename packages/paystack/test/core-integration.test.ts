@@ -588,7 +588,7 @@ describe("@dashcommerce/paystack through core", () => {
 	});
 });
 
-// ── With core enablement (FIK-58) ──────────────────────────────────────────
+// ── With core enablement ────────────────────────────────────────────────────
 
 const WHSEC = "whsec_1234567890abcdef";
 
