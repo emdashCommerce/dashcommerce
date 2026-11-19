@@ -328,6 +328,10 @@ export const paystackPaymentProvider: PaymentProvider = {
 		subscriptions: false,
 	},
 
+	description: "Card and M-Pesa payments for African shoppers, settled in your local currency.",
+	// Hosted page, or the Popup over the store's checkout (./checkout-client).
+	checkoutStyles: ["hosted", "on_page"],
+
 	// Current scheme first; see ./webhook-verify for both.
 	webhookHeaders: ["paystack-signature", "x-paystack-signature"],
 
@@ -390,6 +394,13 @@ export const paystackPaymentProvider: PaymentProvider = {
 			},
 		});
 
+		if (input.checkoutStyle === "on_page") {
+			return {
+				kind: "on_page",
+				checkoutReference: data.reference,
+				client: { accessCode: data.access_code },
+			};
+		}
 		return {
 			kind: "redirect",
 			redirectUrl: data.authorization_url,
