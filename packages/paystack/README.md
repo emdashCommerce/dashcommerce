@@ -16,7 +16,9 @@ A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hoste
 | Return URL | Core's success URL minus Stripe's `{CHECKOUT_SESSION_ID}` placeholder; Paystack appends its own `trxref` and `reference` |
 | Refunds | `POST /refund` by transaction reference, with `(refundRequestId=<id>)` in `merchant_note`. Paystack takes no idempotency key for refunds and accepts an identical second refund as a new one, so the provider first looks up the transaction's numeric id, lists its refunds, and returns any non-failed refund already tagged with this `refundRequestId` instead of creating another. The tag is read only from the end of the note, and brackets are stripped from the reason, so a reason cannot pose as another request. This guards retries, not two simultaneous calls with the same id: both could pass the check before either refund exists, so core must not run the same refund request concurrently. M-Pesa refunds go back to the customer's phone. Refund statuses map as `processed` → succeeded, `failed` → failed, and `pending`, `processing`, `needs-attention` → pending. `refund.*` webhooks become core's `refund.updated`, matched by the numeric refund id. Paystack's documented sample shows only `refund_reference`, so an event without an id is left unhandled until a real payload confirms the shape |
 | Currencies | KES, NGN, GHS, ZAR and USD. Your Paystack account must be enabled for the currency you sell in |
-| Not supported | Embedded checkout (core's embedded mode is Stripe-only), coupons on the hosted page, Connect splits and subscriptions. `capabilities` declares all three as `false` |
+| On-page checkout | With checkout set to "On your page", Paystack's Popup opens over the store's checkout using the `access_code` from initialise. `inline.js` loads only when the customer presses Pay. The Popup's success callback only sends the customer to the thank-you page; the order still comes from the signed webhook and a live verify |
+| Customer details | Paystack's page collects neither email nor address, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for them before payment |
+| Not supported | Coupons on Paystack's page, Connect splits and subscriptions. `capabilities` declares all three as `false` |
 
 ## Webhook signatures
 
@@ -54,9 +56,19 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
    | Secret or restricted key | best: a restricted key (`rk_test_…`) with only `transactions:write` and `disputes_refunds:write`; or the secret key (`sk_test_…`) |
    | Webhook signing secret | the `whsec_…` secret from Developers → API configuration; or, if you have none yet, the `sk_` secret key |
 
-   Keep checkout mode at **hosted**. Do not delete the `sk_` key from Paystack before your webhooks verify with `whsec_`: Paystack stops sending `x-paystack-signature` once it is gone.
+   Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). Do not delete the `sk_` key from Paystack before your webhooks verify with `whsec_`: Paystack stops sending `x-paystack-signature` once it is gone.
 
-4. **Set the webhook URL** in the Paystack dashboard:
+4. **For on-page checkout, load the browser client** in your checkout page's client script, so Vite bundles it:
+
+   ```astro
+   <script>
+     import "@dashcommerce/paystack/checkout-client";
+   </script>
+   ```
+
+   If your site sends a Content-Security-Policy, allow `https://js.paystack.co` for scripts and Paystack's checkout frames.
+
+5. **Set the webhook URL** in the Paystack dashboard:
 
    ```
    https://<your-site>/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=paystack

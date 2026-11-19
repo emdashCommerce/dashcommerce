@@ -104,6 +104,9 @@ describe("provider credentials in the settings API", () => {
 		expect(acmeRow).toEqual({
 			id: "acme",
 			label: "Acme Pay",
+			description: null,
+			logo: null,
+			brandColour: null,
 			credentialFields: {
 				secretKey: { label: "Secret or restricted key", prefixes: ["ak_test_", "ark_test_"] },
 				webhookSecret: {
@@ -112,6 +115,7 @@ describe("provider credentials in the settings API", () => {
 					help: "From the dashboard",
 				},
 			},
+			checkoutStyles: ["hosted"],
 			secrets: {
 				secretKey: { isSet: true, hint: "••••1234" },
 				webhookSecret: { isSet: false, hint: null },
@@ -127,6 +131,43 @@ describe("provider credentials in the settings API", () => {
 		expect((body._secrets as Record<string, unknown>).stripeSecretKey).toEqual({
 			isSet: true,
 			hint: "••••_123",
+		});
+	});
+});
+
+describe("provider cards in Settings", () => {
+	it("returns each provider's description, logo and brand colour for the cards", async () => {
+		registerPaymentProvider({
+			...createMockPaymentProvider({ id: "brandy" }),
+			label: "Brandy",
+			description: "Card and M-Pesa",
+			logo: "https://cdn.example/brandy.svg",
+			brandColour: "#123456",
+		});
+		const { ctx } = makeRouteContext({});
+		const providers = (await call(ctx, "GET")).body._providers as Array<Record<string, unknown>>;
+		expect(providers.find((p) => p.id === "brandy")).toMatchObject({
+			description: "Card and M-Pesa",
+			logo: "https://cdn.example/brandy.svg",
+			brandColour: "#123456",
+		});
+		expect(providers.find((p) => p.id === "stripe")).toMatchObject({
+			label: "Stripe",
+			brandColour: "#635BFF",
+		});
+	});
+
+	it("drops a logo that isn't https or an image data URI, and a malformed colour", async () => {
+		registerPaymentProvider({
+			...createMockPaymentProvider({ id: "sneaky" }),
+			logo: "javascript:alert(1)",
+			brandColour: "red; background:url(x)",
+		});
+		const { ctx } = makeRouteContext({});
+		const providers = (await call(ctx, "GET")).body._providers as Array<Record<string, unknown>>;
+		expect(providers.find((p) => p.id === "sneaky")).toMatchObject({
+			logo: null,
+			brandColour: null,
 		});
 	});
 });

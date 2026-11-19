@@ -1,5 +1,6 @@
 ---
 import { getPluginSetting } from "emdash";
+import { getPaymentProvider } from "@dashcommerce/core/payment-provider";
 import Shop from "../layouts/Shop.astro";
 import CheckoutForm from "@dashcommerce/core/astro/components/CheckoutForm.astro";
 import CheckoutSidebar from "@dashcommerce/core/astro/components/CheckoutSidebar.astro";
@@ -24,10 +25,27 @@ const checkoutModeSetting = (await getPluginSetting("dashcommerce", "checkoutMod
   | undefined;
 const checkoutMode: "hosted" | "embedded" = checkoutModeSetting ?? "hosted";
 
+// The active payment provider: Stripe unless another one is chosen in
+// DashCommerce settings. Gateway packages register themselves at runtime
+// (see src/middleware.ts), so the registry knows their labels here.
+const providerId = ((await getPluginSetting("dashcommerce", "paymentProvider")) as string | null | undefined) ?? "stripe";
+const isStripe = providerId === "stripe";
+const provider = getPaymentProvider(providerId);
+const providerLabel = provider?.label ?? providerId;
+// Stripe Elements on this page only for Stripe; other providers use the
+// hosted form, whose Pay button redirects or opens their on-page checkout.
+const useStripeElements = isStripe && checkoutMode === "embedded";
+
 const missingKeys: string[] = [];
-if (!secretKey)                                   missingKeys.push("stripeSecretKey");
-if (checkoutMode === "embedded" && !publishableKey) missingKeys.push("stripePublishableKey");
-if (!webhookSecret)                                missingKeys.push("stripeWebhookSecret");
+if (isStripe) {
+  if (!secretKey)                                   missingKeys.push("stripeSecretKey");
+  if (checkoutMode === "embedded" && !publishableKey) missingKeys.push("stripePublishableKey");
+  if (!webhookSecret)                                missingKeys.push("stripeWebhookSecret");
+} else {
+  if (!provider) missingKeys.push(`${providerId} (provider not registered)`);
+  if (!(await getPluginSetting("dashcommerce", `${providerId}SecretKey`)))     missingKeys.push(`${providerId}SecretKey`);
+  if (!(await getPluginSetting("dashcommerce", `${providerId}WebhookSecret`))) missingKeys.push(`${providerId}WebhookSecret`);
+}
 
 const canCheckout = missingKeys.length === 0;
 
@@ -52,7 +70,7 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
       <h1 class="co-title">Checkout</h1>
       <p class="co-subtitle">
         <span class="co-secure-icon" aria-hidden="true">🔒</span>
-        Secure · Encrypted · Stripe-powered
+        Secure · Encrypted · {providerLabel}-powered
       </p>
     </div>
   </div>
@@ -64,14 +82,14 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
 
       {!canCheckout && (
         <div class="co-misconfig" role="alert">
-          <strong>⚠ Stripe is not configured</strong>
+          <strong>⚠ {providerLabel} is not configured</strong>
           <p>
             The following settings are missing:
             <code>{missingKeys.join(", ")}</code>.
           </p>
           <p>
             Open <a href="/_emdash/admin/plugins/dashcommerce/settings">DashCommerce settings</a> to add them.
-            If using <code>stripe listen</code>, paste the <code>whsec_…</code> secret into <code>stripeWebhookSecret</code>.
+            {isStripe && <>If using <code>stripe listen</code>, paste the <code>whsec_…</code> secret into <code>stripeWebhookSecret</code>.</>}
           </p>
         </div>
       )}
@@ -83,11 +101,15 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
         </div>
       )}
 
-      {canCheckout && checkoutMode === "hosted" && (
-        <HostedCheckoutForm />
+      {canCheckout && !useStripeElements && (
+        <HostedCheckoutForm
+          providerId={providerId}
+          providerLabel={providerLabel}
+          collectsDetails={provider?.collectsCustomerDetails === true}
+        />
       )}
 
-      {canCheckout && checkoutMode === "embedded" && (
+      {canCheckout && useStripeElements && (
         <>
       <!-- Step 1: Contact & address -->
       <section id="contact-form" class="co-step">
