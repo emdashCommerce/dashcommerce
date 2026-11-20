@@ -534,6 +534,22 @@ export const checkoutRoutes = {
 					{ status: 400, headers: { "Content-Type": "application/json" } },
 				);
 			}
+			if (!provider.collectsCustomerDetails) {
+				const missing = [
+					...(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recalculated.customerEmail ?? "") ? [] : ["email"]),
+					...(recalculated.billingAddress || recalculated.shippingAddress ? [] : ["address"]),
+				];
+				if (missing.length > 0) {
+					return new Response(
+						JSON.stringify({
+							error: `${provider.label} needs the customer's ${missing.join(" and ")} before payment. Send them with cart/contact.`,
+							code: "customer_details_required",
+							missing,
+						}),
+						{ status: 409, headers: { "Content-Type": "application/json" } },
+					);
+				}
+			}
 			await save(ctx, recalculated);
 
 			const orderDraftId = randomId();

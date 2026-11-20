@@ -24,7 +24,16 @@ export interface DashCommerceOptions {
 	 * (each store gets its own scoped storage + KV namespace).
 	 */
 	id?: string;
-	
+
+	/**
+	 * Extra hosts the plugin may call, for payment providers other than
+	 * Stripe, e.g. `["api.paystack.co"]`. They are added to Stripe's hosts,
+	 * never instead of them, so Stripe webhooks and refunds keep working
+	 * after a merchant switches provider. Exact host names, or `*.domain`
+	 * for subdomains.
+	 */
+	allowedHosts?: string[];
+
 	/**
 	 * EmDash version for runtime compatibility check.
 	 * Auto-detected at build time if not provided.
@@ -46,8 +55,29 @@ export interface DashCommerceOptions {
  * });
  * ```
  */
+const STRIPE_HOSTS = ["api.stripe.com", "files.stripe.com"];
+
+const HOST_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+const HOST_PATTERN = new RegExp(`^(?:\\*\\.)?${HOST_LABEL}(?:\\.${HOST_LABEL})+$`);
+
+/** Stripe's hosts plus valid extras, lower-cased and de-duplicated. */
+function resolveAllowedHosts(extra: string[] | undefined): string[] {
+	const hosts = [...STRIPE_HOSTS];
+	for (const raw of extra ?? []) {
+		const host = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+		if (!HOST_PATTERN.test(host)) {
+			throw new Error(
+				`dashcommerce({ allowedHosts }): "${raw}" is not a host name. Use e.g. "api.paystack.co" or "*.example.com", without a scheme, path or port.`,
+			);
+		}
+		if (!hosts.includes(host)) hosts.push(host);
+	}
+	return hosts;
+}
+
 export function dashcommerce(options: DashCommerceOptions = {}): PluginDescriptor {
 	const id = options.id ?? DASHCOMMERCE_PLUGIN_ID;
+	const allowedHosts = resolveAllowedHosts(options.allowedHosts);
 	const emdashVersion = options.emdashVersion ?? detectEmDashVersionAtBuildTime() ?? undefined;
 	warnIfEmDashPatchMissing(emdashVersion);
 
@@ -70,7 +100,7 @@ export function dashcommerce(options: DashCommerceOptions = {}): PluginDescripto
 			"network:request",
 			"email:send",
 		],
-		allowedHosts: ["api.stripe.com", "files.stripe.com"],
+		allowedHosts,
 		storage: DASHCOMMERCE_STORAGE,
 		// Native React admin UI. Pages + widgets populated progressively in Phase 12.
 		adminEntry: "@dashcommerce/core/admin",
@@ -178,7 +208,7 @@ export function dashcommerce(options: DashCommerceOptions = {}): PluginDescripto
 				"network:request",
 				"email:send",
 			],
-			allowedHosts: ["api.stripe.com", "files.stripe.com"],
+			allowedHosts,
 			// Lets createPlugin run the version and shipped-patch check at init.
 			...(emdashVersion ? { emdashVersion } : {}),
 		},

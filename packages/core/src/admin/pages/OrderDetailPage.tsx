@@ -26,6 +26,7 @@ import { MoneyDisplay } from "../ui/MoneyDisplay";
 import { StatusBadge } from "../ui/StatusBadge";
 import { EmptyState } from "../ui/EmptyState";
 import type { Order, OrderItem, OrderStatus, Refund } from "../../types";
+import { T } from "../theme";
 
 // Allowed forward transitions mirrored from `../../orders/status.ts` so the
 // UI can hide impossible targets without round-tripping to the server.
@@ -214,7 +215,7 @@ function OrderHeader({
 				<div style={rowStyle}>
 					<StatusBadge status={order.status} />
 					<StatusBadge status={order.paymentStatus} />
-					<span style={{ color: "#6b7280", fontSize: 13 }}>
+					<span style={{ color: T.textMuted, fontSize: 13 }}>
 						Placed {new Date(order.createdAt).toLocaleString()}
 					</span>
 				</div>
@@ -233,13 +234,13 @@ function OrderHeader({
 						<MoneyDisplay value={order.refundedTotal} />
 					</span>
 				</div>
-				<div style={{ fontSize: 13, color: "#374151" }}>
+				<div style={{ fontSize: 13, color: T.text }}>
 					<strong>Ship to:</strong>{" "}
 					{`${order.shippingAddress.line1}, ${order.shippingAddress.city}, ${order.shippingAddress.country}`}
 				</div>
 				{targets.length > 0 && (
 					<div style={{ ...rowStyle, marginTop: 4 }}>
-						<span style={{ fontSize: 13, color: "#374151" }}>Move to:</span>
+						<span style={{ fontSize: 13, color: T.text }}>Move to:</span>
 						{targets.map((t) => (
 							<Button
 								key={t}
@@ -278,7 +279,7 @@ function ItemsCard({ items }: { items: OrderItem[] }) {
 							render: (i) => (
 								<>
 									<div>{i.name}</div>
-									<div style={{ fontSize: 12, color: "#6b7280" }}>
+									<div style={{ fontSize: 12, color: T.textMuted }}>
 										SKU {i.sku || "—"}
 									</div>
 								</>
@@ -391,7 +392,7 @@ function RefundCard({
 				</Alert>
 			) : (
 				<div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-					<div style={{ fontSize: 13, color: "#374151" }}>
+					<div style={{ fontSize: 13, color: T.text }}>
 						Up to <MoneyDisplay value={{ ...order.paidTotal, amount: remainingMinor }} /> can
 						still be refunded.
 					</div>
