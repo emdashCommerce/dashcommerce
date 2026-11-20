@@ -135,6 +135,8 @@ interface ProviderRow {
 	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
 	canCheckConnection?: boolean;
 	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
+	/** Absent from servers before on-page checkout: treat as hosted only. */
+	checkoutStyles?: Array<"hosted" | "on_page">;
 }
 
 /**
@@ -517,15 +519,33 @@ function GroupBody({
 				)}
 				{selected && selected.id !== "stripe" && (
 					<>
-						<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
-							Customers pay on {selected.label}'s hosted page and come back to your
-							store.
-						</p>
-						{eff("checkoutMode", saved, draft) === "embedded" && (
+						{selected.checkoutStyles?.includes("on_page") ? (
+							<FormField
+								label="How customers pay"
+								description={`Hosted sends customers to ${selected.label}'s page and back. On your page opens ${selected.label} over your checkout, so customers never leave your store.`}
+								error={errors.checkoutMode}
+							>
+								<Select
+									value={eff("checkoutMode", saved, draft) === "embedded" ? "embedded" : "hosted"}
+									options={[
+										{ value: "hosted", label: `Hosted by ${selected.label}` },
+										{ value: "embedded", label: "On your page" },
+									]}
+									onChange={(e) => setField("checkoutMode", e.currentTarget.value as CheckoutMode)}
+									disabled={disabled}
+								/>
+							</FormField>
+						) : (
+							<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+								Customers pay on {selected.label}'s hosted page and come back to your
+								store.
+							</p>
+						)}
+						{!selected.checkoutStyles?.includes("on_page") &&
+							eff("checkoutMode", saved, draft) === "embedded" && (
 							<Alert type="warning" title="Checkout is set to embedded">
-								DashCommerce's embedded checkout is built on Stripe's payment form, so
-								it cannot run {selected.label} yet, and checkout will refuse payments
-								until it is set to hosted.{" "}
+								{selected.label} doesn't offer on-page checkout, so checkout will
+								refuse payments until it is set to hosted.{" "}
 								<Button
 									variant="secondary"
 									onClick={() => setField("checkoutMode", "hosted")}
