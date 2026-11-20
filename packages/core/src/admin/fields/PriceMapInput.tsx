@@ -30,6 +30,7 @@ import {
 	getCurrencyInfo,
 	usePluginAPI,
 } from "../kit";
+import { T } from "../theme";
 
 interface PriceEntry {
 	amount: number;
@@ -263,7 +264,7 @@ function PriceMapEditor({
 					onChange={setShowCompareAt}
 					disabled={readOnly}
 				/>
-				<span style={{ color: "#888", fontSize: "0.85em" }}>
+				<span style={{ color: T.textMuted, fontSize: "0.85em" }}>
 					{pricedCount} currenc{pricedCount === 1 ? "y" : "ies"} priced
 				</span>
 			</div>
@@ -273,14 +274,14 @@ function PriceMapEditor({
 					display: "flex",
 					flexDirection: "column",
 					gap: 6,
-					border: "1px solid #e4e4e7",
+					border: `1px solid ${T.hairline}`,
 					borderRadius: 6,
 					padding: 8,
-					background: "#fafafa",
+					background: T.surfaceSunken,
 				}}
 			>
 				{rowCodes.length === 0 ? (
-					<p style={{ color: "#888", fontSize: "0.9em", margin: "4px 0" }}>
+					<p style={{ color: T.textMuted, fontSize: "0.9em", margin: "4px 0" }}>
 						No currencies configured. Enable at least one currency in store
 						Settings, then come back to price this product.
 					</p>
@@ -309,7 +310,7 @@ function PriceMapEditor({
 							style={{
 								cursor: "pointer",
 								fontSize: "0.85em",
-								color: "#555",
+								color: T.textMuted,
 							}}
 						>
 							Add another currency (not in your enabled list)
@@ -368,14 +369,14 @@ function PriceRow({
 		>
 			<div>
 				<strong style={{ fontFamily: "var(--font-mono)" }}>{code}</strong>
-				<div style={{ fontSize: "0.75em", color: "#888" }}>
+				<div style={{ fontSize: "0.75em", color: T.textMuted }}>
 					{info?.name ?? "Unknown currency"}
 					{isDefault && (
 						<span
 							style={{
 								marginLeft: 4,
-								background: "#eef2ff",
-								color: "#3730a3",
+								background: T.infoBg,
+								color: T.info,
 								borderRadius: 3,
 								padding: "0 4px",
 							}}
@@ -387,8 +388,8 @@ function PriceRow({
 						<span
 							style={{
 								marginLeft: 4,
-								background: "#fef3c7",
-								color: "#92400e",
+								background: T.warningBg,
+								color: T.warning,
 								borderRadius: 3,
 								padding: "0 4px",
 							}}

@@ -44,6 +44,7 @@ import {
 export { getCurrencyInfo } from "../data/currencies";
 import { COUNTRY_TABLE, type CountryInfo } from "../data/countries";
 import { format as formatMoney, type Money as MoneyValue } from "../money";
+import { T, TONES } from "./theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // API client
@@ -179,6 +180,9 @@ export function usePluginAPI(): PluginAPI {
 // Primitives — minimal styled components that match the skill's contract
 // ────────────────────────────────────────────────────────────────────────────
 
+/** Kept for anything that imported the admin colour names from the kit. */
+export { DC_THEME } from "./theme";
+
 export interface CardProps {
 	title?: ReactNode;
 	children?: ReactNode;
@@ -189,11 +193,12 @@ export function Card({ title, children, style }: CardProps) {
 	return (
 		<section
 			style={{
-				border: "1px solid var(--dc-border, #e4e4e7)",
+				border: `1px solid ${T.hairline}`,
 				borderRadius: 8,
 				padding: "1rem 1.25rem",
-				background: "var(--dc-card-bg, #fff)",
-				boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+				background: T.surface,
+				color: T.text,
+				boxShadow: T.shadowSm,
 				...style,
 			}}
 		>
@@ -203,6 +208,7 @@ export function Card({ title, children, style }: CardProps) {
 						marginBottom: "0.75rem",
 						fontSize: "1rem",
 						fontWeight: 600,
+						color: T.text,
 					}}
 				>
 					{title}
@@ -219,9 +225,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BUTTON_VARIANTS: Record<string, CSSProperties> = {
-	primary: { background: "#111", color: "#fff", borderColor: "#111" },
-	secondary: { background: "#f4f4f5", color: "#111", borderColor: "#d4d4d8" },
-	danger: { background: "#b91c1c", color: "#fff", borderColor: "#991b1b" },
+	primary: { background: T.primaryBg, color: T.primaryFg, borderColor: T.primaryBg },
+	secondary: { background: T.surfaceSunken, color: T.text, borderColor: T.border },
+	danger: { background: T.dangerBg, color: T.onFill, borderColor: T.dangerBorder },
 };
 
 const BUTTON_SIZES: Record<string, CSSProperties> = {
@@ -266,12 +272,14 @@ export function Input({ label, style, ...rest }: InputProps) {
 	const input = (
 		<input
 			style={{
-				border: "1px solid var(--dc-border, #d4d4d8)",
+				border: `1px solid ${T.border}`,
 				borderRadius: 6,
 				padding: "6px 10px",
 				fontSize: "0.95em",
 				width: "100%",
 				boxSizing: "border-box",
+				background: T.inputBg,
+				color: T.inputFg,
 				...style,
 			}}
 			{...rest}
@@ -286,7 +294,7 @@ export function Input({ label, style, ...rest }: InputProps) {
 				gap: 4,
 				margin: "0.5rem 0",
 				fontSize: "0.85em",
-				color: "#444",
+				color: T.label,
 			}}
 		>
 			<span>{label}</span>
@@ -309,18 +317,19 @@ export function Select({ label, options, style, children, ...rest }: SelectProps
 	const select = (
 		<select
 			style={{
-				border: "1px solid var(--dc-border, #d4d4d8)",
+				border: `1px solid ${T.border}`,
 				borderRadius: 6,
 				padding: "6px 10px",
 				fontSize: "0.95em",
-				background: "#fff",
+				background: T.inputBg,
+				color: T.inputFg,
 				...style,
 			}}
 			{...rest}
 		>
 			{options
 				? options.map((o) => (
-						<option key={o.value} value={o.value}>
+						<option key={o.value} value={o.value} style={{ background: T.inputBg, color: T.inputFg }}>
 							{o.label}
 						</option>
 					))
@@ -336,7 +345,7 @@ export function Select({ label, options, style, children, ...rest }: SelectProps
 				gap: 4,
 				margin: "0.5rem 0",
 				fontSize: "0.85em",
-				color: "#444",
+				color: T.label,
 			}}
 		>
 			<span>{label}</span>
@@ -399,7 +408,7 @@ export function Table<T>({
 }: TableProps<T>) {
 	if (data.length === 0) {
 		return (
-			<p style={{ color: "#888", fontStyle: "italic", margin: "1rem 0" }}>
+			<p style={{ color: T.textSubtle, fontStyle: "italic", margin: "1rem 0" }}>
 				{emptyMessage}
 			</p>
 		);
@@ -411,6 +420,7 @@ export function Table<T>({
 					width: "100%",
 					borderCollapse: "collapse",
 					fontSize: "0.9em",
+					color: T.text,
 				}}
 			>
 				<thead>
@@ -421,8 +431,8 @@ export function Table<T>({
 								style={{
 									textAlign: "left",
 									padding: "8px 10px",
-									borderBottom: "2px solid #e4e4e7",
-									color: "#555",
+									borderBottom: `2px solid ${T.hairline}`,
+									color: T.textMuted,
 									fontWeight: 600,
 									...(c.width ? { width: c.width } : {}),
 								}}
@@ -441,13 +451,14 @@ export function Table<T>({
 								onClick={onRowClick ? () => onRowClick(row) : undefined}
 								style={{
 									cursor: onRowClick ? "pointer" : "default",
-									borderBottom: "1px solid #f4f4f5",
+									borderBottom: `1px solid ${T.hairline}`,
+									color: T.text,
 								}}
 							>
 								{columns.map((c) => (
 									<td
 										key={c.key}
-										style={{ padding: "8px 10px" }}
+										style={{ padding: "8px 10px", color: T.text }}
 									>
 										{c.render
 											? c.render(row)
@@ -471,7 +482,7 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 				display: "flex",
 				alignItems: "center",
 				gap: 8,
-				color: "#888",
+				color: T.textSubtle,
 				padding: "1rem 0",
 			}}
 		>
@@ -481,8 +492,8 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 					display: "inline-block",
 					width: 14,
 					height: 14,
-					border: "2px solid #d4d4d8",
-					borderTopColor: "#888",
+					border: `2px solid ${T.border}`,
+					borderTopColor: T.textSubtle,
 					borderRadius: "50%",
 					animation: "dc-spin 0.8s linear infinite",
 				}}
@@ -500,10 +511,10 @@ export interface AlertProps {
 }
 
 const ALERT_COLORS: Record<string, { bg: string; border: string; fg: string }> = {
-	info: { bg: "#eff6ff", border: "#93c5fd", fg: "#1e3a8a" },
-	success: { bg: "#f0fdf4", border: "#86efac", fg: "#14532d" },
-	warning: { bg: "#fffbeb", border: "#fde68a", fg: "#78350f" },
-	error: { bg: "#fef2f2", border: "#fca5a5", fg: "#7f1d1d" },
+	info: TONES.info,
+	success: TONES.success,
+	warning: TONES.warning,
+	error: TONES.error,
 };
 
 export function Alert({ type = "info", title, children }: AlertProps) {
@@ -567,17 +578,17 @@ export function FormField({
 			{label && (
 				<label
 					htmlFor={fieldId}
-					style={{ fontSize: "0.85em", color: "#444", fontWeight: 500 }}
+					style={{ fontSize: "0.85em", color: T.label, fontWeight: 500 }}
 				>
 					{label}
-					{required && <span style={{ color: "#b91c1c", marginLeft: 4 }}>*</span>}
+					{required && <span style={{ color: T.danger, marginLeft: 4 }}>*</span>}
 				</label>
 			)}
 			{children}
 			{description && !error && (
 				<p
 					id={descId}
-					style={{ fontSize: "0.78em", color: "#666", margin: "2px 0 0" }}
+					style={{ fontSize: "0.78em", color: T.textSubtle, margin: "2px 0 0" }}
 				>
 					{description}
 				</p>
@@ -588,7 +599,7 @@ export function FormField({
 					role="alert"
 					style={{
 						fontSize: "0.78em",
-						color: "#b91c1c",
+						color: T.danger,
 						margin: "2px 0 0",
 						fontWeight: 500,
 					}}
@@ -668,7 +679,7 @@ export function NumberInput({
 		onChange(clamped);
 	}
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid ? T.danger : T.border;
 	return (
 		<div
 			style={{
@@ -676,7 +687,8 @@ export function NumberInput({
 				alignItems: "stretch",
 				border: `1px solid ${border}`,
 				borderRadius: 6,
-				background: disabled ? "#f4f4f5" : "#fff",
+				background: disabled ? T.surfaceSunken : T.inputBg,
+				color: disabled ? T.textPlaceholder : T.inputFg,
 				opacity: disabled ? 0.6 : 1,
 				overflow: "hidden",
 				width: "100%",
@@ -687,8 +699,8 @@ export function NumberInput({
 				<span
 					style={{
 						padding: "6px 8px",
-						background: "#f4f4f5",
-						color: "#555",
+						background: T.surfaceSunken,
+						color: T.textMuted,
 						fontSize: "0.85em",
 						display: "flex",
 						alignItems: "center",
@@ -717,6 +729,7 @@ export function NumberInput({
 					padding: "6px 10px",
 					fontSize: "0.95em",
 					background: "transparent",
+					color: T.inputFg,
 					width: "100%",
 					minWidth: 0,
 					...style,
@@ -727,8 +740,8 @@ export function NumberInput({
 				<span
 					style={{
 						padding: "6px 8px",
-						background: "#f4f4f5",
-						color: "#555",
+						background: T.surfaceSunken,
+						color: T.textMuted,
 						fontSize: "0.85em",
 						display: "flex",
 						alignItems: "center",
@@ -814,7 +827,7 @@ export function Combobox({
 		setQuery("");
 	}
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid ? T.danger : T.border;
 	return (
 		<div ref={rootRef} style={{ position: "relative", width: "100%" }}>
 			<button
@@ -826,13 +839,13 @@ export function Combobox({
 					width: "100%",
 					textAlign: "left",
 					border: `1px solid ${border}`,
-					background: disabled ? "#f4f4f5" : "#fff",
+					background: disabled ? T.surfaceSunken : T.inputBg,
 					padding: "6px 30px 6px 10px",
 					borderRadius: 6,
 					fontSize: "0.95em",
 					cursor: disabled ? "not-allowed" : "pointer",
 					position: "relative",
-					color: selected ? "#111" : "#888",
+					color: selected ? T.inputFg : T.textSubtle,
 				}}
 				aria-haspopup="listbox"
 				aria-expanded={open}
@@ -845,7 +858,7 @@ export function Combobox({
 						right: 10,
 						top: "50%",
 						transform: "translateY(-50%)",
-						color: "#888",
+						color: T.textSubtle,
 					}}
 				>
 					▾
@@ -859,17 +872,18 @@ export function Combobox({
 						left: 0,
 						right: 0,
 						zIndex: 50,
-						background: "#fff",
-						border: "1px solid #e4e4e7",
+						background: T.surface,
+						color: T.text,
+						border: `1px solid ${T.hairline}`,
 						borderRadius: 6,
-						boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
+						boxShadow: T.shadowMd,
 						maxHeight: 280,
 						display: "flex",
 						flexDirection: "column",
 						overflow: "hidden",
 					}}
 				>
-					<div style={{ padding: 6, borderBottom: "1px solid #f4f4f5" }}>
+					<div style={{ padding: 6, borderBottom: `1px solid ${T.hairline}` }}>
 						<input
 							autoFocus
 							value={query}
@@ -887,11 +901,13 @@ export function Combobox({
 							}}
 							style={{
 								width: "100%",
-								border: "1px solid #e4e4e7",
+								border: `1px solid ${T.hairline}`,
 								borderRadius: 4,
 								padding: "4px 8px",
 								fontSize: "0.9em",
 								boxSizing: "border-box",
+								background: T.inputBg,
+								color: T.inputFg,
 							}}
 						/>
 					</div>
@@ -921,7 +937,7 @@ export function Combobox({
 										border: "none",
 										padding: "6px 10px",
 										fontSize: "0.9em",
-										color: "#888",
+										color: T.textSubtle,
 										fontStyle: "italic",
 										cursor: "pointer",
 									}}
@@ -934,7 +950,7 @@ export function Combobox({
 							<li
 								style={{
 									padding: "8px 10px",
-									color: "#888",
+									color: T.textSubtle,
 									fontSize: "0.9em",
 								}}
 							>
@@ -951,10 +967,11 @@ export function Combobox({
 											width: "100%",
 											textAlign: "left",
 											background:
-												opt.value === value ? "#f0f9ff" : "transparent",
+												opt.value === value ? T.selected : "transparent",
 											border: "none",
 											padding: "6px 10px",
 											fontSize: "0.9em",
+											color: T.text,
 											cursor: opt.disabled ? "not-allowed" : "pointer",
 											opacity: opt.disabled ? 0.5 : 1,
 											display: "flex",
@@ -964,7 +981,7 @@ export function Combobox({
 									>
 										<span>{opt.label}</span>
 										{opt.hint && (
-											<span style={{ color: "#888", fontSize: "0.85em" }}>
+											<span style={{ color: T.textSubtle, fontSize: "0.85em" }}>
 												{opt.hint}
 											</span>
 										)}
@@ -1052,7 +1069,7 @@ export function MultiSelect({
 		return m;
 	}, [options]);
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid ? T.danger : T.border;
 	return (
 		<div ref={rootRef} style={{ position: "relative", width: "100%" }}>
 			<div
@@ -1066,7 +1083,8 @@ export function MultiSelect({
 					borderRadius: 6,
 					padding: 4,
 					minHeight: 32,
-					background: disabled ? "#f4f4f5" : "#fff",
+					background: disabled ? T.surfaceSunken : T.inputBg,
+					color: T.inputFg,
 					cursor: disabled ? "not-allowed" : "text",
 				}}
 				onClick={() => !disabled && setOpen(true)}
@@ -1084,8 +1102,8 @@ export function MultiSelect({
 								display: "inline-flex",
 								alignItems: "center",
 								gap: 4,
-								background: "#eef2ff",
-								color: "#1e3a8a",
+								background: T.infoBg,
+								color: T.info,
 								borderRadius: 4,
 								padding: "2px 6px",
 								fontSize: "0.85em",
@@ -1106,7 +1124,7 @@ export function MultiSelect({
 										cursor: "pointer",
 										padding: 0,
 										fontSize: "0.9em",
-										color: "#1e3a8a",
+										color: T.info,
 									}}
 								>
 									×
@@ -1128,6 +1146,7 @@ export function MultiSelect({
 						border: "none",
 						outline: "none",
 						background: "transparent",
+						color: T.inputFg,
 						padding: "2px 4px",
 						fontSize: "0.9em",
 						flex: "1 1 80px",
@@ -1143,10 +1162,11 @@ export function MultiSelect({
 						left: 0,
 						right: 0,
 						zIndex: 50,
-						background: "#fff",
-						border: "1px solid #e4e4e7",
+						background: T.surface,
+						color: T.text,
+						border: `1px solid ${T.hairline}`,
 						borderRadius: 6,
-						boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
+						boxShadow: T.shadowMd,
 						maxHeight: 280,
 						overflowY: "auto",
 					}}
@@ -1156,7 +1176,7 @@ export function MultiSelect({
 							<li
 								style={{
 									padding: "8px 10px",
-									color: "#888",
+									color: T.textSubtle,
 									fontSize: "0.9em",
 								}}
 							>
@@ -1173,10 +1193,11 @@ export function MultiSelect({
 											style={{
 												width: "100%",
 												textAlign: "left",
-												background: active ? "#f0f9ff" : "transparent",
+												background: active ? T.selected : "transparent",
 												border: "none",
 												padding: "6px 10px",
 												fontSize: "0.9em",
+												color: T.text,
 												cursor: "pointer",
 												display: "flex",
 												justifyContent: "space-between",
@@ -1190,7 +1211,7 @@ export function MultiSelect({
 														display: "inline-block",
 														width: 12,
 														marginRight: 6,
-														color: "#1e3a8a",
+														color: T.info,
 													}}
 												>
 													{active ? "✓" : ""}
@@ -1198,7 +1219,7 @@ export function MultiSelect({
 												{opt.label}
 											</span>
 											{opt.hint && (
-												<span style={{ color: "#888", fontSize: "0.85em" }}>
+												<span style={{ color: T.textSubtle, fontSize: "0.85em" }}>
 													{opt.hint}
 												</span>
 											)}
@@ -1227,7 +1248,7 @@ export function Money({
 	locale?: string;
 	strong?: boolean;
 }): ReactNode {
-	if (!value) return <span style={{ color: "#888" }}>—</span>;
+	if (!value) return <span style={{ color: T.textSubtle }}>—</span>;
 	const text = formatMoney(value, locale ?? "en-US");
 	if (strong) return <strong>{text}</strong>;
 	return <span>{text}</span>;
@@ -1361,13 +1382,15 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 					onChange({ ...value, from: e.target.value })
 				}
 				style={{
-					border: `1px solid ${invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)"}`,
+					border: `1px solid ${invalid ? T.danger : T.border}`,
 					borderRadius: 6,
 					padding: "4px 8px",
+					background: T.inputBg,
+					color: T.inputFg,
 				}}
 				aria-label="Start date"
 			/>
-			<span aria-hidden>→</span>
+			<span aria-hidden style={{ color: T.text }}>→</span>
 			<input
 				type="date"
 				value={value.to}
@@ -1375,9 +1398,11 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 					onChange({ ...value, to: e.target.value })
 				}
 				style={{
-					border: `1px solid ${invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)"}`,
+					border: `1px solid ${invalid ? T.danger : T.border}`,
 					borderRadius: 6,
 					padding: "4px 8px",
+					background: T.inputBg,
+					color: T.inputFg,
 				}}
 				aria-label="End date"
 			/>
@@ -1388,21 +1413,21 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 						type="button"
 						onClick={() => onChange(p.range())}
 						style={{
-							border: "1px solid var(--dc-border, #d4d4d8)",
-							background: "#fff",
+							border: `1px solid ${T.border}`,
+							background: T.surface,
 							borderRadius: 4,
 							padding: "2px 8px",
 							fontSize: "0.8em",
-							color: "#444",
+							color: T.text,
 							cursor: "pointer",
 						}}
 					>
 						{p.label}
 					</button>
 				))}
-			<span style={{ fontSize: "0.75em", color: "#888" }}>{tz}</span>
+			<span style={{ fontSize: "0.75em", color: T.textSubtle }}>{tz}</span>
 			{invalid && (
-				<span style={{ fontSize: "0.78em", color: "#b91c1c" }}>
+				<span style={{ fontSize: "0.78em", color: T.danger }}>
 					Start date must be on or before end date.
 				</span>
 			)}

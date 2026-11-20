@@ -29,6 +29,7 @@ import {
 	usePluginAPI,
 } from "../kit";
 import type { CheckoutMode, TaxMode } from "../../settings/schema";
+import { T } from "../theme";
 
 type Group = "store" | "reviews" | "downloads" | "marketing" | "connect" | "stripe";
 
@@ -259,7 +260,7 @@ export function SettingsPage() {
 					{group.description && (
 						<p
 							style={{
-								color: "#666",
+								color: T.textMuted,
 								margin: "0 0 0.75rem",
 								fontSize: "0.9em",
 							}}
@@ -699,19 +700,19 @@ function StickyBar({
 				bottom: 0,
 				left: 0,
 				right: 0,
-				background: "#fff",
-				borderTop: "1px solid #e4e4e7",
+				background: T.surface,
+				borderTop: `1px solid ${T.hairline}`,
 				padding: "0.75rem 1rem",
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "space-between",
 				gap: 12,
-				boxShadow: "0 -4px 12px rgba(0,0,0,0.04)",
+				boxShadow: T.shadowSm,
 				zIndex: 10,
 				marginTop: "auto",
 			}}
 		>
-			<span style={{ color: isDirty ? "#c08a00" : "#888", fontSize: "0.9em" }}>
+			<span style={{ color: isDirty ? T.warning : T.textSubtle, fontSize: "0.9em" }}>
 				{saving
 					? "Saving…"
 					: isDirty
