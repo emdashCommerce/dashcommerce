@@ -58,27 +58,62 @@ describe("verifyWebhook picks the header that matches the configured secret", ()
 		expect(result.ok).toBe(true);
 	});
 
-	// What Paystack actually did in a test-mode run on 20 Nov 2026: a whsec_
-	// secret existed, but deliveries carried only x-paystack-signature.
-	it("refuses a whsec_ secret when only the legacy header came, saying how to fix it", async () => {
-		const headers = new Headers({
-			"x-paystack-signature": bothHeaders().get("x-paystack-signature") ?? "",
-		});
+	// What Paystack did in a real test-mode run: the account had a whsec_
+	// secret, but each delivery carried only x-paystack-signature.
+	const legacyOnly = (rawBody = body) =>
+		new Headers({ "x-paystack-signature": createHmac("sha512", sk).update(rawBody).digest("hex") });
+
+	it("verifies a legacy-only delivery with the saved sk_ secret key when the webhook secret is whsec_", async () => {
+		const headers = legacyOnly();
 		const result = await paystackPaymentProvider.verifyWebhook({
 			rawBody: body,
 			signatureHeader: headers.get("x-paystack-signature") ?? "",
 			secret: whsec,
 			headers,
+			credentials: { secretKey: sk, webhookSecret: whsec },
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	it("still refuses a tampered legacy-only delivery", async () => {
+		const headers = legacyOnly();
+		const result = await paystackPaymentProvider.verifyWebhook({
+			rawBody: body.replace('"id":1', '"id":2'),
+			signatureHeader: headers.get("x-paystack-signature") ?? "",
+			secret: whsec,
+			headers,
+			credentials: { secretKey: sk, webhookSecret: whsec },
+		});
+		expect(result.ok).toBe(false);
+	});
+
+	it("explains the fix when a legacy-only delivery comes and no sk_ key is saved", async () => {
+		const headers = legacyOnly();
+		const result = await paystackPaymentProvider.verifyWebhook({
+			rawBody: body,
+			signatureHeader: headers.get("x-paystack-signature") ?? "",
+			secret: whsec,
+			headers,
+			credentials: { secretKey: "rk_test_restricted", webhookSecret: whsec },
 		});
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("only x-paystack-signature");
-		expect(result.reason).toContain("save your sk_ secret key as the webhook secret");
+		expect(result.reason).toContain("sk_ secret key");
 	});
 
-	it("tells merchants to start with the sk_ key, which Paystack signs with today", () => {
-		const help = paystackPaymentProvider.credentialFields?.webhookSecret?.help ?? "";
-		expect(help).toMatch(/^Your sk_ secret key/);
-		expect(help).toContain("Paystack-Signature");
+	it("does not fall back to the legacy header when Paystack-Signature fails", async () => {
+		// A replay outside the 300-second window must not pass on the
+		// window-less legacy header sent alongside it.
+		const headers = bothHeaders(Math.floor(Date.now() / 1000) - 1000);
+		const result = await paystackPaymentProvider.verifyWebhook({
+			rawBody: body,
+			signatureHeader: headers.get("paystack-signature") ?? "",
+			secret: whsec,
+			headers,
+			credentials: { secretKey: sk, webhookSecret: whsec },
+		});
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("300-second window");
 	});
 });
 

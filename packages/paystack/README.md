@@ -29,11 +29,14 @@ Paystack documents two headers ([docs](https://paystack.com/docs/v2/developer-to
 | `Paystack-Signature` (current) | `t=<unix>,v1=<whk_ key id>:<hex HMAC-SHA512 of "t." + raw body>`; two `v1` values while a secret is rotated, any match accepted | the whole `whsec_` signing secret | `t` must be within 300 seconds of the server clock |
 | `x-paystack-signature` (deprecated) | hex HMAC-SHA512 of the raw body | the `sk_` secret key | none |
 
-The provider verifies the header that matches the webhook secret you saved: `Paystack-Signature` for a `whsec_` secret, `x-paystack-signature` for an `sk_` key.
+The provider checks each header with the key it is signed with:
 
-**Save your `sk_` secret key as the webhook secret.** In a test-mode run (November 2026), Paystack's deliveries carried only `x-paystack-signature`, even on an account that had a `whsec_` secret. A store set up with that `whsec_` refused every webhook with a 400, so no order was created. Paystack retries failed deliveries, so saving the `sk_` key recovered them.
+- `Paystack-Signature` with a saved `whsec_` secret. When it is present and a `whsec_` is saved, its result is final, so a replay outside the 300-second window cannot pass on the legacy header sent with it.
+- Otherwise `x-paystack-signature`, with an `sk_` secret key saved in either field: the Paystack key or the webhook secret.
 
-Switch to `whsec_` once your deliveries carry `Paystack-Signature`; you can see the headers in the webhook logs on Paystack's dashboard. It adds the 300-second replay window. With an `sk_` key, a captured webhook can be replayed, but it cannot create a second order or an order Paystack's own records do not confirm.
+Paystack does not always send both. In a test-mode run (November 2026) its deliveries carried only `x-paystack-signature`, on an account that had a `whsec_` secret. Those verify as long as an `sk_` key is saved. If your Paystack key is a restricted `rk_` key, save the `sk_` key as the webhook secret, or webhooks are refused with a 400 that says so. Paystack retries refused deliveries, so fixing the setting recovers them.
+
+Prefer `whsec_` where Paystack sends `Paystack-Signature`: it adds the replay window. With only `x-paystack-signature`, a captured webhook can be replayed, but it cannot create a second order or an order Paystack's own records do not confirm.
 
 Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned leaves the checkout draft unpaid, and no order is created.
 
@@ -58,11 +61,11 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
    | Field | Value |
    |---|---|
    | Secret or restricted key | best: a restricted key (`rk_test_…`) with only `transactions:write` and `disputes_refunds:write`; or the secret key (`sk_test_…`) |
-   | Webhook signing secret | your `sk_` secret key, which Paystack signs webhooks with. Use the `whsec_…` secret only once deliveries carry `Paystack-Signature` (see [Webhook signatures](#webhook-signatures)) |
+   | Webhook signing secret | the `whsec_…` secret from Developers → API configuration, or the `sk_` secret key. With a restricted `rk_` key above, use the `sk_` key here unless your deliveries carry `Paystack-Signature` (see [Webhook signatures](#webhook-signatures)) |
 
    Save, then press **Test Paystack connection**. It makes one read-only call (verifying a reference that can't exist) and says whether Paystack accepts the key, in test or live mode, and whether it can read transactions.
 
-   Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). If you later switch to `whsec_`, keep the `sk_` key in Paystack until webhooks verify with it: Paystack stops sending `x-paystack-signature` once the key is deleted.
+   Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). Do not delete the `sk_` key from Paystack before your webhooks verify with `whsec_`: Paystack stops sending `x-paystack-signature` once it is gone.
 
 4. **For on-page checkout, load the browser client** in your checkout page's client script, so Vite bundles it:
 
