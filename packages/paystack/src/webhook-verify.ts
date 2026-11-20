@@ -143,7 +143,8 @@ async function verifyLegacyScheme(input: VerifyInput, header: string): Promise<V
 	if (input.secret.startsWith("whsec_")) {
 		return {
 			ok: false,
-			reason: "Signature mismatch: x-paystack-signature is keyed with the sk_ secret key",
+			reason:
+				"Signature mismatch: Paystack sent only x-paystack-signature, which is signed with your secret key; save your sk_ secret key as the webhook secret",
 		};
 	}
 	return { ok: false, reason: "Signature mismatch" };

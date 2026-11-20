@@ -296,9 +296,10 @@ const REFUND_EVENT_STATUS: Record<string, "pending" | "succeeded" | "failed"> = 
 
 /**
  * Report a refund's new status by the numeric refund id that `refund()`
- * returned. Paystack's documented sample shows only `refund_reference`
- * (its own UUID); without an id the event is left unhandled rather than
- * matched by guesswork. Confirm against a real payload.
+ * returned. Paystack's documented sample shows only `refund_reference`, but
+ * real deliveries carry `id` (a string such as "19244346") with a null
+ * `refund_reference`. Without an id the event is left unhandled rather than
+ * matched by guesswork.
  */
 function refundEvent(
 	eventName: string,
@@ -347,7 +348,7 @@ export const paystackPaymentProvider: PaymentProvider = {
 		webhookSecret: {
 			label: "Paystack webhook signing secret",
 			prefixes: ["whsec_", "sk_test_", "sk_live_"],
-			help: "The whsec_ secret from Developers → API configuration. If you have none yet, your sk_ secret key.",
+			help: "Your sk_ secret key: Paystack signs webhooks with it. Use a whsec_ signing secret only once Paystack's deliveries carry a Paystack-Signature header.",
 		},
 	},
 
