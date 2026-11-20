@@ -62,6 +62,10 @@ export function calculateRates(input: CalculateRatesInput): ShippingRateOption[]
 	const weightGrams = cartWeightGrams(input.items);
 	const options: ShippingRateOption[] = [];
 
+	// A method priced in another currency can't be offered: its amount would
+	// be added to a cart in a different currency and fail the totals.
+	const inCartCurrency = (m: Money | undefined) => !m || m.currency === input.currency;
+
 	for (const method of input.methods) {
 		if (!method.enabled) continue;
 		const cfg = method.config;
@@ -76,6 +80,7 @@ export function calculateRates(input: CalculateRatesInput): ShippingRateOption[]
 		}
 
 		if (cfg.type === "flat_rate") {
+			if (!inCartCurrency(cfg.amount)) continue;
 			options.push({
 				methodId: method.id,
 				label: method.title,
@@ -83,6 +88,7 @@ export function calculateRates(input: CalculateRatesInput): ShippingRateOption[]
 			});
 		} else if (cfg.type === "free_shipping") {
 			const min = cfg.minimumAmount;
+			if (!inCartCurrency(min)) continue;
 			const qualifies = !min || subtotal.amount >= min.amount;
 			if (qualifies) {
 				options.push({
@@ -92,13 +98,14 @@ export function calculateRates(input: CalculateRatesInput): ShippingRateOption[]
 				});
 			}
 		} else if (cfg.type === "local_pickup") {
+			if (!inCartCurrency(cfg.amount)) continue;
 			options.push({
 				methodId: method.id,
 				label: method.title,
 				amount: cfg.amount ?? zero(input.currency),
 			});
 		} else if (cfg.type === "weight_based") {
-			if (cfg.currency !== input.currency) continue;
+			if (cfg.currency !== input.currency || !inCartCurrency(cfg.base)) continue;
 			const variable = money(cfg.currency, Math.round(cfg.perGram * weightGrams));
 			options.push({
 				methodId: method.id,
