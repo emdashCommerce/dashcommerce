@@ -130,7 +130,7 @@ pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflo
 
 <div class="wrap">
   <header class="top">
-    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · FIK-60 · FIK-61 · branch test/FIK-57-paystack-e2e</span>
+    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · FIK-60 · FIK-61 · FIK-62 · branch test/FIK-57-paystack-e2e</span>
     <h1>Payments test run</h1>
     <p class="muted" style="margin:0;max-width:65ch">Stripe and Paystack, each hosted and on-page, end to end in test mode. Record every step here: result, order number, notes and screenshots. Nothing goes to a PR or the upstream proposal until this run passes. Test keys only.</p>
     <div class="run-meta">
@@ -217,6 +217,7 @@ const GROUPS = [
     { id: "M5", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> M-Pesa <code>+254 710 000 000</code>.", expect: "Pay opens Paystack <b>over</b> the checkout (URL unchanged). Thank-you page after paying; order <b>Paid</b> only once <code>charge.success</code> arrives. Note whether M-Pesa is offered in the Popup." },
     { id: "M6", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> Card <code>4084 0840 8408 4081</code>.", expect: "As M5." },
     { id: "M7", cell: "paystack-onpage", how: "<b>Paystack · On your page.</b> Open the Popup and close it without paying.", expect: "“Payment not completed. You can try again.” Pay works again; no order." },
+    { id: "SH1", how: "<b>FIK-62.</b> Put a physical product (e.g. Enamel Mug) in the cart with the shop currency set to <b>USD</b>, enter a Kenyan address and Get shipping options. Then switch the currency to <b>KES</b> and Get shipping options again.", expect: "USD cart: the KES-priced shipping method is <b>not</b> listed, and nothing says “Couldn't save that”. KES cart: it is listed, choosing it works, and the total includes it." },
     { id: "INL", cell: "paystack-onpage", how: "DevTools › Network, filter <code>paystack.co</code>, reload <code>/checkout</code>.", expect: "Nothing from <code>js.paystack.co</code> until you press Pay." },
     { id: "LCP", how: "Optional. DevTools › Performance, Network “Fast 3G”, record a reload of <code>/checkout</code>.", expect: "LCP under 2 s. Write the number in notes." },
   ]},
