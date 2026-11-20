@@ -48,6 +48,12 @@ import {
 	validateSettingsKey,
 } from "../settings/schema";
 import { normalizeCurrencyList } from "../data/currencies";
+import {
+	getPaymentProvider,
+	listPaymentProviders,
+	loadPaymentProviderCredentials,
+	providerCredentialSetting,
+} from "../payment-provider";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -127,6 +133,61 @@ function storeOf<T>(ctx: PluginContext, name: string): StorageCollection<T> {
 function secretHint(value: unknown): string {
 	if (typeof value !== "string" || value.length < 4) return MASKED_SECRET_PREFIX;
 	return `${MASKED_SECRET_PREFIX}${value.slice(-4)}`;
+}
+
+/** Only https URLs and image data URIs may reach an <img src>. */
+function safeLogo(logo: string | undefined): string | null {
+	if (!logo) return null;
+	return /^https:\/\//i.test(logo) || /^data:image\/(svg\+xml|png|webp|jpeg);/i.test(logo)
+		? logo
+		: null;
+}
+
+/** A registered non-Stripe provider's credential setting, for validation. */
+function providerCredentialSpec(key: string): { prefixes?: readonly string[] } | undefined {
+	return providerCredentialSetting(key)?.spec;
+}
+
+function isSecretSetting(key: string): boolean {
+	return SECRET_SETTINGS_KEYS.has(key) || providerCredentialSetting(key) !== undefined;
+}
+
+async function secretStatus(ctx: PluginContext, key: string) {
+	const v = await ctx.kv.get(`settings:${key}`);
+	const isSet = typeof v === "string" && v.length > 0;
+	return { isSet, hint: isSet ? secretHint(v) : null };
+}
+
+/**
+ * Registered providers for the admin picker: Stripe first (its fields are
+ * the fixed Stripe settings), then each other provider with its declared
+ * credential fields and whether each secret is set. Never the secrets.
+ */
+async function providerSettingsRows(ctx: PluginContext) {
+	const rows: Array<Record<string, unknown>> = [];
+	for (const provider of listPaymentProviders()) {
+		const card = {
+			id: provider.id,
+			label: provider.label,
+			description: provider.description ?? null,
+			logo: safeLogo(provider.logo),
+			brandColour: /^#[0-9a-f]{6}$/i.test(provider.brandColour ?? "") ? provider.brandColour : null,
+		};
+		if (provider.id === "stripe") {
+			rows.unshift(card);
+			continue;
+		}
+		rows.push({
+			...card,
+			credentialFields: provider.credentialFields ?? {},
+			canCheckConnection: typeof provider.checkConnection === "function",
+			secrets: {
+				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
+				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),
+			},
+		});
+	}
+	return rows;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1903,7 +1964,7 @@ export const adminApiRoutes = {
 				// real writes.
 				for (const k of Object.keys(body)) {
 					if (
-						SECRET_SETTINGS_KEYS.has(k) &&
+						isSecretSetting(k) &&
 						typeof body[k] === "string" &&
 						(body[k] as string).startsWith(MASKED_SECRET_PREFIX)
 					) {
@@ -1915,6 +1976,7 @@ export const adminApiRoutes = {
 				);
 				const report = validateSettings(body, {
 					currentEnabledCurrencies: currentEnabled ?? undefined,
+					extraSecret: providerCredentialSpec,
 				});
 				if (!report.ok) {
 					return json({ error: "invalid_settings", errors: report.errors }, 400);
@@ -1939,7 +2001,11 @@ export const adminApiRoutes = {
 					values[key] = v ?? null;
 				}
 			}
-			return json({ ...values, _secrets: secrets });
+			return json({
+				...values,
+				_secrets: secrets,
+				_providers: await providerSettingsRows(ctx),
+			});
 		},
 	},
 
@@ -1972,13 +2038,57 @@ export const adminApiRoutes = {
 		},
 	},
 
+	// Any registered provider's "Test connection" button (Stripe keeps
+	// admin/stripe/ping). One read-only call with the saved credentials.
+	// Outcomes the button shows (no key saved, rejected, unreachable) are
+	// 200 with ok: false; only a bad request is an error status.
+	"admin/payments/check-connection": {
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+			const ctx = getCtx(routeCtx, _c);
+			const { providerId } = (routeCtx.input ?? {}) as { providerId?: unknown };
+			const provider =
+				typeof providerId === "string" ? getPaymentProvider(providerId) : undefined;
+			if (!provider?.checkConnection) {
+				return json(
+					{
+						error: {
+							code: "NO_CONNECTION_CHECK",
+							message: "This provider has no connection check.",
+						},
+					},
+					400,
+				);
+			}
+			const creds = await loadPaymentProviderCredentials(ctx.kv, provider.id);
+			if (!creds) {
+				return json({ ok: false, message: `Save the ${provider.label} secret key first.` });
+			}
+			try {
+				return json(await provider.checkConnection(ctx, creds));
+			} catch (err) {
+				let error = err instanceof Error ? err.message : String(err);
+				for (const secret of [creds.secretKey, creds.webhookSecret]) {
+					if (secret) error = error.split(secret).join("[redacted]");
+				}
+				ctx.log.warn("Payment provider connection check failed", {
+					providerId: provider.id,
+					error,
+				});
+				return json({
+					ok: false,
+					message: `Couldn't reach ${provider.label}. Try again in a moment.`,
+				});
+			}
+		},
+	},
+
 	// Single-key settings validator — used by the settings form for
 	// real-time inline error feedback without hitting the full save path.
 	"admin/settings/validate": {
 		handler: async (routeCtx: RouteContext) => {
 			const body = (routeCtx.input ?? {}) as { key?: string; value?: unknown };
 			if (!body.key) return json({ ok: false, error: "key required" }, 400);
-			const result = validateSettingsKey(body.key, body.value);
+			const result = validateSettingsKey(body.key, body.value, providerCredentialSpec);
 			if (result.ok) return json({ ok: true, value: result.value });
 			return json({ ok: false, error: result.error });
 		},

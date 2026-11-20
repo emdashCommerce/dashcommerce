@@ -24,6 +24,7 @@ import {
 } from "../kit";
 import { EmptyState } from "../ui/EmptyState";
 import type { TaxMode, TaxRate } from "../../types";
+import { T } from "../theme";
 
 const TAX_CLASS_OPTIONS = [
 	{ value: "standard", label: "Standard" },
@@ -294,7 +295,7 @@ export function TaxPage() {
 
 			{settings.taxMode === "stripe_tax" && (
 				<Card title="Stripe Tax">
-					<p style={{ color: "#555", fontSize: "0.9em", margin: "0 0 12px" }}>
+					<p style={{ color: T.textMuted, fontSize: "0.9em", margin: "0 0 12px" }}>
 						Stripe Tax calculates rates at checkout using your Stripe account's
 						nexus and product tax codes. Make sure your account has tax
 						registrations configured in the Stripe dashboard.
@@ -395,7 +396,7 @@ function TaxRateEditor({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: T.scrim,
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -407,7 +408,8 @@ function TaxRateEditor({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: T.surface,
+					border: `1px solid ${T.border}`,
 					borderRadius: 8,
 					maxWidth: 520,
 					width: "100%",

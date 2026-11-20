@@ -26,6 +26,7 @@ import { StatusBadge } from "../ui/StatusBadge";
 import { EmptyState } from "../ui/EmptyState";
 import type { Subscription, SubscriptionStatus } from "../../types";
 import { useListControls } from "../hooks/useListControls";
+import { T } from "../theme";
 
 type Action = "cancel-eop" | "cancel-now" | "pause" | "resume";
 
@@ -226,7 +227,7 @@ export function SubscriptionsPage() {
 						marginBottom: 12,
 					}}
 				>
-					<span style={{ color: "#6b7280", fontSize: 13 }}>
+					<span style={{ color: T.textMuted, fontSize: 13 }}>
 						{activeFilters} filter{activeFilters === 1 ? "" : "s"} applied
 					</span>
 					<Button size="sm" variant="secondary" onClick={resetFilters}>
@@ -271,7 +272,7 @@ export function SubscriptionsPage() {
 									>
 										<StatusBadge status={s.status} />
 										{s.cancelAtPeriodEnd && (
-											<span style={{ fontSize: 12, color: "#a16207" }}>
+											<span style={{ fontSize: 12, color: T.warning }}>
 												Cancels at period end
 											</span>
 										)}
@@ -284,7 +285,7 @@ export function SubscriptionsPage() {
 								render: (s) => (
 									<>
 										<MoneyDisplay value={s.unitAmount} />
-										<span style={{ color: "#6b7280" }}>
+										<span style={{ color: T.textMuted }}>
 											{" "}
 											/ {s.intervalCount > 1 ? `${s.intervalCount} ` : ""}
 											{s.interval}
@@ -328,7 +329,7 @@ export function SubscriptionsPage() {
 								Load more
 							</Button>
 						) : items.length > 0 ? (
-							<span style={{ color: "#6b7280", fontSize: 13 }}>
+							<span style={{ color: T.textMuted, fontSize: 13 }}>
 								End of results — {items.length} subscriptions
 							</span>
 						) : null}

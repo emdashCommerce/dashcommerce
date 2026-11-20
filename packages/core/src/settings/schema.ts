@@ -111,7 +111,13 @@ export const DEFAULT_CHECKOUT_MODE: CheckoutMode = "hosted";
  * checks (e.g. defaultCurrency ∈ enabledCurrencies) use `validateSettings`
  * below.
  */
-export function validateSettingsKey(key: string, value: unknown): Result<unknown> {
+export function validateSettingsKey(
+	key: string,
+	value: unknown,
+	extraSecret?: ExtraSecretSetting,
+): Result<unknown> {
+	const extra = SETTINGS_KEYS.includes(key as SettingsKey) ? undefined : extraSecret?.(key);
+	if (extra) return validateExtraSecret(key, value, extra);
 	switch (key as SettingsKey) {
 		case "defaultCurrency": {
 			if (typeof value !== "string") return bad("defaultCurrency must be a string");
@@ -177,6 +183,25 @@ export function validateSettingsKey(key: string, value: unknown): Result<unknown
 	}
 }
 
+/**
+ * Describes a setting outside the fixed schema that the caller recognises,
+ * e.g. a registered payment provider's credential. Kept as a callback so
+ * this module stays free of runtime registries (the admin bundle imports it).
+ */
+export type ExtraSecretSetting = (key: string) => { prefixes?: readonly string[] } | undefined;
+
+function validateExtraSecret(
+	key: string,
+	value: unknown,
+	spec: { prefixes?: readonly string[] },
+): Result<unknown> {
+	if (typeof value !== "string" || value.trim() === "") {
+		return bad(`${key} must be a non-empty string`);
+	}
+	const prefixes = spec.prefixes ?? [];
+	return prefixes.length > 0 ? asStringWithPrefix(value, key, [...prefixes]) : ok(value.trim());
+}
+
 export interface SettingsValidationReport {
 	ok: boolean;
 	values: Record<string, unknown>;
@@ -192,14 +217,22 @@ export interface SettingsValidationReport {
  */
 export function validateSettings(
 	patch: Record<string, unknown>,
-	context: { currentEnabledCurrencies?: unknown } = {},
+	context: { currentEnabledCurrencies?: unknown; extraSecret?: ExtraSecretSetting } = {},
 ): SettingsValidationReport {
 	const values: Record<string, unknown> = {};
 	const errors: Record<string, string> = {};
 
 	for (const [k, v] of Object.entries(patch)) {
 		if (!SETTINGS_KEYS.includes(k as SettingsKey)) {
-			errors[k] = `Unknown settings key: ${k}`;
+			const extra = context.extraSecret?.(k);
+			if (!extra) {
+				errors[k] = `Unknown settings key: ${k}`;
+				continue;
+			}
+			if (typeof v === "string" && v.startsWith(MASKED_SECRET_PREFIX)) continue;
+			const res = validateExtraSecret(k, v, extra);
+			if (res.ok) values[k] = res.value;
+			else errors[k] = res.error;
 			continue;
 		}
 		if (

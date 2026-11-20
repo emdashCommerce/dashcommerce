@@ -24,6 +24,7 @@
  */
 
 import { useEffect, useMemo } from "react";
+import { T } from "../theme";
 
 type BgTypeValue = "gradient" | "image" | "video";
 
@@ -150,7 +151,7 @@ export function BgTypeSelect(props: BgTypeSelectProps) {
 				gap: 4,
 				margin: "0.5rem 0",
 				fontSize: "0.85em",
-				color: "var(--dc-label, #444)",
+				color: T.label,
 			}}
 		>
 			{label && <span>{label}</span>}
@@ -161,22 +162,22 @@ export function BgTypeSelect(props: BgTypeSelectProps) {
 				disabled={readOnly}
 				onChange={(e) => onChange?.(e.target.value)}
 				style={{
-					border: "1px solid var(--dc-border, #d4d4d8)",
+					border: `1px solid ${T.border}`,
 					borderRadius: 6,
 					padding: "6px 10px",
 					fontSize: "0.95em",
-					background: "var(--dc-input-bg, #fff)",
-					color: "var(--dc-text, inherit)",
+					background: T.inputBg,
+					color: T.inputFg,
 				}}
 			>
-				<option value="gradient">Gradient (CSS)</option>
-				<option value="image">Image</option>
-				<option value="video">Video (URL)</option>
+				<option value="gradient" style={{ background: T.inputBg, color: T.inputFg }}>Gradient (CSS)</option>
+				<option value="image" style={{ background: T.inputBg, color: T.inputFg }}>Image</option>
+				<option value="video" style={{ background: T.inputBg, color: T.inputFg }}>Video (URL)</option>
 			</select>
 			<span
 				style={{
 					fontSize: "0.75em",
-					color: "var(--dc-hint, #6b7280)",
+					color: T.textSubtle,
 					marginTop: 2,
 				}}
 			>
