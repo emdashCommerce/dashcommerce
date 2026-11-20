@@ -505,7 +505,11 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
             } satisfies Prefill),
           );
         } catch { /* quota / private-mode → non-fatal */ }
-        window.dispatchEvent(new CustomEvent("dashcommerce:cart-updated"));
+        // Silent: refresh the order summary without popping the cart drawer
+        // open over the payment step.
+        window.dispatchEvent(
+          new CustomEvent("dashcommerce:cart-updated", { detail: { silent: true } }),
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save details.");
         submitBtn.disabled = false;
