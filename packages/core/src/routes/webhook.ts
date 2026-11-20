@@ -843,6 +843,7 @@ export const webhookRoutes = {
 				signatureHeader: sigHeader,
 				secret,
 				headers: req.headers,
+				credentials: creds,
 			});
 			if (!verified.ok) {
 				ctx.log.warn("Webhook signature invalid", {

@@ -68,7 +68,7 @@ Stripe is built in. A gateway package (for example `@dashcommerce/paystack`) reg
 For provider authors, `PaymentProvider` can declare:
 
 - `credentialFields`: the label, accepted prefixes and help text for the settings form.
-- `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header.
+- `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
 - `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
 
 `parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`.
