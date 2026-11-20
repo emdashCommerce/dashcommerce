@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Loading, usePluginAPI } from "../kit";
 import { MoneyDisplay } from "../ui/MoneyDisplay";
 import type { Subscription } from "../../types";
+import { T } from "../theme";
 
 interface Shape {
 	count: number;
@@ -24,7 +25,7 @@ export function FailedSubscriptions() {
 
 	return (
 		<div>
-			<div style={{ fontWeight: 700, color: "#a00", marginBottom: 4 }}>
+			<div style={{ fontWeight: 700, color: T.danger, marginBottom: 4 }}>
 				{data.count} past-due
 			</div>
 			<ul style={{ margin: 0, paddingLeft: 18 }}>

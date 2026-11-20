@@ -165,11 +165,16 @@ function parseStripeEvent(rawBody: string): {
 export const stripePaymentProvider: PaymentProvider = {
 	id: "stripe",
 	label: "Stripe",
+	description: "Cards, wallets and local payment methods worldwide.",
+	brandColour: "#635BFF",
 	capabilities: {
 		coupons: true,
 		connect: true,
 		subscriptions: true,
 	},
+	collectsCustomerDetails: true,
+	// On-page is Stripe Elements through checkout/create-intent, unchanged.
+	checkoutStyles: ["hosted", "on_page"],
 
 	supportsCurrency(currency: string): boolean {
 		if (!currency || typeof currency !== "string") return false;

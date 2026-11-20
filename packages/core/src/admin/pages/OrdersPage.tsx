@@ -32,6 +32,7 @@ import { StatusBadge } from "../ui/StatusBadge";
 import type { Order, OrderStatus, PaymentStatus } from "../../types";
 import { useListControls } from "../hooks/useListControls";
 import { OrderDetailPage } from "./OrderDetailPage";
+import { T } from "../theme";
 
 // The emdash admin shell resolves plugin pages by *exact* path match on the
 // entry's `pages` map, so a parametric key like `/orders/:id` never mounts.
@@ -216,7 +217,7 @@ function OrdersList() {
 						marginBottom: 12,
 					}}
 				>
-					<span style={{ color: "#6b7280", fontSize: 13 }}>
+					<span style={{ color: T.textMuted, fontSize: 13 }}>
 						{activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} applied
 					</span>
 					<Button size="sm" variant="secondary" onClick={resetFilters}>
@@ -295,7 +296,7 @@ function OrdersList() {
 								Load more
 							</Button>
 						) : items.length > 0 ? (
-							<span style={{ color: "#6b7280", fontSize: 13 }}>
+							<span style={{ color: T.textMuted, fontSize: 13 }}>
 								End of results — {items.length} orders
 							</span>
 						) : null}
