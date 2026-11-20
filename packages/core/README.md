@@ -51,6 +51,30 @@ Re-running is safe — existing products with matching ids are preserved. Swap o
 
 For a fully-wired reference setup (seed data, storefront pages, Stripe keys), see [`@dashcommerce/starter`](../starter). Full walkthrough: [dashcommerce.dev/docs/getting-started](https://dashcommerce.dev/docs/getting-started).
 
+## Other payment providers
+
+Stripe is built in. A gateway package (for example `@dashcommerce/paystack`) registers its provider with `registerPaymentProvider` when it is imported. For a site:
+
+1. **Import the package where the server runtime loads it before any request**, such as `src/middleware.ts`. Importing it in `astro.config.mjs` is not enough, because that file runs only at build time.
+2. **Allow the provider's API host**, which is added to Stripe's hosts and never replaces them:
+
+   ```ts
+   emdash({ plugins: [dashcommerce({ allowedHosts: ["api.paystack.co"] })] });
+   ```
+
+3. **Choose the provider and enter its keys** in Settings → Payment provider. They are saved as `settings:<id>SecretKey` and `settings:<id>WebhookSecret`, masked like Stripe's.
+4. **Point the provider's webhooks** at `/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=<id>`.
+
+For provider authors, `PaymentProvider` can declare:
+
+- `credentialFields`: the label, accepted prefixes and help text for the settings form.
+- `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
+- `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
+
+`parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`.
+
+Event-level dedup skips a repeated delivery even if the first one failed, so a duplicate side effect never runs. The exception is a failure to confirm the payment with the provider (`getPaymentStatus` throwing or not reporting paid). That failure happens before any side effect, so the provider's retry is processed.
+
 ## Seed merge CLI
 
 `@dashcommerce/core` ships a `dashcommerce-merge-seed` binary (on your `PATH` via `node_modules/.bin`). It writes the `products` collection and `product_category` / `product_tag` taxonomies into your EmDash `seed.json`, replacing any prior DashCommerce entries by slug / name. Unrelated keys in the seed file (settings, content, menus, other collections) are left intact.
@@ -119,6 +143,7 @@ Same prefix, gated by emdash's admin auth:
 GET    /admin/settings                    Read all settings:* keys
 POST   /admin/settings                    Write (validated via schema)
 POST   /admin/stripe/ping                 Live-key sanity check
+POST   /admin/payments/check-connection   Same check for another provider ({ providerId })
 GET    /admin/orders, /admin/orders/:id   Order list + detail
 POST   /admin/orders/:id/refund           Full or partial refund
 PATCH  /admin/orders/:id/status           Transition order status (triggers review-request etc.)
@@ -182,6 +207,10 @@ React pages served at `/_emdash/admin/plugins/dashcommerce/*`:
 - Reports (revenue + top products + top customers + MRR)
 - Settings (all `settings:*` keys with per-key validation)
 - Dashboard widgets: Revenue, Low Stock, Recent Orders, Pending Reviews, Failed Renewals
+
+The admin follows the EmDash admin's light or dark mode: its colours come from EmDash's theme tokens, with light fallbacks for hosts without them. It uses CSS `color-mix()`, so it needs a browser from 2023 or later (Chrome 111, Safari 16.2, Firefox 113).
+
+To restyle it, set any of these CSS variables in your admin: `--dc-card-bg`, `--dc-card-fg`, `--dc-text-muted`, `--dc-text-subtle`, `--dc-label`, `--dc-input-bg`, `--dc-input-fg`, `--dc-border`, `--dc-hairline`. Status badges, destructive buttons, dialog backdrops and shadows use fixed colours that read the same in both modes.
 
 Field widgets (for use in any collection via `widget: "dashcommerce:<name>"`):
 

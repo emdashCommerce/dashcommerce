@@ -20,18 +20,51 @@
 export interface Props {
   /** When true, the customer's cart is all digital — skip the ship-to step. */
   digitalOnly?: boolean;
+  /** Active payment provider. Defaults to Stripe, so existing sites render as before. */
+  providerId?: string;
+  /** Shown to the customer, e.g. "Paystack". */
+  providerLabel?: string;
+  /**
+   * Whether the provider's hosted page collects email and address (Stripe
+   * does). When false, this form collects them before payment.
+   */
+  collectsDetails?: boolean;
+  /**
+   * True when checkout is on-page: the provider's checkout opens over this
+   * page instead of redirecting. Only changes the wording.
+   */
+  onPage?: boolean;
 }
-const { digitalOnly = false } = Astro.props;
+const {
+  digitalOnly = false,
+  providerId = "stripe",
+  providerLabel = "Stripe",
+  collectsDetails = true,
+  onPage = false,
+} = Astro.props;
+const isStripe = providerId === "stripe";
+const payHint = onPage
+  ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+  : isStripe
+    ? `You'll be redirected to Stripe to enter your email, ${digitalOnly ? "billing address, " : "full address, "}and card details. We never see your card.`
+    : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
 ---
 
-<section class="hc" data-digital-only={digitalOnly ? "1" : "0"}>
+<section
+  class="hc"
+  data-collects-details={collectsDetails ? "1" : "0"}
+  data-digital-only={digitalOnly ? "1" : "0"}
+  data-provider-id={providerId}
+  data-provider-label={providerLabel}
+  data-on-page={onPage ? "1" : "0"}
+>
   {!digitalOnly && (
     <div class="hc-step" id="hc-step-location">
       <div class="hc-step-header">
         <span class="hc-step-num">1</span>
         <h2 class="hc-step-title">Where does this ship to?</h2>
       </div>
-      <p class="hc-step-hint">Enter your country and postal code — we'll show available shipping options. Stripe collects your full address on the next page.</p>
+      <p class="hc-step-hint">Enter your country and postal code — we'll show available shipping options. {collectsDetails ? `${providerLabel} collects your full address on the next page.` : "You'll add your full address before paying."}</p>
 
       <form id="hc-location-form" class="hc-form">
         <div class="hc-row-2">
@@ -68,14 +101,52 @@ const { digitalOnly = false } = Astro.props;
       <span class="hc-step-num">{digitalOnly ? 1 : 3}</span>
       <h2 class="hc-step-title">Pay securely</h2>
     </div>
-    <p class="hc-step-hint">
-      You'll be redirected to Stripe to enter your email, {digitalOnly ? "billing address, " : "full address, "}
-      and card details. We never see your card.
-    </p>
+    <p class="hc-step-hint">{payHint}</p>
+    {!collectsDetails && (
+      <form id="hc-details-form" class="hc-form" novalidate>
+        <fieldset class="hc-fieldset">
+          <legend class="hc-legend">Your details</legend>
+          <label class="hc-label">
+            <span>Email</span>
+            <input required type="email" id="hc-email" autocomplete="email" placeholder="you@example.com" />
+          </label>
+          <div class="hc-row-2">
+            <label class="hc-label">
+              <span>First name</span>
+              <input required id="hc-first" autocomplete="given-name" />
+            </label>
+            <label class="hc-label">
+              <span>Last name</span>
+              <input required id="hc-last" autocomplete="family-name" />
+            </label>
+          </div>
+          <label class="hc-label">
+            <span>Phone <small>(optional)</small></span>
+            <input type="tel" id="hc-phone" autocomplete="tel" placeholder="+254 7…" />
+          </label>
+          <div class="hc-ship-only">
+            <label class="hc-label">
+              <span>Address</span>
+              <input required id="hc-line1" autocomplete="shipping address-line1" />
+            </label>
+            <label class="hc-label">
+              <span>Town or city</span>
+              <input required id="hc-city" autocomplete="shipping address-level2" />
+            </label>
+          </div>
+          <div class="hc-digital-only">
+            <label class="hc-label">
+              <span>Country <small>(ISO-2)</small></span>
+              <input required id="hc-details-country" maxlength="2" autocomplete="country" placeholder="KE" />
+            </label>
+          </div>
+        </fieldset>
+      </form>
+    )}
     <p id="hc-pay-error" class="hc-error" role="alert"></p>
     <button id="hc-pay-btn" type="button" class="btn-primary hc-submit" disabled={!digitalOnly}>
       <span class="hc-lock" aria-hidden="true">🔒</span>
-      Pay with Stripe →
+      Pay with {providerLabel} →
     </button>
   </div>
 </section>
@@ -112,6 +183,17 @@ const { digitalOnly = false } = Astro.props;
 
   .hc-form { display: grid; gap: 1rem; max-width: 30rem; }
   .hc-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+  .hc-fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .hc-legend {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
   .hc-label {
     display: flex; flex-direction: column; gap: .4rem;
     font-size: .82rem; font-weight: 500; color: var(--text-muted);
@@ -168,6 +250,7 @@ const { digitalOnly = false } = Astro.props;
 </style>
 
 <script>
+  import type { OnPageCheckoutClient } from "../../payment-provider/types";
   type Money = { amount: number; currency: string };
   type CartState = {
     sessionId: string;
@@ -201,6 +284,74 @@ const { digitalOnly = false } = Astro.props;
   const payStepHint = payStep?.querySelector<HTMLElement>(".hc-step-hint");
 
   let digitalOnly = hcRoot?.dataset.digitalOnly === "1";
+  const providerId = hcRoot?.dataset.providerId ?? "stripe";
+  const providerLabel = hcRoot?.dataset.providerLabel ?? "Stripe";
+  const collectsDetails = hcRoot?.dataset.collectsDetails !== "0";
+  const detailsForm = document.getElementById("hc-details-form") as HTMLFormElement | null;
+
+  /** Show address fields for shipped carts, a country field for digital ones. */
+  function applyDetailsLayout() {
+    if (!detailsForm) return;
+    for (const el of detailsForm.querySelectorAll<HTMLElement>(".hc-ship-only")) {
+      el.hidden = digitalOnly;
+      for (const input of el.querySelectorAll("input")) input.required = !digitalOnly;
+    }
+    for (const el of detailsForm.querySelectorAll<HTMLElement>(".hc-digital-only")) {
+      el.hidden = !digitalOnly;
+      for (const input of el.querySelectorAll("input")) input.required = digitalOnly;
+    }
+  }
+
+  applyDetailsLayout();
+
+  function fieldValue(id: string): string {
+    return (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
+  }
+
+  /**
+   * For providers whose page does not collect them, put the customer's
+   * email and address on the cart before payment. Returns false (with the
+   * form's own messages shown) when something required is missing.
+   */
+  async function saveCustomerDetails(): Promise<boolean> {
+    if (collectsDetails || !detailsForm) return true;
+    if (!detailsForm.reportValidity()) return false;
+    const country = (digitalOnly ? fieldValue("hc-details-country") : fieldValue("hc-country")).toUpperCase();
+    const address = {
+      firstName: fieldValue("hc-first"),
+      lastName: fieldValue("hc-last"),
+      line1: digitalOnly ? "" : fieldValue("hc-line1"),
+      city: digitalOnly ? "" : fieldValue("hc-city"),
+      region: "",
+      postalCode: digitalOnly ? "" : fieldValue("hc-postal"),
+      country,
+      ...(fieldValue("hc-phone") ? { phone: fieldValue("hc-phone") } : {}),
+    };
+    const res = await fetch(`${API}/cart/contact`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: fieldValue("hc-email"),
+        billingAddress: address,
+        ...(digitalOnly ? {} : { shippingAddress: address }),
+      }),
+    });
+    if (!res.ok) throw new Error(`Could not save your details (${res.status})`);
+    return true;
+  }
+
+  /**
+   * A readable message from an error response. DashCommerce routes answer
+   * `{ error: "…" }`; EmDash wraps a crashed route as
+   * `{ error: { code, message: "Plugin route error" } }`, which is no use to
+   * a customer, so that falls back to `fallback`.
+   */
+  async function errorMessage(res: Response, fallback: string): Promise<string> {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    if (typeof body.error === "string" && body.error) return body.error;
+    return fallback;
+  }
 
   function setError(el: HTMLElement | null, msg: string | null) {
     if (el) el.textContent = msg ?? "";
@@ -221,9 +372,14 @@ const { digitalOnly = false } = Astro.props;
     if (payStepNum) payStepNum.textContent = "1";
     if (payStepHint) {
       payStepHint.textContent =
-        "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card.";
+        hcRoot?.dataset.onPage === "1"
+          ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+          : providerId === "stripe"
+            ? "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card."
+            : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
     }
     if (payBtn) payBtn.disabled = false;
+    applyDetailsLayout();
   }
 
   // Runtime auto-detect: if the server-rendered page guessed wrong (or
@@ -271,14 +427,12 @@ const { digitalOnly = false } = Astro.props;
           body: JSON.stringify({ country, postalCode }),
         });
         if (!locRes.ok) {
-          const b = await locRes.json().catch(() => ({}));
-          throw new Error((b as { error?: string }).error ?? `Save failed (${locRes.status})`);
+          throw new Error(await errorMessage(locRes, "Couldn't save your location. Please try again."));
         }
 
         const optsRes = await fetch(`${API}/cart/shipping-methods`, { credentials: "include" });
         if (!optsRes.ok) {
-          const b = await optsRes.json().catch(() => ({}));
-          throw new Error((b as { error?: string }).error ?? `Couldn't load shipping options (${optsRes.status})`);
+          throw new Error(await errorMessage(optsRes, "Couldn't load shipping options. Please try again."));
         }
         const { options } = (await optsRes.json()) as { options: ShippingOption[] };
         if (!options || options.length === 0) {
@@ -334,8 +488,7 @@ const { digitalOnly = false } = Astro.props;
             body: JSON.stringify({ methodId: input.value }),
           });
           if (!res.ok) {
-            const b = await res.json().catch(() => ({}));
-            throw new Error((b as { error?: string }).error ?? `Save failed (${res.status})`);
+            throw new Error(await errorMessage(res, "Couldn't save that. Please try again."));
           }
           window.dispatchEvent(
             new CustomEvent("dashcommerce:cart-updated", { detail: { silent: true } }),
@@ -357,12 +510,56 @@ const { digitalOnly = false } = Astro.props;
     return "";
   }
 
-  // --- 3. Pay with Stripe ----------------------------------------------------
+  // --- 3. Pay with the active provider -----------------------------------------
+  /**
+   * On-page checkout: hand the provider's data to its browser client, which
+   * the site registers by importing the gateway package's checkout-client
+   * entry. The callbacks only steer the customer; the order is created by
+   * the signed webhook, and the thank-you page waits for it.
+   */
+  function openOnPage(id: string, client: Record<string, string>, returnUrl?: string) {
+    const clients = (window as Window & {
+      DashCommerceCheckoutClients?: Record<string, OnPageCheckoutClient>;
+    }).DashCommerceCheckoutClients;
+    const onPageClient = clients?.[id];
+    if (!onPageClient) {
+      throw new Error(`${providerLabel} on-page checkout isn't loaded on this page.`);
+    }
+    payBtn!.textContent = `Opening ${providerLabel}…`;
+    onPageClient.open(client, {
+      onFinished() {
+        if (returnUrl) window.location.href = returnUrl;
+      },
+      onClosed() {
+        setError(payErr, "Payment not completed. You can try again.");
+        payBtn!.disabled = false;
+        resetPayButton();
+      },
+      onError(message) {
+        setError(payErr, message);
+        payBtn!.disabled = false;
+        resetPayButton();
+      },
+    });
+  }
+
+  function resetPayButton() {
+    if (!payBtn) return;
+    const lock = document.createElement("span");
+    lock.className = "hc-lock";
+    lock.setAttribute("aria-hidden", "true");
+    lock.textContent = "🔒";
+    payBtn.replaceChildren(lock, document.createTextNode(`Pay with ${providerLabel} →`));
+  }
   payBtn?.addEventListener("click", async () => {
     setError(payErr, null);
     payBtn.disabled = true;
-    payBtn.textContent = "Redirecting to Stripe…";
     try {
+      if (!(await saveCustomerDetails())) {
+        payBtn.disabled = false;
+        return;
+      }
+      payBtn.textContent = `Redirecting to ${providerLabel}…`;
       const res = await fetch(`${API}/checkout/create-session`, {
         method: "POST",
         credentials: "include",
@@ -370,16 +567,26 @@ const { digitalOnly = false } = Astro.props;
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        const b = await res.json().catch(() => ({}));
-        throw new Error((b as { error?: string }).error ?? `Payment setup failed (${res.status})`);
+        throw new Error(await errorMessage(res, "Payment couldn't start. Please try again in a moment."));
       }
-      const body = (await res.json()) as { url?: string; orderDraftId?: string };
-      if (!body.url) throw new Error("Stripe did not return a checkout URL");
+      const body = (await res.json()) as {
+        kind?: "redirect" | "on_page";
+        url?: string;
+        orderDraftId?: string;
+        providerId?: string;
+        client?: Record<string, string>;
+        returnUrl?: string;
+      };
+      if (body.kind === "on_page") {
+        openOnPage(body.providerId ?? providerId, body.client ?? {}, body.returnUrl);
+        return;
+      }
+      if (!body.url) throw new Error(`${providerLabel} did not return a checkout URL`);
       window.location.href = body.url;
     } catch (err) {
       setError(payErr, err instanceof Error ? err.message : "Could not start checkout.");
       payBtn.disabled = false;
-      payBtn.innerHTML = '<span class="hc-lock" aria-hidden="true">🔒</span>Pay with Stripe →';
+      resetPayButton();
     }
   });
 </script>
