@@ -265,17 +265,31 @@ async function listRefundPage(
 	};
 }
 
+const SECRET_KEY = /^sk_(test|live)_/;
+
 /**
- * Paystack may send both headers. Verify the one keyed with the secret the
- * merchant configured: `Paystack-Signature` for a `whsec_` secret,
- * `x-paystack-signature` for an `sk_` key. Without all headers (older core),
- * use the one core routed on.
+ * Pick the header and the secret to verify it with. `Paystack-Signature` is
+ * keyed with the `whsec_` signing secret; `x-paystack-signature` with the
+ * `sk_` secret key, which may be saved as the webhook secret or as the API
+ * key. Paystack can send either or both: a real test-mode run delivered only
+ * `x-paystack-signature` on an account that had a `whsec_` secret.
+ *
+ * When `Paystack-Signature` is present and a `whsec_` secret is saved, it
+ * decides alone, so a replay outside its 300-second window cannot pass on
+ * the window-less legacy header sent alongside it.
  */
-function signatureHeaderFor(input: VerifyWebhookInput): string {
-	const preferred = input.secret.startsWith("whsec_")
-		? "paystack-signature"
-		: "x-paystack-signature";
-	return input.headers?.get(preferred) ?? input.signatureHeader;
+function signatureToVerify(input: VerifyWebhookInput): { header: string; secret: string } {
+	const current = input.headers?.get("paystack-signature") ?? null;
+	const legacy = input.headers?.get("x-paystack-signature") ?? null;
+	const saved = [input.secret, input.credentials?.webhookSecret, input.credentials?.secretKey];
+	const whsec = saved.find((s) => s?.startsWith("whsec_"));
+	const skKey = saved.find((s) => s !== undefined && SECRET_KEY.test(s));
+
+	if (current && whsec) return { header: current, secret: whsec };
+	if (legacy && skKey) return { header: legacy, secret: skKey };
+	// Nothing pairs up: verify what core routed on with the webhook secret,
+	// which gives the merchant the precise reason it fails.
+	return { header: input.signatureHeader, secret: input.secret };
 }
 
 interface PaystackRefundWebhookData {
@@ -348,7 +362,7 @@ export const paystackPaymentProvider: PaymentProvider = {
 		webhookSecret: {
 			label: "Paystack webhook signing secret",
 			prefixes: ["whsec_", "sk_test_", "sk_live_"],
-			help: "Your sk_ secret key: Paystack signs webhooks with it. Use a whsec_ signing secret only once Paystack's deliveries carry a Paystack-Signature header.",
+			help: "The whsec_ signing secret from Developers → API configuration, or your sk_ secret key. Webhooks Paystack signs with the secret key are checked with the sk_ key from either field.",
 		},
 	},
 
@@ -413,10 +427,11 @@ export const paystackPaymentProvider: PaymentProvider = {
 	},
 
 	async verifyWebhook(input: VerifyWebhookInput): Promise<VerifyWebhookResult> {
+		const { header, secret } = signatureToVerify(input);
 		const result = await verifyPaystackSignature({
 			payload: input.rawBody,
-			signatureHeader: signatureHeaderFor(input),
-			secret: input.secret,
+			signatureHeader: header,
+			secret,
 		});
 		return { ok: result.ok, reason: result.reason };
 	},
