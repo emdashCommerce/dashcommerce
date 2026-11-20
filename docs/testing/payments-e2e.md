@@ -142,7 +142,13 @@ node docs/testing/capture-webhooks.mjs replay docs/testing/webhook-captures/<fil
 | W1 | With Paystack active, refund the Stripe order M2 | Works, because Stripe's keys are kept. Settings shows "Stripe (not active)" |
 | W2 | Resend an old Stripe webhook (`stripe events resend <evt_…>`) | Verified and accepted (200, a duplicate). Nothing breaks |
 
-## 9. Bring back
+## 9. Dev admin survives checkout (FIK-61)
+
+| # | Action | Expect |
+|---|---|---|
+| A4 | Stop the server, `rm -rf node_modules/.vite` in `packages/starter`, start it again. With DevTools "Disable cache" **off**, open the admin, then `/checkout` in another tab, then go back to the admin and open a few pages | The admin keeps working: no "Invalid hook call". Terminal 1 shows **no** "new dependencies optimized" line after the checkout visit |
+
+## 10. Bring back
 
 - This results sheet, filled in.
 - Leave `docs/testing/webhook-captures/`; it's git-ignored. I'll read it locally, sanitise fixtures from it, and update the package to the real payloads.
@@ -180,5 +186,6 @@ node docs/testing/capture-webhooks.mjs replay docs/testing/webhook-captures/<fil
 | R5 Stripe refund | | | |
 | W1 refund a Stripe order after switching | | | |
 | W2 old Stripe webhook | | | |
+| A4 dev admin survives a checkout visit | | | |
 | Paystack headers on captures | | | `Paystack-Signature`, `x-paystack-signature`, or both? |
 | Restricted `rk_` key worked for checkout and refunds | | | |

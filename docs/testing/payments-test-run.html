@@ -130,7 +130,7 @@ pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflo
 
 <div class="wrap">
   <header class="top">
-    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · FIK-60 · branch test/FIK-57-paystack-e2e</span>
+    <span class="eyebrow">FIK-57 · FIK-58 · FIK-59 · FIK-60 · FIK-61 · branch test/FIK-57-paystack-e2e</span>
     <h1>Payments test run</h1>
     <p class="muted" style="margin:0;max-width:65ch">Stripe and Paystack, each hosted and on-page, end to end in test mode. Record every step here: result, order number, notes and screenshots. Nothing goes to a PR or the upstream proposal until this run passes. Test keys only.</p>
     <div class="run-meta">
@@ -162,7 +162,7 @@ pre { background: var(--sunken); border-radius: 8px; padding: 10px 12px; overflo
     </div>
   </section>
 
-  <details class="setup">
+  <details class="setup" open>
     <summary>Setup before you start (fresh store, webhooks, keys)</summary>
     <ol>
       <li><b>Keys (test mode):</b> Stripe <code>sk_test_</code> and <code>pk_test_</code>; Paystack <code>rk_test_</code> (or <code>sk_test_</code>) and <code>whsec_</code> if you have one. Paste them only into the admin form.</li>
@@ -175,7 +175,7 @@ npx emdash init && node ../core/dist/cli/merge-seed.js && npx emdash seed --on-c
 git checkout -- .emdash/seed.json emdash-env.d.ts
 SITE_URL=http://localhost:4321 npx astro dev --port 4321</pre></li>
       <li><b>Sign in:</b> <code>http://localhost:4321/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin</code>. Add a KES 1,000.00 price to <b>Design Templates</b>; enable KES and make it the default.</li>
-      <li><b>Webhooks:</b> terminal 2 <code>node docs/testing/capture-webhooks.mjs</code> · terminal 3 <code>ngrok http 4322</code> (Paystack test webhook URL: <code>https://&lt;ngrok&gt;/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=paystack</code>) · terminal 4 <code>stripe listen --forward-to localhost:4322/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=stripe</code> (its <code>whsec_</code> is Stripe's webhook secret).</li>
+      <li><b>Webhooks:</b> terminal 2 <code>node docs/testing/capture-webhooks.mjs</code> · terminal 3 <code>ngrok http 4322</code> (Paystack test webhook URL: <code>https://&lt;ngrok&gt;/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=paystack</code>) · terminal 4, once: <code>stripe login</code>, then <code>bash docs/testing/stripe-listen.sh</code> from the worktree root (it names the events newer Stripe CLIs require; the <code>whsec_</code> it prints is Stripe's webhook secret).</li>
       <li>Full reference: <code>docs/testing/payments-e2e.md</code> on the branch.</li>
     </ol>
   </details>
@@ -201,7 +201,11 @@ const GROUPS = [
     { id: "S2", how: "Click the Paystack card.", expect: "Paystack selected (blue border and tick). <b>How customers pay</b> (Hosted by Paystack / On your page) and Paystack's two key fields appear." },
     { id: "S3", how: "Enter <code>pk_test_x</code> as the Paystack key and Save all.", expect: "Refused, with a message listing the allowed prefixes." },
     { id: "S4", how: "Enter your Paystack key and webhook secret, then Save all.", expect: "Saved. Both fields show <code>••••</code> and the last four characters." },
+    { id: "C1", how: "With Paystack still selected, click <b>Test Paystack connection</b> (under the two key fields).", expect: "Green <b>Connected</b>: “Connected in test mode. The key can read transactions.” Write in notes whether you saved an <code>rk_test_</code> or <code>sk_test_</code> key." },
+    { id: "C2", how: "Enter <code>sk_test_0000000000000000000000000000000000000000</code> as the Paystack key, Save all, then Test Paystack connection. <b>Afterwards put your real key back and Save all.</b>", expect: "Red: “Paystack refused the key: Invalid key” (or Paystack's own wording; write it in notes). Nothing else breaks." },
     { id: "S5", how: "Click the Stripe card. Enter <code>sk_test_</code>, <code>pk_test_</code> and the <code>whsec_</code> from <code>stripe listen</code>. Save all.", expect: "Stripe selected and the Stripe card shown with its keys, saved and masked." },
+    { id: "C3", how: "With Stripe selected, click <b>Test Stripe connection</b>.", expect: "Green <b>Connected</b>: account <code>acct_…</code>, charges and payouts enabled or disabled." },
+    { id: "C4", how: "Enter <code>sk_test_0000000000000000000000000000000000000000</code> as the Stripe key, Save all, then Test Stripe connection. <b>Afterwards put your real key back and Save all.</b>", expect: "A red error. Write the exact message in notes: Stripe's existing button may only say “Request failed with 502”, which would be worth fixing." },
     { id: "S6", how: "Keyboard only: Tab to the provider cards and use the arrow keys.", expect: "Focus is visible and the arrows change the selection." },
     { id: "S7", how: "Repeat S1 and S2 at 360px wide (devtools device mode).", expect: "Cards stack; nothing scrolls sideways." },
   ]},
@@ -240,6 +244,7 @@ const GROUPS = [
     { id: "A1", how: "<b>Dark mode.</b> Open DashCommerce › Settings, then Orders, Customers, Coupons, Shipping, Tax, Subscriptions, Reviews, Vendors, Menus, Reports and the Dashboard.", expect: "Every label, value, hint, card title and button is easy to read. Cards are dark, not white islands. Add a screenshot of anything faint." },
     { id: "A2", how: "<b>Light mode.</b> The same pages.", expect: "Looks as before, with every text readable." },
     { id: "A3", how: "Settings: the Payment provider cards, the warning and info callouts, and a Delete button (Shipping or Menus), in both modes.", expect: "Cards, callout text and white button text are clearly readable in both modes." },
+    { id: "A4", how: "<b>Dev server, FIK-61.</b> Stop the server, run <code>rm -rf node_modules/.vite</code> in <code>packages/starter</code>, start it again. With DevTools “Disable cache” <b>off</b>, open the admin, then <code>/checkout</code> in another tab, then go back to the admin and open a few pages.", expect: "The admin keeps working: no “Invalid hook call”, no blank page. Terminal 1 shows <b>no</b> “new dependencies optimized” line after the checkout visit." },
   ]},
   { id: "findings", title: "Findings to record", intro: "Facts the package needs from this run. Mark pass when you've written the answer in notes.", steps: [
     { id: "H1", how: "Which Paystack signature headers arrive on the captures?", expect: "Write: <code>Paystack-Signature</code>, <code>x-paystack-signature</code>, or both." },
