@@ -120,6 +120,12 @@ export interface VerifyWebhookInput {
 	 * `webhook-signature`). Core's webhook route always passes it.
 	 */
 	headers?: Headers;
+	/**
+	 * The provider's saved credentials, for schemes that sign a header with
+	 * the API key rather than the webhook secret (Paystack's
+	 * `x-paystack-signature`). Core's webhook route always passes it.
+	 */
+	credentials?: PaymentProviderCredentials;
 }
 
 export interface VerifyWebhookResult {
