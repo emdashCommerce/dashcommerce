@@ -71,7 +71,7 @@ For provider authors, `PaymentProvider` can declare:
 - `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
 - `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
 
-`parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`.
+`parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`. A failed refund stops counting against its order: the refunded total, payment status and order status are worked out again, and stock the refund put back is taken back off.
 
 Event-level dedup skips a repeated delivery even if the first one failed, so a duplicate side effect never runs. The exception is a failure to confirm the payment with the provider (`getPaymentStatus` throwing or not reporting paid). That failure happens before any side effect, so the provider's retry is processed.
 

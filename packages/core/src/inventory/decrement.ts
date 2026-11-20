@@ -19,7 +19,7 @@ import { normalizeProductFields } from "../products/normalize";
 
 /** Local alias: emdash's ContentAccessWithWrite is not re-exported. */
 type ContentWriteOp = NonNullable<ContentAccess["update"]>;
-import type { OrderItem, ProductFields } from "../types";
+import type { InventoryLedgerReason, OrderItem, ProductFields } from "../types";
 import { putLedgerEntry } from "./ledger";
 
 export interface DecrementResult {
@@ -93,6 +93,7 @@ async function writeProductData(
 export async function decrementForOrderItem(
 	ctx: PluginContext,
 	orderItem: OrderItem,
+	reason: InventoryLedgerReason = "order_paid",
 ): Promise<DecrementResult> {
 	const qty = orderItem.quantity;
 
@@ -124,7 +125,7 @@ export async function decrementForOrderItem(
 			variantId: orderItem.variantId,
 			delta: -qty,
 			newStockLevel: newStock,
-			reason: "order_paid",
+			reason,
 			orderId: orderItem.orderId,
 		});
 		return { newStock, belowThreshold: false };
@@ -164,7 +165,7 @@ export async function decrementForOrderItem(
 		productId: orderItem.productId,
 		delta: -qty,
 		newStockLevel: next,
-		reason: "order_paid",
+		reason,
 		orderId: orderItem.orderId,
 	});
 	return { newStock: next, belowThreshold };
