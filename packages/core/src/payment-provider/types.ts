@@ -111,8 +111,21 @@ export type InitCheckoutResult =
 export interface VerifyWebhookInput {
 	/** Exact raw body bytes as received — never a re-serialised parse. */
 	rawBody: string;
+	/** The header that routed this webhook to the provider (see `webhookHeaders`). */
 	signatureHeader: string;
 	secret: string;
+	/**
+	 * Every request header, for schemes that sign over more than one
+	 * (Standard Webhooks: `webhook-id`, `webhook-timestamp`,
+	 * `webhook-signature`). Core's webhook route always passes it.
+	 */
+	headers?: Headers;
+	/**
+	 * The provider's saved credentials, for schemes that sign a header with
+	 * the API key rather than the webhook secret (Paystack's
+	 * `x-paystack-signature`). Core's webhook route always passes it.
+	 */
+	credentials?: PaymentProviderCredentials;
 }
 
 export interface VerifyWebhookResult {
@@ -153,6 +166,20 @@ export type NormalizedPaymentEvent =
 			checkoutReference?: string;
 			paymentReference?: string;
 			reason?: string;
+			raw: unknown;
+	  }
+	| {
+			/**
+			 * A refund this store created moved on at the provider (e.g.
+			 * Paystack's `refund.processed`). `providerRefundId` is the id
+			 * `refund()` returned. Settled refunds never move back to pending.
+			 */
+			type: "refund.updated";
+			providerId: string;
+			providerEventId: string;
+			providerRefundId: string;
+			status: "pending" | "succeeded" | "failed";
+			paymentReference?: string;
 			raw: unknown;
 	  }
 	| {
@@ -215,6 +242,23 @@ export interface PaymentProviderCapabilities {
 	subscriptions?: boolean;
 }
 
+/** How the admin settings form shows and validates one credential. */
+export interface PaymentProviderCredentialField {
+	label?: string;
+	/** Accepted prefixes, e.g. `["sk_test_", "rk_test_"]`. Omit to accept any non-empty value. */
+	prefixes?: readonly string[];
+	help?: string;
+}
+
+/** What a provider's `checkConnection` reports to the Settings button. */
+export interface ConnectionCheckResult {
+	ok: boolean;
+	/** One line for the merchant, e.g. "Connected in test mode." */
+	message: string;
+	/** Which kind of key is saved, when the provider can tell. */
+	mode?: "test" | "live";
+}
+
 export interface PaymentStatusResult {
 	status: "pending" | "succeeded" | "failed";
 	paymentReference?: string;
@@ -232,6 +276,34 @@ export interface PaymentProvider {
 	 * coupons, Connect splits, or subscriptions.
 	 */
 	readonly capabilities?: PaymentProviderCapabilities;
+
+	/**
+	 * Request headers that identify this provider's webhooks, in order of
+	 * preference, e.g. `["paystack-signature", "x-paystack-signature"]`.
+	 * `x-<id>-signature` is always recognised as well. The first one present
+	 * is passed as `signatureHeader`. `stripe-signature` is reserved.
+	 */
+	readonly webhookHeaders?: readonly string[];
+
+	/** One line for the provider card in Settings, e.g. "Card and M-Pesa in Kenya". */
+	readonly description?: string;
+
+	/**
+	 * The provider's official logo for its card in Settings: an https URL or
+	 * a `data:image/…` URI. Core ships no third-party logos; without one the
+	 * card shows a lettered tile in `brandColour` (#rrggbb).
+	 */
+	readonly logo?: string;
+	readonly brandColour?: string;
+
+	/**
+	 * Credentials the merchant enters in admin settings, saved as
+	 * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
+	 */
+	readonly credentialFields?: {
+		secretKey?: PaymentProviderCredentialField;
+		webhookSecret?: PaymentProviderCredentialField;
+	};
 
 	/** True if this provider can charge `currency` (ISO-4217). */
 	supportsCurrency(currency: string): boolean;
@@ -268,4 +340,15 @@ export interface PaymentProvider {
 		paymentReference: string,
 		credentials: PaymentProviderCredentials,
 	): Promise<PaymentStatusResult>;
+
+	/**
+	 * Optional check behind the "Test connection" button in Settings: one
+	 * read-only call with the saved credentials. It must not create or change
+	 * anything at the provider. Return `ok: false` with a message the merchant
+	 * can act on (wrong key, missing permission); don't throw for those.
+	 */
+	checkConnection?(
+		ctx: PaymentProviderRuntimeContext,
+		credentials: PaymentProviderCredentials,
+	): Promise<ConnectionCheckResult>;
 }
