@@ -29,17 +29,25 @@ export interface Props {
    * does). When false, this form collects them before payment.
    */
   collectsDetails?: boolean;
+  /**
+   * True when checkout is on-page: the provider's checkout opens over this
+   * page instead of redirecting. Only changes the wording.
+   */
+  onPage?: boolean;
 }
 const {
   digitalOnly = false,
   providerId = "stripe",
   providerLabel = "Stripe",
   collectsDetails = true,
+  onPage = false,
 } = Astro.props;
 const isStripe = providerId === "stripe";
-const payHint = isStripe
-  ? `You'll be redirected to Stripe to enter your email, ${digitalOnly ? "billing address, " : "full address, "}and card details. We never see your card.`
-  : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
+const payHint = onPage
+  ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+  : isStripe
+    ? `You'll be redirected to Stripe to enter your email, ${digitalOnly ? "billing address, " : "full address, "}and card details. We never see your card.`
+    : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
 ---
 
 <section
@@ -48,6 +56,7 @@ const payHint = isStripe
   data-digital-only={digitalOnly ? "1" : "0"}
   data-provider-id={providerId}
   data-provider-label={providerLabel}
+  data-on-page={onPage ? "1" : "0"}
 >
   {!digitalOnly && (
     <div class="hc-step" id="hc-step-location">
@@ -363,9 +372,11 @@ const payHint = isStripe
     if (payStepNum) payStepNum.textContent = "1";
     if (payStepHint) {
       payStepHint.textContent =
-        providerId === "stripe"
-          ? "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card."
-          : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
+        hcRoot?.dataset.onPage === "1"
+          ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+          : providerId === "stripe"
+            ? "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card."
+            : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
     }
     if (payBtn) payBtn.disabled = false;
     applyDetailsLayout();
