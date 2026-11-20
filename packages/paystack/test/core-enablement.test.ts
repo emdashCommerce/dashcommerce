@@ -58,7 +58,9 @@ describe("verifyWebhook picks the header that matches the configured secret", ()
 		expect(result.ok).toBe(true);
 	});
 
-	it("still refuses a whsec_ secret when only the legacy header came", async () => {
+	// What Paystack actually did in a test-mode run on 20 Nov 2026: a whsec_
+	// secret existed, but deliveries carried only x-paystack-signature.
+	it("refuses a whsec_ secret when only the legacy header came, saying how to fix it", async () => {
 		const headers = new Headers({
 			"x-paystack-signature": bothHeaders().get("x-paystack-signature") ?? "",
 		});
@@ -69,6 +71,14 @@ describe("verifyWebhook picks the header that matches the configured secret", ()
 			headers,
 		});
 		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("only x-paystack-signature");
+		expect(result.reason).toContain("save your sk_ secret key as the webhook secret");
+	});
+
+	it("tells merchants to start with the sk_ key, which Paystack signs with today", () => {
+		const help = paystackPaymentProvider.credentialFields?.webhookSecret?.help ?? "";
+		expect(help).toMatch(/^Your sk_ secret key/);
+		expect(help).toContain("Paystack-Signature");
 	});
 });
 
@@ -95,6 +105,17 @@ describe("refund.* events", () => {
 				status,
 			});
 		}
+	});
+
+	it("handles the shape real deliveries have: a string id and a null refund_reference", () => {
+		const parsed = paystackPaymentProvider.parseWebhookEvent(
+			refundEvent("refund.processed", { id: "19244346", status: "processed", refund_reference: null }),
+		);
+		expect(parsed).toMatchObject({
+			type: "refund.updated",
+			providerRefundId: "19244346",
+			status: "succeeded",
+		});
 	});
 
 	it("leaves a refund event without a refund id unhandled rather than guess", () => {

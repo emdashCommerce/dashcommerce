@@ -14,7 +14,7 @@ A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hoste
 | Duplicates | Paystack webhooks carry no event id, so `providerEventId` is left empty and core relies on its unique index on the payment reference: a repeat delivery never creates a second order, and Paystack's retry after a failed first delivery still creates it |
 | Draft lookup | From `metadata.orderDraftId`, or from the `dc-<draftId>` reference if Paystack returns no metadata |
 | Return URL | Core's success URL minus Stripe's `{CHECKOUT_SESSION_ID}` placeholder; Paystack appends its own `trxref` and `reference` |
-| Refunds | `POST /refund` by transaction reference, with `(refundRequestId=<id>)` in `merchant_note`. Paystack takes no idempotency key for refunds and accepts an identical second refund as a new one, so the provider first looks up the transaction's numeric id, lists its refunds, and returns any non-failed refund already tagged with this `refundRequestId` instead of creating another. The tag is read only from the end of the note, and brackets are stripped from the reason, so a reason cannot pose as another request. This guards retries, not two simultaneous calls with the same id: both could pass the check before either refund exists, so core must not run the same refund request concurrently. M-Pesa refunds go back to the customer's phone. Refund statuses map as `processed` → succeeded, `failed` → failed, and `pending`, `processing`, `needs-attention` → pending. `refund.*` webhooks become core's `refund.updated`, matched by the numeric refund id. Paystack's documented sample shows only `refund_reference`, so an event without an id is left unhandled until a real payload confirms the shape |
+| Refunds | `POST /refund` by transaction reference, with `(refundRequestId=<id>)` in `merchant_note`. Paystack takes no idempotency key for refunds and accepts an identical second refund as a new one, so the provider first looks up the transaction's numeric id, lists its refunds, and returns any non-failed refund already tagged with this `refundRequestId` instead of creating another. The tag is read only from the end of the note, and brackets are stripped from the reason, so a reason cannot pose as another request. This guards retries, not two simultaneous calls with the same id: both could pass the check before either refund exists, so core must not run the same refund request concurrently. M-Pesa refunds go back to the customer's phone. Refund statuses map as `processed` → succeeded, `failed` → failed, and `pending`, `processing`, `needs-attention` → pending. `refund.*` webhooks become core's `refund.updated`, matched by the refund id. Paystack's documented sample shows only `refund_reference`, but real test-mode deliveries carry `id` (as a string, e.g. `"19244346"`) and a null `refund_reference`; an event without an id is left unhandled rather than matched by guesswork |
 | Currencies | KES, NGN, GHS, ZAR and USD. Your Paystack account must be enabled for the currency you sell in |
 | On-page checkout | With checkout set to "On your page", Paystack's Popup opens over the store's checkout using the `access_code` from initialise. `inline.js` loads only when the customer presses Pay. The Popup's success callback only sends the customer to the thank-you page; the order still comes from the signed webhook and a live verify |
 | Customer details | Paystack's page collects neither email nor address, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for them before payment |
@@ -22,14 +22,18 @@ A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hoste
 
 ## Webhook signatures
 
-Paystack sends two headers ([docs](https://paystack.com/docs/v2/developer-tools/integration/webhooks)):
+Paystack documents two headers ([docs](https://paystack.com/docs/v2/developer-tools/integration/webhooks)):
 
 | Header | Format | Keyed with | Replay window |
 |---|---|---|---|
 | `Paystack-Signature` (current) | `t=<unix>,v1=<whk_ key id>:<hex HMAC-SHA512 of "t." + raw body>`; two `v1` values while a secret is rotated, any match accepted | the whole `whsec_` signing secret | `t` must be within 300 seconds of the server clock |
 | `x-paystack-signature` (deprecated) | hex HMAC-SHA512 of the raw body | the `sk_` secret key | none |
 
-The provider verifies the header that matches the webhook secret you saved: `Paystack-Signature` for a `whsec_` secret, `x-paystack-signature` for an `sk_` key. Use `whsec_`: it adds the replay window, and lets you keep the `sk_` key off the site. With an `sk_` key, a captured webhook can be replayed, but it cannot create a second order or an order Paystack's own records do not confirm.
+The provider verifies the header that matches the webhook secret you saved: `Paystack-Signature` for a `whsec_` secret, `x-paystack-signature` for an `sk_` key.
+
+**Save your `sk_` secret key as the webhook secret.** In a test-mode run (November 2026), Paystack's deliveries carried only `x-paystack-signature`, even on an account that had a `whsec_` secret. A store set up with that `whsec_` refused every webhook with a 400, so no order was created. Paystack retries failed deliveries, so saving the `sk_` key recovered them.
+
+Switch to `whsec_` once your deliveries carry `Paystack-Signature`; you can see the headers in the webhook logs on Paystack's dashboard. It adds the 300-second replay window. With an `sk_` key, a captured webhook can be replayed, but it cannot create a second order or an order Paystack's own records do not confirm.
 
 Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned leaves the checkout draft unpaid, and no order is created.
 
@@ -54,11 +58,11 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
    | Field | Value |
    |---|---|
    | Secret or restricted key | best: a restricted key (`rk_test_…`) with only `transactions:write` and `disputes_refunds:write`; or the secret key (`sk_test_…`) |
-   | Webhook signing secret | the `whsec_…` secret from Developers → API configuration; or, if you have none yet, the `sk_` secret key |
+   | Webhook signing secret | your `sk_` secret key, which Paystack signs webhooks with. Use the `whsec_…` secret only once deliveries carry `Paystack-Signature` (see [Webhook signatures](#webhook-signatures)) |
 
    Save, then press **Test Paystack connection**. It makes one read-only call (verifying a reference that can't exist) and says whether Paystack accepts the key, in test or live mode, and whether it can read transactions.
 
-   Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). Do not delete the `sk_` key from Paystack before your webhooks verify with `whsec_`: Paystack stops sending `x-paystack-signature` once it is gone.
+   Under **How customers pay**, choose hosted (Paystack's page) or on your page (the Popup). If you later switch to `whsec_`, keep the `sk_` key in Paystack until webhooks verify with it: Paystack stops sending `x-paystack-signature` once the key is deleted.
 
 4. **For on-page checkout, load the browser client** in your checkout page's client script, so Vite bundles it:
 
