@@ -131,5 +131,10 @@ describe("webhook route passes every header to verifyWebhook", () => {
 		expect(seen?.signatureHeader).toBe("v1,abc");
 		expect(seen?.headers?.get("webhook-id")).toBe("msg_1");
 		expect(seen?.headers?.get("webhook-timestamp")).toBe("1760270400");
+		// Some providers sign a header with the API key rather than the
+		// webhook secret (Paystack's x-paystack-signature), so the provider
+		// gets both of its saved credentials.
+		expect(seen?.secret).toBe("test-secret");
+		expect(seen?.credentials).toEqual({ secretKey: "acme-key", webhookSecret: "test-secret" });
 	});
 });
