@@ -98,6 +98,12 @@ export default defineConfig({
 	],
 	devToolbar: { enabled: false },
 	vite: {
+		// Pre-bundle the Stripe packages checkout imports lazily. Without this,
+		// Vite finds them on the first /checkout visit, re-optimises and reloads,
+		// and the open admin tab mixes old and new React chunks ("Invalid hook call").
+		optimizeDeps: {
+			include: ["@stripe/react-stripe-js", "@stripe/stripe-js"],
+		},
 		build: {
 			rollupOptions: {
 				// Externalize Cloudflare Workers runtime modules when building for Node.
