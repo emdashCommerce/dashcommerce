@@ -44,6 +44,8 @@ import {
 export { getCurrencyInfo } from "../data/currencies";
 import { COUNTRY_TABLE, type CountryInfo } from "../data/countries";
 import { format as formatMoney, type Money as MoneyValue } from "../money";
+import { adminColors } from "./theme";
+export { adminColors } from "./theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // API client
@@ -189,10 +191,10 @@ export function Card({ title, children, style }: CardProps) {
 	return (
 		<section
 			style={{
-				border: "1px solid var(--dc-border, #e4e4e7)",
+				border: `1px solid ${adminColors.border}`,
 				borderRadius: 8,
 				padding: "1rem 1.25rem",
-				background: "var(--dc-card-bg, #fff)",
+				background: adminColors.base,
 				boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
 				...style,
 			}}
@@ -219,9 +221,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BUTTON_VARIANTS: Record<string, CSSProperties> = {
-	primary: { background: "#111", color: "#fff", borderColor: "#111" },
-	secondary: { background: "#f4f4f5", color: "#111", borderColor: "#d4d4d8" },
-	danger: { background: "#b91c1c", color: "#fff", borderColor: "#991b1b" },
+	primary: { background: adminColors.brand, color: adminColors.onBrand, borderColor: adminColors.brand },
+	secondary: { background: adminColors.fill, color: adminColors.text, borderColor: adminColors.border },
+	danger: { background: "light-dark(#b91c1c, #dc2626)", color: "#fff", borderColor: "light-dark(#991b1b, #f87171)" },
 };
 
 const BUTTON_SIZES: Record<string, CSSProperties> = {
@@ -266,10 +268,12 @@ export function Input({ label, style, ...rest }: InputProps) {
 	const input = (
 		<input
 			style={{
-				border: "1px solid var(--dc-border, #d4d4d8)",
+				border: `1px solid ${adminColors.border}`,
 				borderRadius: 6,
 				padding: "6px 10px",
 				fontSize: "0.95em",
+				background: adminColors.base,
+				color: adminColors.text,
 				width: "100%",
 				boxSizing: "border-box",
 				...style,
@@ -286,7 +290,7 @@ export function Input({ label, style, ...rest }: InputProps) {
 				gap: 4,
 				margin: "0.5rem 0",
 				fontSize: "0.85em",
-				color: "#444",
+				color: adminColors.text,
 			}}
 		>
 			<span>{label}</span>
@@ -309,11 +313,12 @@ export function Select({ label, options, style, children, ...rest }: SelectProps
 	const select = (
 		<select
 			style={{
-				border: "1px solid var(--dc-border, #d4d4d8)",
+				border: `1px solid ${adminColors.border}`,
 				borderRadius: 6,
 				padding: "6px 10px",
 				fontSize: "0.95em",
-				background: "#fff",
+				background: adminColors.base,
+				color: adminColors.text,
 				...style,
 			}}
 			{...rest}
@@ -336,7 +341,7 @@ export function Select({ label, options, style, children, ...rest }: SelectProps
 				gap: 4,
 				margin: "0.5rem 0",
 				fontSize: "0.85em",
-				color: "#444",
+				color: adminColors.text,
 			}}
 		>
 			<span>{label}</span>
@@ -399,7 +404,7 @@ export function Table<T>({
 }: TableProps<T>) {
 	if (data.length === 0) {
 		return (
-			<p style={{ color: "#888", fontStyle: "italic", margin: "1rem 0" }}>
+			<p style={{ color: adminColors.subtle, fontStyle: "italic", margin: "1rem 0" }}>
 				{emptyMessage}
 			</p>
 		);
@@ -421,8 +426,8 @@ export function Table<T>({
 								style={{
 									textAlign: "left",
 									padding: "8px 10px",
-									borderBottom: "2px solid #e4e4e7",
-									color: "#555",
+									borderBottom: `2px solid ${adminColors.border}`,
+									color: adminColors.subtle,
 									fontWeight: 600,
 									...(c.width ? { width: c.width } : {}),
 								}}
@@ -441,7 +446,7 @@ export function Table<T>({
 								onClick={onRowClick ? () => onRowClick(row) : undefined}
 								style={{
 									cursor: onRowClick ? "pointer" : "default",
-									borderBottom: "1px solid #f4f4f5",
+									borderBottom: `1px solid ${adminColors.border}`,
 								}}
 							>
 								{columns.map((c) => (
@@ -471,7 +476,7 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 				display: "flex",
 				alignItems: "center",
 				gap: 8,
-				color: "#888",
+				color: adminColors.subtle,
 				padding: "1rem 0",
 			}}
 		>
@@ -481,8 +486,8 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 					display: "inline-block",
 					width: 14,
 					height: 14,
-					border: "2px solid #d4d4d8",
-					borderTopColor: "#888",
+					border: `2px solid ${adminColors.border}`,
+					borderTopColor: adminColors.subtle,
 					borderRadius: "50%",
 					animation: "dc-spin 0.8s linear infinite",
 				}}
@@ -500,10 +505,10 @@ export interface AlertProps {
 }
 
 const ALERT_COLORS: Record<string, { bg: string; border: string; fg: string }> = {
-	info: { bg: "#eff6ff", border: "#93c5fd", fg: "#1e3a8a" },
-	success: { bg: "#f0fdf4", border: "#86efac", fg: "#14532d" },
-	warning: { bg: "#fffbeb", border: "#fde68a", fg: "#78350f" },
-	error: { bg: "#fef2f2", border: "#fca5a5", fg: "#7f1d1d" },
+	info: { bg: "light-dark(#eff6ff, #172554)", border: "light-dark(#93c5fd, #1d4ed8)", fg: "light-dark(#1e3a8a, #dbeafe)" },
+	success: { bg: "light-dark(#f0fdf4, #052e16)", border: "light-dark(#86efac, #166534)", fg: "light-dark(#14532d, #dcfce7)" },
+	warning: { bg: "light-dark(#fffbeb, #422006)", border: "light-dark(#fde68a, #a16207)", fg: "light-dark(#78350f, #fef3c7)" },
+	error: { bg: "light-dark(#fef2f2, #450a0a)", border: "light-dark(#fca5a5, #991b1b)", fg: "light-dark(#7f1d1d, #fee2e2)" },
 };
 
 export function Alert({ type = "info", title, children }: AlertProps) {
@@ -574,7 +579,7 @@ export function FormField({
 					}}
 				>
 					{label}
-					{required && <span style={{ color: "#b91c1c", marginLeft: 4 }}>*</span>}
+					{required && <span style={{ color: adminColors.danger, marginLeft: 4 }}>*</span>}
 				</label>
 			)}
 			{children}
@@ -596,7 +601,7 @@ export function FormField({
 					role="alert"
 					style={{
 						fontSize: "0.78em",
-						color: "#b91c1c",
+						color: adminColors.danger,
 						margin: "2px 0 0",
 						fontWeight: 500,
 					}}
@@ -739,8 +744,8 @@ export function NumberInput({
 				<span
 					style={{
 						padding: "6px 8px",
-						background: "#f4f4f5",
-						color: "#555",
+						background: adminColors.fill,
+						color: adminColors.subtle,
 						fontSize: "0.85em",
 						display: "flex",
 						alignItems: "center",
@@ -826,7 +831,7 @@ export function Combobox({
 		setQuery("");
 	}
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid ? adminColors.danger : adminColors.border;
 	return (
 		<div ref={rootRef} style={{ position: "relative", width: "100%" }}>
 			<button
@@ -838,13 +843,13 @@ export function Combobox({
 					width: "100%",
 					textAlign: "left",
 					border: `1px solid ${border}`,
-					background: disabled ? "#f4f4f5" : "#fff",
+					background: disabled ? adminColors.fill : adminColors.base,
 					padding: "6px 30px 6px 10px",
 					borderRadius: 6,
 					fontSize: "0.95em",
 					cursor: disabled ? "not-allowed" : "pointer",
 					position: "relative",
-					color: selected ? "#111" : "#888",
+					color: selected ? adminColors.text : adminColors.subtle,
 				}}
 				aria-haspopup="listbox"
 				aria-expanded={open}
@@ -857,7 +862,7 @@ export function Combobox({
 						right: 10,
 						top: "50%",
 						transform: "translateY(-50%)",
-						color: "#888",
+						color: adminColors.subtle,
 					}}
 				>
 					▾
@@ -871,8 +876,8 @@ export function Combobox({
 						left: 0,
 						right: 0,
 						zIndex: 50,
-						background: "#fff",
-						border: "1px solid #e4e4e7",
+						background: adminColors.base,
+						border: `1px solid ${adminColors.border}`,
 						borderRadius: 6,
 						boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
 						maxHeight: 280,
@@ -881,7 +886,7 @@ export function Combobox({
 						overflow: "hidden",
 					}}
 				>
-					<div style={{ padding: 6, borderBottom: "1px solid #f4f4f5" }}>
+					<div style={{ padding: 6, borderBottom: `1px solid ${adminColors.border}` }}>
 						<input
 							autoFocus
 							value={query}
@@ -899,10 +904,12 @@ export function Combobox({
 							}}
 							style={{
 								width: "100%",
-								border: "1px solid #e4e4e7",
+				border: `1px solid ${adminColors.border}`,
 								borderRadius: 4,
 								padding: "4px 8px",
 								fontSize: "0.9em",
+				background: adminColors.base,
+				color: adminColors.text,
 								boxSizing: "border-box",
 							}}
 						/>
@@ -933,7 +940,7 @@ export function Combobox({
 										border: "none",
 										padding: "6px 10px",
 										fontSize: "0.9em",
-										color: "#888",
+										color: adminColors.subtle,
 										fontStyle: "italic",
 										cursor: "pointer",
 									}}
@@ -946,7 +953,7 @@ export function Combobox({
 							<li
 								style={{
 									padding: "8px 10px",
-									color: "#888",
+									color: adminColors.subtle,
 									fontSize: "0.9em",
 								}}
 							>
@@ -963,7 +970,7 @@ export function Combobox({
 											width: "100%",
 											textAlign: "left",
 											background:
-												opt.value === value ? "#f0f9ff" : "transparent",
+												opt.value === value ? "var(--color-kumo-tint, light-dark(#eff6ff, #172554))" : "transparent",
 											border: "none",
 											padding: "6px 10px",
 											fontSize: "0.9em",
@@ -976,7 +983,7 @@ export function Combobox({
 									>
 										<span>{opt.label}</span>
 										{opt.hint && (
-											<span style={{ color: "#888", fontSize: "0.85em" }}>
+											<span style={{ color: adminColors.subtle, fontSize: "0.85em" }}>
 												{opt.hint}
 											</span>
 										)}
@@ -1064,7 +1071,7 @@ export function MultiSelect({
 		return m;
 	}, [options]);
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid ? adminColors.danger : adminColors.border;
 	return (
 		<div ref={rootRef} style={{ position: "relative", width: "100%" }}>
 			<div
@@ -1078,7 +1085,7 @@ export function MultiSelect({
 					borderRadius: 6,
 					padding: 4,
 					minHeight: 32,
-					background: disabled ? "#f4f4f5" : "#fff",
+					background: disabled ? adminColors.fill : adminColors.base,
 					cursor: disabled ? "not-allowed" : "text",
 				}}
 				onClick={() => !disabled && setOpen(true)}
@@ -1096,8 +1103,8 @@ export function MultiSelect({
 								display: "inline-flex",
 								alignItems: "center",
 								gap: 4,
-								background: "#eef2ff",
-								color: "#1e3a8a",
+								background: "var(--color-kumo-tint, light-dark(#eef2ff, #312e81))",
+								color: adminColors.text,
 								borderRadius: 4,
 								padding: "2px 6px",
 								fontSize: "0.85em",
@@ -1118,7 +1125,7 @@ export function MultiSelect({
 										cursor: "pointer",
 										padding: 0,
 										fontSize: "0.9em",
-										color: "#1e3a8a",
+										color: adminColors.text,
 									}}
 								>
 									×
@@ -1140,6 +1147,7 @@ export function MultiSelect({
 						border: "none",
 						outline: "none",
 						background: "transparent",
+						color: adminColors.text,
 						padding: "2px 4px",
 						fontSize: "0.9em",
 						flex: "1 1 80px",
@@ -1155,8 +1163,8 @@ export function MultiSelect({
 						left: 0,
 						right: 0,
 						zIndex: 50,
-						background: "#fff",
-						border: "1px solid #e4e4e7",
+						background: adminColors.base,
+						border: `1px solid ${adminColors.border}`,
 						borderRadius: 6,
 						boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
 						maxHeight: 280,
@@ -1168,7 +1176,7 @@ export function MultiSelect({
 							<li
 								style={{
 									padding: "8px 10px",
-									color: "#888",
+									color: adminColors.subtle,
 									fontSize: "0.9em",
 								}}
 							>
@@ -1185,7 +1193,7 @@ export function MultiSelect({
 											style={{
 												width: "100%",
 												textAlign: "left",
-												background: active ? "#f0f9ff" : "transparent",
+												background: active ? "var(--color-kumo-tint, light-dark(#eff6ff, #172554))" : "transparent",
 												border: "none",
 												padding: "6px 10px",
 												fontSize: "0.9em",
@@ -1202,7 +1210,7 @@ export function MultiSelect({
 														display: "inline-block",
 														width: 12,
 														marginRight: 6,
-														color: "#1e3a8a",
+														color: adminColors.text,
 													}}
 												>
 													{active ? "✓" : ""}
@@ -1210,7 +1218,7 @@ export function MultiSelect({
 												{opt.label}
 											</span>
 											{opt.hint && (
-												<span style={{ color: "#888", fontSize: "0.85em" }}>
+												<span style={{ color: adminColors.subtle, fontSize: "0.85em" }}>
 													{opt.hint}
 												</span>
 											)}
@@ -1239,7 +1247,7 @@ export function Money({
 	locale?: string;
 	strong?: boolean;
 }): ReactNode {
-	if (!value) return <span style={{ color: "#888" }}>—</span>;
+	if (!value) return <span style={{ color: adminColors.subtle }}>—</span>;
 	const text = formatMoney(value, locale ?? "en-US");
 	if (strong) return <strong>{text}</strong>;
 	return <span>{text}</span>;
@@ -1373,7 +1381,7 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 					onChange({ ...value, from: e.target.value })
 				}
 				style={{
-					border: `1px solid ${invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)"}`,
+					border: `1px solid ${invalid ? adminColors.danger : adminColors.border}`,
 					borderRadius: 6,
 					padding: "4px 8px",
 				}}
@@ -1387,7 +1395,7 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 					onChange({ ...value, to: e.target.value })
 				}
 				style={{
-					border: `1px solid ${invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)"}`,
+					border: `1px solid ${invalid ? adminColors.danger : adminColors.border}`,
 					borderRadius: 6,
 					padding: "4px 8px",
 				}}
@@ -1400,21 +1408,21 @@ export function DateRangePicker({ value, onChange, presets = true }: DateRangePi
 						type="button"
 						onClick={() => onChange(p.range())}
 						style={{
-							border: "1px solid var(--dc-border, #d4d4d8)",
-							background: "#fff",
+							border: `1px solid ${adminColors.border}`,
+							background: adminColors.base,
 							borderRadius: 4,
 							padding: "2px 8px",
 							fontSize: "0.8em",
-							color: "#444",
+							color: adminColors.text,
 							cursor: "pointer",
 						}}
 					>
 						{p.label}
 					</button>
 				))}
-			<span style={{ fontSize: "0.75em", color: "#888" }}>{tz}</span>
+			<span style={{ fontSize: "0.75em", color: adminColors.subtle }}>{tz}</span>
 			{invalid && (
-				<span style={{ fontSize: "0.78em", color: "#b91c1c" }}>
+				<span style={{ fontSize: "0.78em", color: adminColors.danger }}>
 					Start date must be on or before end date.
 				</span>
 			)}

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Alert,
+	adminColors,
 	Button,
 	Card,
 	Combobox,
@@ -174,7 +175,7 @@ export function ShippingPage() {
 						marginBottom: 8,
 					}}
 				>
-					<p style={{ margin: 0, color: "#555", fontSize: "0.9em" }}>
+					<p style={{ margin: 0, color: adminColors.subtle, fontSize: "0.9em" }}>
 						Zones match customer addresses to a set of available shipping
 						methods. A zone with no locations is the fallback "everywhere" zone.
 					</p>
@@ -223,7 +224,7 @@ export function ShippingPage() {
 						marginBottom: 8,
 					}}
 				>
-					<p style={{ margin: 0, color: "#555", fontSize: "0.9em" }}>
+					<p style={{ margin: 0, color: adminColors.subtle, fontSize: "0.9em" }}>
 						Classes let you charge different rates for grouped products (e.g.
 						"bulky", "hazmat"). Assign a class to a product from the product
 						edit screen.
@@ -402,10 +403,10 @@ function ZoneCard({
 	return (
 		<div
 			style={{
-				border: "1px solid #e4e4e7",
+				border: `1px solid ${adminColors.border}`,
 				borderRadius: 6,
 				padding: 12,
-				background: "#fafafa",
+				background: adminColors.fill,
 			}}
 		>
 			<div
@@ -418,7 +419,7 @@ function ZoneCard({
 			>
 				<div>
 					<div style={{ fontWeight: 600 }}>{zone.name}</div>
-					<div style={{ color: "#666", fontSize: "0.85em" }}>{covers}</div>
+					<div style={{ color: adminColors.subtle, fontSize: "0.85em" }}>{covers}</div>
 				</div>
 				<div style={{ display: "flex", gap: 4 }}>
 					<Button size="sm" onClick={onEditZone}>
@@ -447,7 +448,7 @@ function ZoneCard({
 					</Button>
 				</div>
 				{methods.length === 0 ? (
-					<p style={{ color: "#888", fontSize: "0.85em", margin: "4px 0 0" }}>
+					<p style={{ color: adminColors.subtle, fontSize: "0.85em", margin: "4px 0 0" }}>
 						No methods yet — customers in this zone won't see any shipping
 						options.
 					</p>
@@ -465,7 +466,7 @@ function ZoneCard({
 										{!m.enabled && (
 											<span
 												style={{
-													color: "#a1a1aa",
+													color: adminColors.subtle,
 													fontSize: "0.8em",
 													marginLeft: 6,
 												}}
@@ -870,7 +871,7 @@ function MethodEditor({
 									>
 										<span>
 											<strong>{cls.name}</strong>{" "}
-											<code style={{ color: "#888" }}>{cls.slug}</code>
+										<code style={{ color: adminColors.subtle }}>{cls.slug}</code>
 										</span>
 										<NumberInput
 											value={classRates[cls.slug] ?? null}
@@ -1115,7 +1116,7 @@ function EditorShell({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: "light-dark(rgb(17 17 17 / 50%), rgb(0 0 0 / 70%))",
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -1127,7 +1128,9 @@ function EditorShell({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: adminColors.base,
+					color: adminColors.text,
+					border: `1px solid ${adminColors.border}`,
 					borderRadius: 8,
 					maxWidth: 560,
 					width: "100%",

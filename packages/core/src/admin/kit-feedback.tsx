@@ -14,6 +14,7 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { adminColors } from "./theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Confirm dialog
@@ -95,7 +96,7 @@ function ConfirmDialog() {
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17, 17, 17, 0.5)",
+				background: "light-dark(rgb(17 17 17 / 50%), rgb(0 0 0 / 70%))",
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -107,7 +108,9 @@ function ConfirmDialog() {
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: adminColors.base,
+					color: adminColors.text,
+					border: `1px solid ${adminColors.border}`,
 					borderRadius: 8,
 					maxWidth: 440,
 					width: "100%",
@@ -122,7 +125,7 @@ function ConfirmDialog() {
 					{state.title}
 				</h2>
 				{state.description && (
-					<div style={{ color: "#444", fontSize: "0.95em", lineHeight: 1.4 }}>
+					<div style={{ color: adminColors.subtle, fontSize: "0.95em", lineHeight: 1.4 }}>
 						{state.description}
 					</div>
 				)}
@@ -139,9 +142,9 @@ function ConfirmDialog() {
 						onClick={() => finish(false)}
 						autoFocus
 						style={{
-							border: "1px solid #d4d4d8",
-							background: "#f4f4f5",
-							color: "#111",
+							border: `1px solid ${adminColors.border}`,
+							background: adminColors.fill,
+							color: adminColors.text,
 							padding: "8px 14px",
 							borderRadius: 6,
 							fontWeight: 500,
@@ -155,9 +158,9 @@ function ConfirmDialog() {
 						onClick={() => finish(true)}
 						style={{
 							border: "1px solid",
-							borderColor: state.destructive ? "#991b1b" : "#111",
-							background: state.destructive ? "#b91c1c" : "#111",
-							color: "#fff",
+							borderColor: state.destructive ? "light-dark(#991b1b, #f87171)" : adminColors.brand,
+							background: state.destructive ? "light-dark(#b91c1c, #dc2626)" : adminColors.brand,
+							color: adminColors.onBrand,
 							padding: "8px 14px",
 							borderRadius: 6,
 							fontWeight: 500,
@@ -267,10 +270,10 @@ export function useToast(): ToastApi {
 }
 
 const TOAST_COLORS: Record<ToastKind, { bg: string; fg: string; border: string }> = {
-	info: { bg: "#eff6ff", fg: "#1e3a8a", border: "#93c5fd" },
-	success: { bg: "#f0fdf4", fg: "#14532d", border: "#86efac" },
-	warning: { bg: "#fffbeb", fg: "#78350f", border: "#fde68a" },
-	error: { bg: "#fef2f2", fg: "#7f1d1d", border: "#fca5a5" },
+	info: { bg: "light-dark(#eff6ff, #172554)", fg: "light-dark(#1e3a8a, #dbeafe)", border: "light-dark(#93c5fd, #1d4ed8)" },
+	success: { bg: "light-dark(#f0fdf4, #052e16)", fg: "light-dark(#14532d, #dcfce7)", border: "light-dark(#86efac, #166534)" },
+	warning: { bg: "light-dark(#fffbeb, #422006)", fg: "light-dark(#78350f, #fef3c7)", border: "light-dark(#fde68a, #a16207)" },
+	error: { bg: "light-dark(#fef2f2, #450a0a)", fg: "light-dark(#7f1d1d, #fee2e2)", border: "light-dark(#fca5a5, #991b1b)" },
 };
 
 function Toaster() {

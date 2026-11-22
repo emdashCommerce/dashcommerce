@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Alert,
+	adminColors,
 	Button,
 	Card,
 	Combobox,
@@ -259,7 +260,7 @@ export function SettingsPage() {
 					{group.description && (
 						<p
 							style={{
-								color: "#666",
+								color: adminColors.subtle,
 								margin: "0 0 0.75rem",
 								fontSize: "0.9em",
 							}}
@@ -699,8 +700,9 @@ function StickyBar({
 				bottom: 0,
 				left: 0,
 				right: 0,
-				background: "#fff",
-				borderTop: "1px solid #e4e4e7",
+				background: adminColors.base,
+				color: adminColors.text,
+				borderTop: `1px solid ${adminColors.border}`,
 				padding: "0.75rem 1rem",
 				display: "flex",
 				alignItems: "center",
@@ -711,7 +713,7 @@ function StickyBar({
 				marginTop: "auto",
 			}}
 		>
-			<span style={{ color: isDirty ? "#c08a00" : "#888", fontSize: "0.9em" }}>
+			<span style={{ color: isDirty ? "light-dark(#92400e, #fcd34d)" : adminColors.subtle, fontSize: "0.9em" }}>
 				{saving
 					? "Saving…"
 					: isDirty

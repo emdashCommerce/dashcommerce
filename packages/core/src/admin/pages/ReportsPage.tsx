@@ -13,6 +13,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Alert,
+	adminColors,
 	Button,
 	Card,
 	type DateRange,
@@ -496,11 +497,11 @@ function Sparkline({
 			role="img"
 			aria-label="Sparkline of revenue over time"
 		>
-			<polygon points={areaPoints} fill="#dbeafe" />
+			<polygon points={areaPoints} fill="var(--color-kumo-tint, light-dark(#dbeafe, #172554))" />
 			<polyline
 				points={points}
 				fill="none"
-				stroke="#2563eb"
+				stroke={adminColors.brand}
 				strokeWidth={1.5}
 				strokeLinecap="round"
 				strokeLinejoin="round"

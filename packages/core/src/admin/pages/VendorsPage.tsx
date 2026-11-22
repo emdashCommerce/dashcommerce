@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Alert,
+	adminColors,
 	Button,
 	Card,
 	Combobox,
@@ -130,8 +131,8 @@ export function VendorsPage() {
 							href="/_emdash/admin/plugins/dashcommerce/settings"
 							style={{
 								display: "inline-block",
-								background: "#111",
-								color: "#fff",
+								background: adminColors.brand,
+								color: adminColors.onBrand,
 								padding: "8px 16px",
 								borderRadius: 6,
 								textDecoration: "none",
@@ -225,7 +226,7 @@ export function VendorsPage() {
 								render: (v) => (
 									<div>
 										<div style={{ fontWeight: 500 }}>{v.name}</div>
-										<div style={{ color: "#666", fontSize: "0.85em" }}>
+										<div style={{ color: adminColors.subtle, fontSize: "0.85em" }}>
 											{v.email}
 										</div>
 									</div>
@@ -543,7 +544,7 @@ function EditVendorModal({
 			style={{
 				position: "fixed",
 				inset: 0,
-				background: "rgba(17,17,17,0.45)",
+				background: "light-dark(rgb(17 17 17 / 50%), rgb(0 0 0 / 70%))",
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
@@ -555,7 +556,9 @@ function EditVendorModal({
 			<div
 				onClick={(e) => e.stopPropagation()}
 				style={{
-					background: "#fff",
+					background: adminColors.base,
+					color: adminColors.text,
+					border: `1px solid ${adminColors.border}`,
 					borderRadius: 8,
 					maxWidth: 440,
 					width: "100%",
@@ -632,7 +635,7 @@ function PayoutList({
 				Recent payouts for {vendorId}
 			</h3>
 			{payouts.length === 0 ? (
-				<p style={{ color: "#666", fontSize: "0.9em" }}>No payouts yet.</p>
+				<p style={{ color: adminColors.subtle, fontSize: "0.9em" }}>No payouts yet.</p>
 			) : (
 				<Table<VendorPayout>
 					data={payouts}
