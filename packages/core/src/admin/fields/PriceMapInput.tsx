@@ -265,7 +265,7 @@ function PriceMapEditor({
 				/>
 				<span
 					style={{
-						color: "light-dark(#666, #a3a3a3)",
+						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
 						fontSize: "0.85em",
 					}}
 				>
@@ -278,16 +278,16 @@ function PriceMapEditor({
 					display: "flex",
 					flexDirection: "column",
 					gap: 6,
-					border: "1px solid light-dark(#e4e4e7, #3f3f46)",
+					border: "1px solid var(--color-kumo-fill, light-dark(#e4e4e7, #3f3f46))",
 					borderRadius: 6,
 					padding: 8,
-					background: "light-dark(#fafafa, #18181b)",
+					background: "var(--color-kumo-base, light-dark(#fafafa, #18181b))",
 				}}
 			>
 				{rowCodes.length === 0 ? (
 					<p
 						style={{
-							color: "light-dark(#666, #a3a3a3)",
+							color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
 							fontSize: "0.9em",
 							margin: "4px 0",
 						}}
@@ -320,7 +320,7 @@ function PriceMapEditor({
 							style={{
 								cursor: "pointer",
 								fontSize: "0.85em",
-							color: "light-dark(#444, #d4d4d8)",
+							color: "var(--text-color-kumo-default, light-dark(#444, #d4d4d8))",
 							}}
 						>
 							Add another currency (not in your enabled list)
@@ -382,7 +382,7 @@ function PriceRow({
 				<div
 					style={{
 						fontSize: "0.75em",
-						color: "light-dark(#666, #a3a3a3)",
+						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
 					}}
 				>
 					{info?.name ?? "Unknown currency"}
@@ -390,8 +390,8 @@ function PriceRow({
 						<span
 							style={{
 								marginLeft: 4,
-								background: "light-dark(#eef2ff, #312e81)",
-								color: "light-dark(#3730a3, #e0e7ff)",
+								background: "var(--color-kumo-tint, light-dark(#eef2ff, #312e81))",
+								color: "var(--text-color-kumo-default, light-dark(#3730a3, #e0e7ff))",
 								borderRadius: 3,
 								padding: "0 4px",
 							}}
