@@ -61,13 +61,14 @@
 	},
 	"homepage": "https://dashcommerce.dev",
 	"bin": {
-		"dashcommerce-merge-seed": "./dist/cli/merge-seed.js"
+		"dashcommerce-merge-seed": "dist/cli/merge-seed.js"
 	},
 	"scripts": {
 		"build": "tsdown",
 		"dev": "tsdown --watch",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"test": "bun test",
+		"prepublishOnly": "bun run build"
 	},
 	"peerDependencies": {
 		"emdash": ">=0.37.0 <0.38.0 || >=1.1.0 <1.6.0",

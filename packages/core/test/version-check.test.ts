@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import pkg from "../package.json";
 import { dashcommerce } from "../src/index";
 import { createPlugin } from "../src/sandbox-entry";
 import {
@@ -33,6 +34,18 @@ function captureWarnings(fn: () => void): string {
 describe("EmDash version compatibility", () => {
 	test("peer string matches the dual range we advertise", () => {
 		expect(SUPPORTED_EMDASH_PEER).toBe(">=0.37.0 <0.38.0 || >=1.1.0 <1.6.0");
+		expect(SUPPORTED_EMDASH_PEER).toBe(pkg.peerDependencies.emdash);
+	});
+
+	test("built dist advertises the same EmDash peer as package.json", async () => {
+		const distDir = `${import.meta.dir}/../dist`;
+		const files: string[] = [];
+		for await (const file of new Bun.Glob("version-check*.js").scan({ cwd: distDir })) {
+			files.push(file);
+		}
+		expect(files.length).toBeGreaterThan(0);
+		const source = await Bun.file(`${distDir}/${files[0]}`).text();
+		expect(source).toContain(`const SUPPORTED_EMDASH_PEER = "${pkg.peerDependencies.emdash}"`);
 	});
 
 	test.each(["0.37.0", "0.37.9", "1.1.0", "1.1.9", "1.2.0", "1.3.0", "1.3.9", "1.4.0", "1.4.9", "1.5.0", "1.5.9"])("accepts supported %s", (version) => {
