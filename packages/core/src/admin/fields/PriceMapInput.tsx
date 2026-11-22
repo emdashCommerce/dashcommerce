@@ -266,7 +266,7 @@ function PriceMapEditor({
 				<span
 					style={{
 						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
-						fontSize: "0.85em",
+						fontSize: "0.75rem",
 					}}
 				>
 					{pricedCount} currenc{pricedCount === 1 ? "y" : "ies"} priced
@@ -288,7 +288,7 @@ function PriceMapEditor({
 					<p
 						style={{
 							color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
-							fontSize: "0.9em",
+						fontSize: "0.75rem",
 							margin: "4px 0",
 						}}
 					>
@@ -319,7 +319,7 @@ function PriceMapEditor({
 						<summary
 							style={{
 								cursor: "pointer",
-								fontSize: "0.85em",
+							fontSize: "0.875rem",
 							color: "var(--text-color-kumo-default, light-dark(#444, #d4d4d8))",
 							}}
 						>
@@ -381,7 +381,7 @@ function PriceRow({
 				<strong style={{ fontFamily: "var(--font-mono)" }}>{code}</strong>
 				<div
 					style={{
-						fontSize: "0.75em",
+						fontSize: "0.75rem",
 						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
 					}}
 				>

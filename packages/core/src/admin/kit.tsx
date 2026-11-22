@@ -568,7 +568,7 @@ export function FormField({
 				<label
 					htmlFor={fieldId}
 					style={{
-						fontSize: "0.85em",
+						fontSize: "0.875rem",
 						color: "var(--text-color-kumo-default, light-dark(#444, #e4e4e7))",
 						fontWeight: 500,
 					}}
@@ -582,7 +582,7 @@ export function FormField({
 				<p
 					id={descId}
 					style={{
-						fontSize: "0.78em",
+						fontSize: "0.75rem",
 						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
 						margin: "2px 0 0",
 					}}
