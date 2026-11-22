@@ -567,7 +567,11 @@ export function FormField({
 			{label && (
 				<label
 					htmlFor={fieldId}
-					style={{ fontSize: "0.85em", color: "#444", fontWeight: 500 }}
+					style={{
+						fontSize: "0.85em",
+						color: "var(--text-color-kumo-default, light-dark(#444, #e4e4e7))",
+						fontWeight: 500,
+					}}
 				>
 					{label}
 					{required && <span style={{ color: "#b91c1c", marginLeft: 4 }}>*</span>}
@@ -577,7 +581,11 @@ export function FormField({
 			{description && !error && (
 				<p
 					id={descId}
-					style={{ fontSize: "0.78em", color: "#666", margin: "2px 0 0" }}
+					style={{
+						fontSize: "0.78em",
+						color: "var(--text-color-kumo-subtle, light-dark(#666, #a3a3a3))",
+						margin: "2px 0 0",
+					}}
 				>
 					{description}
 				</p>
@@ -668,7 +676,9 @@ export function NumberInput({
 		onChange(clamped);
 	}
 
-	const border = invalid ? "#b91c1c" : "var(--dc-border, #d4d4d8)";
+	const border = invalid
+		? "var(--text-color-kumo-danger, light-dark(#b91c1c, #fca5a5))"
+		: "var(--color-kumo-fill, light-dark(#d4d4d8, #3f3f46))";
 	return (
 		<div
 			style={{
@@ -676,7 +686,9 @@ export function NumberInput({
 				alignItems: "stretch",
 				border: `1px solid ${border}`,
 				borderRadius: 6,
-				background: disabled ? "#f4f4f5" : "#fff",
+				background: disabled
+					? "var(--color-kumo-fill, light-dark(#f4f4f5, #27272a))"
+					: "var(--color-kumo-base, light-dark(#fff, #18181b))",
 				opacity: disabled ? 0.6 : 1,
 				overflow: "hidden",
 				width: "100%",
@@ -687,8 +699,8 @@ export function NumberInput({
 				<span
 					style={{
 						padding: "6px 8px",
-						background: "#f4f4f5",
-						color: "#555",
+						background: "var(--color-kumo-fill, light-dark(#f4f4f5, #27272a))",
+						color: "var(--text-color-kumo-subtle, light-dark(#555, #d4d4d8))",
 						fontSize: "0.85em",
 						display: "flex",
 						alignItems: "center",
