@@ -263,7 +263,12 @@ function PriceMapEditor({
 					onChange={setShowCompareAt}
 					disabled={readOnly}
 				/>
-				<span style={{ color: "#888", fontSize: "0.85em" }}>
+				<span
+					style={{
+						color: "light-dark(#666, #a3a3a3)",
+						fontSize: "0.85em",
+					}}
+				>
 					{pricedCount} currenc{pricedCount === 1 ? "y" : "ies"} priced
 				</span>
 			</div>
@@ -273,14 +278,20 @@ function PriceMapEditor({
 					display: "flex",
 					flexDirection: "column",
 					gap: 6,
-					border: "1px solid #e4e4e7",
+					border: "1px solid light-dark(#e4e4e7, #3f3f46)",
 					borderRadius: 6,
 					padding: 8,
-					background: "#fafafa",
+					background: "light-dark(#fafafa, #18181b)",
 				}}
 			>
 				{rowCodes.length === 0 ? (
-					<p style={{ color: "#888", fontSize: "0.9em", margin: "4px 0" }}>
+					<p
+						style={{
+							color: "light-dark(#666, #a3a3a3)",
+							fontSize: "0.9em",
+							margin: "4px 0",
+						}}
+					>
 						No currencies configured. Enable at least one currency in store
 						Settings, then come back to price this product.
 					</p>
@@ -309,7 +320,7 @@ function PriceMapEditor({
 							style={{
 								cursor: "pointer",
 								fontSize: "0.85em",
-								color: "#555",
+							color: "light-dark(#444, #d4d4d8)",
 							}}
 						>
 							Add another currency (not in your enabled list)
@@ -368,14 +379,19 @@ function PriceRow({
 		>
 			<div>
 				<strong style={{ fontFamily: "var(--font-mono)" }}>{code}</strong>
-				<div style={{ fontSize: "0.75em", color: "#888" }}>
+				<div
+					style={{
+						fontSize: "0.75em",
+						color: "light-dark(#666, #a3a3a3)",
+					}}
+				>
 					{info?.name ?? "Unknown currency"}
 					{isDefault && (
 						<span
 							style={{
 								marginLeft: 4,
-								background: "#eef2ff",
-								color: "#3730a3",
+								background: "light-dark(#eef2ff, #312e81)",
+								color: "light-dark(#3730a3, #e0e7ff)",
 								borderRadius: 3,
 								padding: "0 4px",
 							}}
