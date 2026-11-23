@@ -33,7 +33,7 @@ function captureWarnings(fn: () => void): string {
 
 describe("EmDash version compatibility", () => {
 	test("peer string matches the dual range we advertise", () => {
-		expect(SUPPORTED_EMDASH_PEER).toBe(">=0.37.0 <0.38.0 || >=1.1.0 <1.6.0");
+		expect(SUPPORTED_EMDASH_PEER).toBe(">=0.37.0 <0.38.0 || >=1.1.0 <1.7.0");
 		expect(SUPPORTED_EMDASH_PEER).toBe(pkg.peerDependencies.emdash);
 	});
 
@@ -48,12 +48,12 @@ describe("EmDash version compatibility", () => {
 		expect(source).toContain(`const SUPPORTED_EMDASH_PEER = "${pkg.peerDependencies.emdash}"`);
 	});
 
-	test.each(["0.37.0", "0.37.9", "1.1.0", "1.1.9", "1.2.0", "1.3.0", "1.3.9", "1.4.0", "1.4.9", "1.5.0", "1.5.9"])("accepts supported %s", (version) => {
+	test.each(["0.37.0", "0.37.9", "1.1.0", "1.1.9", "1.2.0", "1.3.0", "1.3.9", "1.4.0", "1.4.9", "1.5.0", "1.5.9", "1.6.0", "1.6.9"])("accepts supported %s", (version) => {
 		expect(isEmDashVersionSupported(version)).toBe(true);
 		expect(() => checkEmDashVersion(version)).not.toThrow();
 	});
 
-	test.each(["0.36.9", "0.38.0", "0.42.0", "1.0.0", "1.0.1", "1.6.0", "1.9.0", "2.0.0"])(
+	test.each(["0.36.9", "0.38.0", "0.42.0", "1.0.0", "1.0.1", "1.7.0", "1.9.0", "2.0.0"])(
 		"rejects unsupported %s",
 		(version) => {
 			expect(isEmDashVersionSupported(version)).toBe(false);
@@ -70,7 +70,7 @@ describe("EmDash version compatibility", () => {
 		expect(() => checkEmDashVersion("1.0.0")).toThrow(/not 1\.0\.0/);
 	});
 
-	test("shipped patches are version-exact including 1.5.0", () => {
+	test("shipped patches are version-exact including 1.6.0", () => {
 		expect(EMDASH_VERSIONS_WITH_SHIPPED_PATCHES).toEqual([
 			"0.37.0",
 			"1.1.0",
@@ -79,7 +79,12 @@ describe("EmDash version compatibility", () => {
 			"1.3.1",
 			"1.4.0",
 			"1.5.0",
+			"1.6.0",
 		]);
+		expect(matchingShippedEmDashPatch("1.6.0")).toBe("1.6.0");
+		expect(matchingShippedEmDashPatch("1.6.1")).toBeNull();
+		expect(emDashPatchMismatchMessage("1.6.0")).toBeNull();
+		expect(emDashPatchMismatchMessage("1.6.1")).toMatch(/hashed dist/);
 		expect(matchingShippedEmDashPatch("1.5.0")).toBe("1.5.0");
 		expect(matchingShippedEmDashPatch("1.5.1")).toBeNull();
 		expect(emDashPatchMismatchMessage("1.5.0")).toBeNull();
@@ -102,9 +107,9 @@ describe("EmDash version compatibility", () => {
 		expect(emDashPatchMismatchMessage("0.38.0")).toBeNull();
 	});
 
-	test("validateEmDashCompatibility warns when 1.5.x has no shipped patch", () => {
-		const out = captureWarnings(() => validateEmDashCompatibility("1.5.1"));
-		expect(out).toMatch(/1\.5\.0 patch will not apply to 1\.5\.1\+/);
+	test("validateEmDashCompatibility warns when 1.6.x has no shipped patch", () => {
+		const out = captureWarnings(() => validateEmDashCompatibility("1.6.1"));
+		expect(out).toMatch(/1\.6\.0 patch will not apply to 1\.6\.1\+/);
 	});
 });
 
@@ -115,22 +120,22 @@ describe("unpatched EmDash version warns loudly", () => {
 		expect(message).toMatch(/^!{72}\n/);
 		expect(message).toMatch(/\n!{72}$/);
 		expect(message).toContain("WARNING: no DashCommerce patch ships for EmDash 1.3.2");
-		expect(message).toContain("Shipped patches: 0.37.0, 1.1.0, 1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0.");
+		expect(message).toContain("Shipped patches: 0.37.0, 1.1.0, 1.2.0, 1.3.0, 1.3.1, 1.4.0, 1.5.0, 1.6.0.");
 		expect(message).toMatch(/webhooks fail/);
 		expect(message).toMatch(/Set-Cookie is dropped/);
 	});
 
-	test.each(["1.3.0", "1.3.1", "1.4.0", "1.5.0"])("stays quiet for shipped %s", (version) => {
+	test.each(["1.3.0", "1.3.1", "1.4.0", "1.5.0", "1.6.0"])("stays quiet for shipped %s", (version) => {
 		expect(captureWarnings(() => validateEmDashCompatibility(version))).toBe("");
 		expect(warnIfEmDashPatchMissing(version)).toBeNull();
 	});
 
 	test("does not warn about patches for out-of-range versions (createPlugin throws instead)", () => {
-		expect(warnIfEmDashPatchMissing("1.6.0")).toBeNull();
+		expect(warnIfEmDashPatchMissing("1.7.0")).toBeNull();
 		expect(warnIfEmDashPatchMissing(undefined)).toBeNull();
 	});
 
-	test.each(["1.1.5", "1.2.1", "1.3.2", "1.3.9", "1.4.1", "1.5.1"])(
+	test.each(["1.1.5", "1.2.1", "1.3.2", "1.3.9", "1.4.1", "1.5.1", "1.6.1"])(
 		"warns at descriptor time and at plugin init for unpatched %s",
 		(version) => {
 			let descriptor: ReturnType<typeof dashcommerce> | undefined;
