@@ -30,6 +30,16 @@ export function registerPaymentProvider(
 	if (!provider?.id || provider.id.trim() === "") {
 		throw new Error("Cannot register a payment provider with an empty ID");
 	}
+	for (const header of provider.webhookHeaders ?? []) {
+		if (typeof header !== "string" || header.trim() === "") {
+			throw new Error(`Payment provider "${provider.id}" declares an empty webhook header`);
+		}
+		if (header.trim().toLowerCase() === "stripe-signature") {
+			throw new Error(
+				`Payment provider "${provider.id}" cannot claim stripe-signature; it routes to Stripe`,
+			);
+		}
+	}
 	if (registry.has(provider.id) && !options.override) {
 		throw new Error(
 			`Payment provider "${provider.id}" is already registered. Pass { override: true } to replace it.`,
@@ -74,9 +84,14 @@ export async function resolveProvider(kv: KVLike): Promise<PaymentProvider> {
 	return requirePaymentProvider(configured);
 }
 
-function specificSignatureHeader(headers: Headers, providerId: string): string | null {
-	if (providerId === "stripe") return headers.get("stripe-signature");
-	return headers.get(`x-${providerId}-signature`);
+/** The provider's own signature header: its declared ones in order, then `x-<id>-signature`. */
+function specificSignatureHeader(headers: Headers, provider: PaymentProvider): string | null {
+	if (provider.id === "stripe") return headers.get("stripe-signature");
+	for (const name of provider.webhookHeaders ?? []) {
+		const value = headers.get(name);
+		if (value) return value;
+	}
+	return headers.get(`x-${provider.id}-signature`);
 }
 
 /**
@@ -86,7 +101,7 @@ function specificSignatureHeader(headers: Headers, providerId: string): string |
  * the active provider.
  *
  * Precedence: `?provider=` → unambiguous signature header (`stripe-signature`,
- * `x-<id>-signature`) → configured setting.
+ * `x-<id>-signature` or a header the provider declares in `webhookHeaders`) → configured setting.
  */
 export async function resolveWebhookProvider(
 	kv: KVLike,
@@ -100,7 +115,7 @@ export async function resolveWebhookProvider(
 				const provider = requirePaymentProvider(fromQuery);
 				return {
 					provider,
-					signatureHeader: specificSignatureHeader(headers, provider.id),
+					signatureHeader: specificSignatureHeader(headers, provider),
 				};
 			}
 		} catch {
@@ -115,7 +130,7 @@ export async function resolveWebhookProvider(
 
 	for (const provider of registry.values()) {
 		if (provider.id === "stripe") continue;
-		const header = headers.get(`x-${provider.id}-signature`);
+		const header = specificSignatureHeader(headers, provider);
 		if (header) {
 			return { provider, signatureHeader: header };
 		}
@@ -125,7 +140,7 @@ export async function resolveWebhookProvider(
 	return {
 		provider,
 		signatureHeader:
-			specificSignatureHeader(headers, provider.id) ??
+			specificSignatureHeader(headers, provider) ??
 			headers.get("x-webhook-signature") ??
 			headers.get("signature"),
 	};

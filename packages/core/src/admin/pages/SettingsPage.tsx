@@ -30,8 +30,16 @@ import {
 } from "../kit";
 import type { CheckoutMode, TaxMode } from "../../settings/schema";
 import { T } from "../theme";
+import { ProviderCards } from "./ProviderCards";
 
-type Group = "store" | "reviews" | "downloads" | "marketing" | "connect" | "stripe";
+type Group =
+	| "store"
+	| "provider"
+	| "reviews"
+	| "downloads"
+	| "marketing"
+	| "connect"
+	| "stripe";
 
 interface GroupSpec {
 	id: Group;
@@ -45,6 +53,11 @@ const GROUPS: GroupSpec[] = [
 		title: "Store",
 		description:
 			"Currency defaults. Only codes listed as enabled can be used at checkout.",
+	},
+	{
+		id: "provider",
+		title: "Payment provider",
+		description: "Who takes payment at checkout.",
 	},
 	{
 		id: "stripe",
@@ -96,10 +109,49 @@ interface SettingsShape {
 	stripePublishableKey: string | null;
 	stripeWebhookSecret: string | null;
 	checkoutMode: CheckoutMode | null;
-	_secrets: Record<string, { isSet: boolean; hint: string | null }>;
+	paymentProvider: string | null;
+	_secrets: Record<string, SecretMeta>;
+	/** Registered providers, Stripe first. Absent from older servers. */
+	_providers?: ProviderRow[];
 }
 
-type Draft = Partial<Omit<SettingsShape, "_secrets">>;
+interface SecretMeta {
+	isSet: boolean;
+	hint: string | null;
+}
+
+interface CredentialField {
+	label?: string;
+	prefixes?: string[];
+	help?: string;
+}
+
+interface ProviderRow {
+	id: string;
+	label: string;
+	description?: string | null;
+	logo?: string | null;
+	brandColour?: string | null;
+	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
+	canCheckConnection?: boolean;
+	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
+}
+
+/**
+ * Fixed settings, plus `<providerId>SecretKey` / `<providerId>WebhookSecret`
+ * for registered non-Stripe providers.
+ */
+type Draft = Partial<Omit<SettingsShape, "_secrets" | "_providers">> & {
+	[providerCredential: string]: unknown;
+};
+
+/**
+ * A saved value by key. Provider credential keys are not part of the fixed
+ * shape (secrets never come down), so they read as undefined.
+ */
+function savedValue(saved: SettingsShape | null, key: PropertyKey): unknown {
+	return (saved as Record<PropertyKey, unknown> | null)?.[key];
+}
 
 function isEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
@@ -139,13 +191,13 @@ export function SettingsPage() {
 	const effective = useCallback(
 		<K extends keyof Draft>(key: K): Draft[K] | undefined => {
 			if (key in draft) return draft[key];
-			return saved?.[key];
+			return savedValue(saved, key) as Draft[K] | undefined;
 		},
 		[draft, saved],
 	);
 
 	function setField<K extends keyof Draft>(key: K, value: Draft[K]): void {
-		const baseline = saved?.[key];
+		const baseline = savedValue(saved, key);
 		const nextDraft: Draft = { ...draft };
 		if (isEqual(value, baseline)) {
 			delete nextDraft[key];
@@ -229,7 +281,50 @@ export function SettingsPage() {
 	const enabledCurrencies =
 		(effective("enabledCurrencies") as string[] | null | undefined) ?? [];
 
-	const needsStripeKey = !saved._secrets?.stripeSecretKey?.isSet;
+	const showProviderPicker = (saved._providers?.length ?? 0) > 1;
+	// With a choice of providers, a new store starts with none selected;
+	// one with Stripe keys already saved has Stripe selected. A Stripe-only
+	// store keeps Stripe, as before.
+	const selectedProviderId = selectedProvider(saved, draft, showProviderPicker);
+	const activeProviderId = selectedProviderId ?? "stripe";
+	const activeProvider = saved._providers?.find((p) => p.id === activeProviderId);
+	const needsStripeKey =
+		selectedProviderId === "stripe" && !saved._secrets?.stripeSecretKey?.isSet;
+	const needsProviderKey =
+		selectedProviderId !== null &&
+		selectedProviderId !== "stripe" &&
+		activeProvider?.secrets?.secretKey.isSet === false;
+	const needsProviderChoice = selectedProviderId === null;
+	const stripeActive = selectedProviderId === "stripe";
+	const stripeKeysSaved =
+		!!saved._secrets?.stripeSecretKey?.isSet || !!saved._secrets?.stripeWebhookSecret?.isSet;
+
+	/**
+	 * With another provider active, Stripe-only cards step back: Stripe shows
+	 * only while its keys are saved (earlier Stripe orders may still need
+	 * refunds and webhooks), and Connect only if it is already switched on.
+	 */
+	function groupView(group: GroupSpec): GroupSpec | null {
+		if (group.id === "provider") return showProviderPicker ? group : null;
+		if (stripeActive) return group;
+		// Nothing chosen yet: no provider-specific cards until the merchant picks.
+		if (needsProviderChoice && (group.id === "stripe" || (group.id === "connect" && !connectEnabled))) {
+			return null;
+		}
+		if (group.id === "stripe") {
+			return stripeKeysSaved
+				? {
+						...group,
+						title: "Stripe (not active)",
+						description:
+							"Kept so earlier Stripe orders can still be refunded and their webhooks verified. Remove the keys once no Stripe orders need them.",
+					}
+				: null;
+		}
+		if (group.id === "connect" && !connectEnabled) return null;
+		return group;
+	}
+	const visibleGroups = GROUPS.map(groupView).filter((g): g is GroupSpec => g !== null);
 
 	return (
 		<div
@@ -250,12 +345,26 @@ export function SettingsPage() {
 				</Alert>
 			)}
 
+			{needsProviderChoice && (
+				<Alert type="warning" title="Payments aren't set up yet">
+					Choose a payment provider under Payments. Customers can't check out until one
+					is set up.
+				</Alert>
+			)}
+
+			{needsProviderKey && activeProvider && (
+				<Alert type="warning" title="Finish setup">
+					Add your {activeProvider.label} secret key under Payment provider to start
+					accepting payments.
+				</Alert>
+			)}
+
 			<Alert type="info" title="Tax settings live in Tax">
 				Tax mode and rates are configured on the dedicated Tax page to keep
 				flat-rate, table, and Stripe Tax controls in one place.
 			</Alert>
 
-			{GROUPS.map((group) => (
+			{visibleGroups.map((group) => (
 				<Card key={group.id} title={group.title}>
 					{group.description && (
 						<p
@@ -275,6 +384,7 @@ export function SettingsPage() {
 						errors={errors}
 						enabledCurrencies={enabledCurrencies}
 						connectEnabled={connectEnabled}
+						stripeActive={stripeActive}
 						setField={setField}
 						disabled={saving}
 					/>
@@ -299,8 +409,21 @@ interface GroupBodyProps {
 	errors: Record<string, string>;
 	enabledCurrencies: string[];
 	connectEnabled: boolean;
+	/** False when another payment provider is active. */
+	stripeActive: boolean;
 	setField: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 	disabled: boolean;
+}
+
+/**
+ * The chosen payment provider. With a choice of providers, null until the
+ * merchant picks one (unless Stripe keys already exist); otherwise Stripe.
+ */
+function selectedProvider(saved: SettingsShape, draft: Draft, withPicker: boolean): string | null {
+	const chosen = eff("paymentProvider", saved, draft) as string | null | undefined;
+	if (chosen) return chosen;
+	if (!withPicker) return "stripe";
+	return saved._secrets?.stripeSecretKey?.isSet ? "stripe" : null;
 }
 
 function eff<K extends keyof Draft>(
@@ -309,7 +432,7 @@ function eff<K extends keyof Draft>(
 	draft: Draft,
 ): Draft[K] | undefined {
 	if (key in draft) return draft[key];
-	return saved[key] as Draft[K] | undefined;
+	return savedValue(saved, key) as Draft[K] | undefined;
 }
 
 function GroupBody({
@@ -319,6 +442,7 @@ function GroupBody({
 	errors,
 	enabledCurrencies,
 	connectEnabled,
+	stripeActive,
 	setField,
 	disabled,
 }: GroupBodyProps) {
@@ -363,12 +487,95 @@ function GroupBody({
 		);
 	}
 
+	if (group === "provider") {
+		const providers = saved._providers ?? [];
+		const selectedId = selectedProvider(saved, draft, true);
+		const selected = providers.find((p) => p.id === selectedId);
+		return (
+			<>
+				<ProviderCards
+					providers={providers.map((p) => ({
+						id: p.id,
+						label: p.label,
+						description: p.description ?? null,
+						logo: p.logo ?? null,
+						brandColour: p.brandColour ?? null,
+					}))}
+					selectedId={selectedId}
+					onSelect={(id) => setField("paymentProvider", id)}
+					disabled={disabled}
+				/>
+				{errors.paymentProvider && (
+					<p role="alert" style={{ color: T.danger, margin: "0 0 0.75rem" }}>
+						{errors.paymentProvider}
+					</p>
+				)}
+				{!selected && (
+					<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+						Pick a provider to set it up. Nothing is charged until you finish.
+					</p>
+				)}
+				{selected && selected.id !== "stripe" && (
+					<>
+						<p style={{ color: T.textMuted, margin: "0 0 0.75rem", fontSize: "0.9em" }}>
+							Customers pay on {selected.label}'s hosted page and come back to your
+							store.
+						</p>
+						{eff("checkoutMode", saved, draft) === "embedded" && (
+							<Alert type="warning" title="Checkout is set to embedded">
+								DashCommerce's embedded checkout is built on Stripe's payment form, so
+								it cannot run {selected.label} yet, and checkout will refuse payments
+								until it is set to hosted.{" "}
+								<Button
+									variant="secondary"
+									onClick={() => setField("checkoutMode", "hosted")}
+									disabled={disabled}
+								>
+									Switch to hosted
+								</Button>
+							</Alert>
+						)}
+						<SecretField
+							keyName={`${selected.id}SecretKey`}
+							label={selected.credentialFields?.secretKey?.label ?? `${selected.label} secret key`}
+							description={credentialDescription(selected.credentialFields?.secretKey)}
+							meta={selected.secrets?.secretKey}
+							saved={saved}
+							draft={draft}
+							errors={errors}
+							setField={setField}
+							disabled={disabled}
+						/>
+						<SecretField
+							keyName={`${selected.id}WebhookSecret`}
+							label={
+								selected.credentialFields?.webhookSecret?.label ??
+								`${selected.label} webhook secret`
+							}
+							description={credentialDescription(selected.credentialFields?.webhookSecret)}
+							meta={selected.secrets?.webhookSecret}
+							saved={saved}
+							draft={draft}
+							errors={errors}
+							setField={setField}
+							disabled={disabled}
+						/>
+						{selected.canCheckConnection && (
+							<ProviderConnectionCheck providerId={selected.id} label={selected.label} />
+						)}
+					</>
+				)}
+			</>
+		);
+	}
+
 	if (group === "stripe") {
 		const pkValue = (eff("stripePublishableKey", saved, draft) as string | null) ?? "";
 		const checkoutModeValue =
 			(eff("checkoutMode", saved, draft) as CheckoutMode | null) ?? "hosted";
 		return (
 			<>
+				{stripeActive && (
 				<FormField
 					label="Checkout flow"
 					description="Hosted redirects the customer to a Stripe-hosted page (less PCI scope, mobile-friendly, minimal UI to maintain). Embedded keeps the payment form on your storefront using Stripe Elements."
@@ -386,6 +593,7 @@ function GroupBody({
 						disabled={disabled}
 					/>
 				</FormField>
+				)}
 				<SecretField
 					keyName="stripeSecretKey"
 					label="Stripe secret key"
@@ -584,26 +792,38 @@ function GroupBody({
 	return null;
 }
 
+/** "Starts with sk_test_ or rk_test_. From the dashboard." from a provider's field spec. */
+function credentialDescription(field: CredentialField | undefined): string | undefined {
+	const parts: string[] = [];
+	if (field?.prefixes?.length) parts.push(`Starts with ${field.prefixes.join(" or ")}.`);
+	if (field?.help) parts.push(field.help);
+	return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 function SecretField({
 	keyName,
 	label,
 	description,
+	meta: metaOverride,
 	saved,
 	draft,
 	errors,
 	setField,
 	disabled,
 }: {
-	keyName: "stripeSecretKey" | "stripeWebhookSecret";
+	/** `stripeSecretKey`, `stripeWebhookSecret`, or a provider's `<id>SecretKey` / `<id>WebhookSecret`. */
+	keyName: string;
 	label: string;
 	description?: string;
+	/** Set/hint status; defaults to the fixed `_secrets` entry for `keyName`. */
+	meta?: SecretMeta;
 	saved: SettingsShape;
 	draft: Draft;
 	errors: Record<string, string>;
 	setField: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
 	disabled: boolean;
 }) {
-	const meta = saved._secrets?.[keyName];
+	const meta = metaOverride ?? saved._secrets?.[keyName];
 	const value = (draft[keyName] as string | undefined) ?? "";
 	return (
 		<FormField
@@ -674,6 +894,52 @@ function StripePing() {
 			{result && !result.ok && (
 				<Alert type="error" title="Stripe rejected the credentials">
 					{result.error}
+				</Alert>
+			)}
+		</div>
+	);
+}
+
+/** "Test connection" for a registered provider that declares checkConnection. */
+function ProviderConnectionCheck({ providerId, label }: { providerId: string; label: string }) {
+	const api = usePluginAPI();
+	const [pending, setPending] = useState(false);
+	const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+	async function run(): Promise<void> {
+		setPending(true);
+		setResult(null);
+		try {
+			const res = await api.post<{ ok: boolean; message: string }>(
+				"admin/payments/check-connection",
+				{ providerId },
+			);
+			setResult(res);
+			if (res.ok) toast.success(`${label} connection verified`);
+			else toast.error(`${label} check failed`, res.message);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Request failed";
+			setResult({ ok: false, message });
+			toast.error(`${label} check failed`, message);
+		} finally {
+			setPending(false);
+		}
+	}
+
+	return (
+		<div style={{ marginTop: 12 }}>
+			<Button variant="secondary" onClick={run} disabled={pending}>
+				{pending ? "Testing…" : `Test ${label} connection`}
+			</Button>
+			<p style={{ color: T.textMuted, margin: "0.5rem 0 0", fontSize: "0.85em" }}>
+				Uses the saved keys, so save changes first.
+			</p>
+			{result && (
+				<Alert
+					type={result.ok ? "success" : "error"}
+					title={result.ok ? "Connected" : `${label} rejected the credentials`}
+				>
+					{result.message}
 				</Alert>
 			)}
 		</div>
