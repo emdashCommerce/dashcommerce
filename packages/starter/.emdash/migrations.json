@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"emdashVersion": "1.5.0",
+	"emdashVersion": "1.6.0",
 	"migrationSet": {
 		"names": [
 			"001_initial",
@@ -98,9 +98,10 @@
 			"094_media_usage_file_url_reindex",
 			"095_plugin_storage_unique_scope",
 			"096_revision_kind_and_editors",
-			"097_room_storage"
+			"097_room_storage",
+			"098_user_last_login"
 		],
-		"fingerprint": "36ade5111fb27ab5a825b90e4bb60c3d7129d75e12a34f71d9b67d5cf2a5fc1b"
+		"fingerprint": "d50e7fc8e5a27b6cafd71322b6733594528471f3d57ea43746db1813dcc6aa2a"
 	},
 	"i18n": null,
 	"database": {
