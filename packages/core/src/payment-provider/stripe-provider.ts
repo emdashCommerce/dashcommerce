@@ -173,6 +173,8 @@ export const stripePaymentProvider: PaymentProvider = {
 		subscriptions: true,
 	},
 	collectsCustomerDetails: true,
+	// On-page is Stripe Elements through checkout/create-intent, unchanged.
+	checkoutStyles: ["hosted", "on_page"],
 
 	supportsCurrency(currency: string): boolean {
 		if (!currency || typeof currency !== "string") return false;

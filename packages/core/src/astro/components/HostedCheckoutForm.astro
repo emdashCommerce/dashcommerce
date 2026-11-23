@@ -29,17 +29,25 @@ export interface Props {
    * does). When false, this form collects them before payment.
    */
   collectsDetails?: boolean;
+  /**
+   * True when checkout is on-page: the provider's checkout opens over this
+   * page instead of redirecting. Only changes the wording.
+   */
+  onPage?: boolean;
 }
 const {
   digitalOnly = false,
   providerId = "stripe",
   providerLabel = "Stripe",
   collectsDetails = true,
+  onPage = false,
 } = Astro.props;
 const isStripe = providerId === "stripe";
-const payHint = isStripe
-  ? `You'll be redirected to Stripe to enter your email, ${digitalOnly ? "billing address, " : "full address, "}and card details. We never see your card.`
-  : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
+const payHint = onPage
+  ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+  : isStripe
+    ? `You'll be redirected to Stripe to enter your email, ${digitalOnly ? "billing address, " : "full address, "}and card details. We never see your card.`
+    : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
 ---
 
 <section
@@ -48,6 +56,7 @@ const payHint = isStripe
   data-digital-only={digitalOnly ? "1" : "0"}
   data-provider-id={providerId}
   data-provider-label={providerLabel}
+  data-on-page={onPage ? "1" : "0"}
 >
   {!digitalOnly && (
     <div class="hc-step" id="hc-step-location">
@@ -241,6 +250,7 @@ const payHint = isStripe
 </style>
 
 <script>
+  import type { OnPageCheckoutClient } from "../../payment-provider/types";
   type Money = { amount: number; currency: string };
   type CartState = {
     sessionId: string;
@@ -362,9 +372,11 @@ const payHint = isStripe
     if (payStepNum) payStepNum.textContent = "1";
     if (payStepHint) {
       payStepHint.textContent =
-        providerId === "stripe"
-          ? "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card."
-          : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
+        hcRoot?.dataset.onPage === "1"
+          ? `${providerLabel} opens over this page to take payment. We never see your card or mobile money details.`
+          : providerId === "stripe"
+            ? "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card."
+            : `You'll be redirected to ${providerLabel} to pay. We never see your card or mobile money details.`;
     }
     if (payBtn) payBtn.disabled = false;
     applyDetailsLayout();
@@ -499,6 +511,38 @@ const payHint = isStripe
   }
 
   // --- 3. Pay with the active provider -----------------------------------------
+  /**
+   * On-page checkout: hand the provider's data to its browser client, which
+   * the site registers by importing the gateway package's checkout-client
+   * entry. The callbacks only steer the customer; the order is created by
+   * the signed webhook, and the thank-you page waits for it.
+   */
+  function openOnPage(id: string, client: Record<string, string>, returnUrl?: string) {
+    const clients = (window as Window & {
+      DashCommerceCheckoutClients?: Record<string, OnPageCheckoutClient>;
+    }).DashCommerceCheckoutClients;
+    const onPageClient = clients?.[id];
+    if (!onPageClient) {
+      throw new Error(`${providerLabel} on-page checkout isn't loaded on this page.`);
+    }
+    payBtn!.textContent = `Opening ${providerLabel}…`;
+    onPageClient.open(client, {
+      onFinished() {
+        if (returnUrl) window.location.href = returnUrl;
+      },
+      onClosed() {
+        setError(payErr, "Payment not completed. You can try again.");
+        payBtn!.disabled = false;
+        resetPayButton();
+      },
+      onError(message) {
+        setError(payErr, message);
+        payBtn!.disabled = false;
+        resetPayButton();
+      },
+    });
+  }
+
   function resetPayButton() {
     if (!payBtn) return;
     const lock = document.createElement("span");
@@ -525,7 +569,18 @@ const payHint = isStripe
       if (!res.ok) {
         throw new Error(await errorMessage(res, "Payment couldn't start. Please try again in a moment."));
       }
-      const body = (await res.json()) as { url?: string; orderDraftId?: string };
+      const body = (await res.json()) as {
+        kind?: "redirect" | "on_page";
+        url?: string;
+        orderDraftId?: string;
+        providerId?: string;
+        client?: Record<string, string>;
+        returnUrl?: string;
+      };
+      if (body.kind === "on_page") {
+        openOnPage(body.providerId ?? providerId, body.client ?? {}, body.returnUrl);
+        return;
+      }
       if (!body.url) throw new Error(`${providerLabel} did not return a checkout URL`);
       window.location.href = body.url;
     } catch (err) {

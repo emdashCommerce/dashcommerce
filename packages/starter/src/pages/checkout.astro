@@ -33,7 +33,7 @@ const isStripe = providerId === "stripe";
 const provider = getPaymentProvider(providerId);
 const providerLabel = provider?.label ?? providerId;
 // Stripe Elements on this page only for Stripe; other providers use the
-// hosted form, which sends the customer to their payment page.
+// hosted form, whose Pay button redirects or opens their on-page checkout.
 const useStripeElements = isStripe && checkoutMode === "embedded";
 
 const missingKeys: string[] = [];
@@ -106,6 +106,7 @@ const canceled = Astro.url.searchParams.get("canceled") === "1";
           providerId={providerId}
           providerLabel={providerLabel}
           collectsDetails={provider?.collectsCustomerDetails === true}
+          onPage={checkoutMode === "embedded" && provider?.checkoutStyles?.includes("on_page") === true}
         />
       )}
 

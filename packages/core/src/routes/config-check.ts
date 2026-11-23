@@ -20,6 +20,7 @@ import {
 	DEFAULT_PAYMENT_PROVIDER_ID,
 	getPaymentProvider,
 	loadPaymentProviderCredentials,
+	providerCheckoutStyles,
 } from "../payment-provider";
 
 /** The active provider, for a storefront that isn't tied to Stripe. Never any secret. */
@@ -34,6 +35,7 @@ async function activeProviderSummary(ctx: PluginContext) {
 		label: provider.label,
 		configured: Boolean(creds?.secretKey && creds.webhookSecret),
 		checkoutMode,
+		checkoutStyles: providerCheckoutStyles(provider),
 	};
 }
 

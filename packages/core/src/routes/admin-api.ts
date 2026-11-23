@@ -52,6 +52,7 @@ import {
 	getPaymentProvider,
 	listPaymentProviders,
 	loadPaymentProviderCredentials,
+	providerCheckoutStyles,
 	providerCredentialSetting,
 } from "../payment-provider";
 
@@ -180,6 +181,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 		rows.push({
 			...card,
 			credentialFields: provider.credentialFields ?? {},
+			checkoutStyles: providerCheckoutStyles(provider),
 			canCheckConnection: typeof provider.checkConnection === "function",
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),

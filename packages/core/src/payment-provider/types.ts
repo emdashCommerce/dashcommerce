@@ -94,6 +94,41 @@ export interface InitCheckoutInput {
 	discounts?: Array<{ coupon: string }>;
 	/** Hint for gateways that restrict methods on the hosted page. */
 	preferredChannels?: string[];
+	/**
+	 * `hosted` (default): return a redirect. `on_page`: return an `on_page`
+	 * result for the storefront to open over the page. Core asks for
+	 * `on_page` only from providers that declare it in `checkoutStyles`.
+	 */
+	checkoutStyle?: CheckoutStyle;
+}
+
+/** How customers pay: on the provider's hosted page, or over the store's page. */
+export type CheckoutStyle = "hosted" | "on_page";
+
+/**
+ * Browser side of on-page checkout. A provider package's client entry
+ * registers one on `window.DashCommerceCheckoutClients[providerId]`, and the
+ * storefront calls `open` with the `client` data from an `on_page` result.
+ * Callbacks only steer the customer: payment is confirmed by the signed
+ * webhook and the provider's live status, never by the browser.
+ */
+export interface OnPageCheckoutClient {
+	open(
+		client: Record<string, string>,
+		callbacks: {
+			/** The customer finished at the provider; go to the return URL. */
+			onFinished(): void;
+			/** The customer closed the provider's window without paying. */
+			onClosed(): void;
+			onError(message: string): void;
+		},
+	): void;
+}
+
+declare global {
+	interface Window {
+		DashCommerceCheckoutClients?: Record<string, OnPageCheckoutClient>;
+	}
 }
 
 export type InitCheckoutResult =
@@ -106,6 +141,16 @@ export type InitCheckoutResult =
 	| {
 			kind: "pending";
 			checkoutReference: string;
+	  }
+	| {
+			/**
+			 * Pay over the store's page. `client` is handed to the provider's
+			 * browser client (see the package's checkout-client entry), e.g.
+			 * Paystack's `{ accessCode }`. Never trusted as proof of payment.
+			 */
+			kind: "on_page";
+			checkoutReference: string;
+			client: Record<string, string>;
 	  };
 
 export interface VerifyWebhookInput {
@@ -284,6 +329,9 @@ export interface PaymentProvider {
 	 * is passed as `signatureHeader`. `stripe-signature` is reserved.
 	 */
 	readonly webhookHeaders?: readonly string[];
+
+	/** Checkout styles this provider supports. Defaults to `["hosted"]`. */
+	readonly checkoutStyles?: readonly CheckoutStyle[];
 
 	/** One line for the provider card in Settings, e.g. "Card and M-Pesa in Kenya". */
 	readonly description?: string;
