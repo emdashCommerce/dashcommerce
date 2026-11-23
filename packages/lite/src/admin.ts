@@ -1,6 +1,6 @@
 /**
- * Block Kit admin: Orders, Stock and Settings pages, plus the Recent orders
- * dashboard widget.
+ * Block Kit admin: Orders, Stock, Coupons (admin-coupons.ts) and Settings
+ * pages, plus the Recent orders dashboard widget.
  *
  * EmDash posts `page_load`, `block_action` and `form_submit` interactions
  * to the private `admin` route and renders the blocks we return. No
@@ -15,7 +15,9 @@
 
 import type { Block, BlockResponse, FormField } from "@emdash-cms/blocks/server";
 import type { PluginContext } from "emdash/plugin";
+import { deleteCoupon, renderCoupons, saveCoupon } from "./admin-coupons";
 import { log, metered, remaining } from "./budget";
+import { normalizeCode } from "./coupons";
 import { ensureCron } from "./cron";
 import { createExportUrl } from "./export";
 import { applyStatus, type LiteOrder, ordersStore, updateOrder } from "./orders";
@@ -68,6 +70,7 @@ export async function handleAdmin(rawCtx: PluginContext, input: unknown): Promis
 		await ensureCron(ctx, config.cronVersion);
 		if (page === "/settings") return renderSettings(ctx, config);
 		if (page === "/stock") return renderStock(ctx);
+		if (page === "/coupons") return renderCoupons(ctx, config);
 		if (page === `widget:${RECENT_ORDERS_WIDGET}`) return renderRecentOrdersWidget(ctx);
 		return renderOrders(ctx);
 	}
@@ -91,6 +94,13 @@ export async function handleAdmin(rawCtx: PluginContext, input: unknown): Promis
 		if (actionId === "stock_page") return renderStock(ctx, { cursor: str });
 		if (actionId === "adjust_stock" && str) return renderStock(ctx, { adjust: str });
 		if (actionId === "sync_stock") return syncStock(ctx);
+		if (actionId === "coupons_page") return renderCoupons(ctx, undefined, { cursor: str });
+		if (actionId === "coupon_new") return renderCoupons(ctx, undefined, { edit: "new" });
+		if (actionId === "coupon_edit") {
+			const code = normalizeCode(str);
+			return renderCoupons(ctx, undefined, code ? { edit: code } : {});
+		}
+		if (actionId === "coupon_delete") return deleteCoupon(ctx, value);
 		if (actionId === "clear_secret_key" || actionId === "clear_webhook_secret") {
 			const key = actionId === "clear_secret_key" ? "stripeSecretKey" : "stripeWebhookSecret";
 			await ctx.settings.delete(key);
@@ -107,6 +117,9 @@ export async function handleAdmin(rawCtx: PluginContext, input: unknown): Promis
 		if (interaction.action_id === "save_settings") return saveSettings(ctx, values);
 		if (interaction.action_id === "search_orders") {
 			return renderOrders(ctx, { search: asString(values.q, 254) });
+		}
+		if (interaction.action_id === "save_coupon") {
+			return saveCoupon(ctx, asString(interaction.block_id, 100) ?? "", values);
 		}
 		if (interaction.action_id === "save_stock") {
 			return saveStock(ctx, asString(interaction.block_id, 200) ?? "", values);
@@ -297,6 +310,14 @@ function orderBlocks(id: string, o: LiteOrder): Block[] {
 		{ label: "Status", value: o.status },
 		{ label: "Payment", value: o.paymentStatus },
 		{ label: "Subtotal", value: money(o.subtotal, c) },
+		...(o.couponCode
+			? [
+					{
+						label: "Discount",
+						value: `${o.discountTotal?.amount ? `-${money(o.discountTotal, c)}` : "Free shipping"} (coupon ${o.couponCode})`,
+					},
+				]
+			: []),
 		{ label: "Shipping", value: money(o.shippingTotal, c) },
 		{
 			label: "Tax",

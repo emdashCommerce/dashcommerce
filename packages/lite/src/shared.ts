@@ -3,8 +3,8 @@
  *
  * Lite imports these modules straight from core's source so both plugins
  * run one implementation of money math, cart totals, product field
- * normalization, price resolution, Stripe request encoding, Stripe webhook
- * signature checks and the order state machine. The Lite bundler inlines
+ * normalization, price resolution, coupon rules, Stripe request encoding,
+ * Stripe webhook signature checks and the order state machine. The Lite bundler inlines
  * them into `backend.js`.
  *
  * Every module re-exported here must stay sandbox-safe: no React, no Astro,
@@ -24,12 +24,14 @@ export {
 } from "../../core/src/money";
 export { type PricingPolicy, recalculate } from "../../core/src/cart/calculate";
 export { newCart } from "../../core/src/cart/store";
+export { resolveDiscount, validateCoupon } from "../../core/src/coupons/validate";
 export { normalizeProductFields } from "../../core/src/products/normalize";
 export { resolvePrice } from "../../core/src/products/pricing";
 export { verifyStripeSignature } from "../../core/src/stripe/webhook-verify";
 export {
 	type CheckoutLineItem,
 	createCheckoutSession,
+	createOneTimeCoupon,
 	type CreateCheckoutSessionInput,
 	type StripeCheckoutSession,
 	type StripeSessionAddress,
@@ -42,8 +44,10 @@ export {
 } from "../../core/src/orders/status";
 export { randomId } from "../../core/src/util/ids";
 export type {
+	AppliedCoupon,
 	CartLineItem,
 	CartState,
+	Coupon,
 	OrderStatus,
 	PaymentStatus,
 	ProductFields,

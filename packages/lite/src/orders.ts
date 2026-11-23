@@ -65,6 +65,10 @@ export interface LiteOrder {
 	currency: string;
 	items: LiteOrderItem[];
 	subtotal: Money;
+	/** Upper-cased coupon code, when a coupon applied. Indexed: paid orders are its uses. */
+	couponCode?: string;
+	/** Coupon discount on the item subtotal. */
+	discountTotal?: Money;
 	shippingTotal?: Money;
 	taxTotal?: Money;
 	/** Order total. With Stripe Tax this is updated to the charged amount on payment. */
@@ -249,6 +253,8 @@ export function toPublicOrder(id: string, o: LiteOrder) {
 		currency: o.currency,
 		items: o.items,
 		subtotal: o.subtotal,
+		discountTotal: o.discountTotal ?? { currency: o.currency, amount: 0 },
+		couponCode: o.couponCode ?? null,
 		shippingTotal: o.shippingTotal ?? { currency: o.currency, amount: 0 },
 		taxTotal: o.taxTotal ?? { currency: o.currency, amount: 0 },
 		total: o.total,

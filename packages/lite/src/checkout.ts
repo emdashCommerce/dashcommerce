@@ -20,6 +20,15 @@
  * next one picks up where it stopped. A 20-line cart needs at most 5
  * requests in the worst case, and 1 in a shop of up to 100 products.
  *
+ * A coupon on the cart (coupons.ts) is read again, with its use count when
+ * it has a limit, in the first request of a checkout. That request always
+ * answers `CHECKOUT_CONTINUE` and keeps the result on the cart record next
+ * to the products. If the coupon is no longer valid it is taken off the
+ * cart and the shopper gets `COUPON_INVALID` with the updated cart. The
+ * final request creates a single-use Stripe coupon for the discount
+ * (core's `createOneTimeCoupon`, one more call) so the hosted page charges
+ * the cart total; a free-shipping coupon needs no Stripe coupon.
+ *
  * Double submits: the order id and the Stripe idempotency key derive from
  * the cart id and the cart's `updatedAt`, so checking out the same cart
  * twice reuses the pending order and Stripe replays the same session. If
@@ -39,6 +48,7 @@ import {
 	sha256Hex,
 	toCartView,
 } from "./cart";
+import { type CartCoupon, checkCoupon } from "./coupons";
 import {
 	isAwaitingAsyncPayment,
 	type LiteOrder,
@@ -59,6 +69,7 @@ import {
 	type CheckoutLineItem,
 	createCheckoutSession,
 	type CreateCheckoutSessionInput,
+	createOneTimeCoupon,
 	money,
 	randomId,
 	StripeApiError,
@@ -74,9 +85,14 @@ export const PREP_TTL_MS = 5 * 60 * 1000;
 export const CHECKOUT_ATTEMPTS = 5;
 /**
  * Calls a final checkout request needs after the product reads: stock
- * ledger, order lookup, order create, Stripe, order update.
+ * ledger, order lookup, order create, Stripe, order update. A coupon with
+ * a discount adds the Stripe coupon.
  */
 const FINAL_CALLS = 5;
+
+function finalCalls(coupon: CartCoupon | undefined): number {
+	return FINAL_CALLS + (coupon && coupon.type !== "free_shipping" ? 1 : 0);
+}
 
 /** Order id and Stripe idempotency key for one checkout of one cart version. */
 export async function checkoutAttempt(cartId: string, cartUpdatedAt: string, attempt = 0) {
@@ -111,26 +127,57 @@ export async function createCheckoutHandler(
 	if (!stored || !cart || cart.items.length === 0) return fail("CART_EMPTY", "The cart is empty");
 
 	if (cart.currency !== config.currency) {
-		await saveCart(ctx, { ...cart, items: [], currency: config.currency }, config);
+		const { coupon: _dropped, ...rest } = cart;
+		await saveCart(ctx, { ...rest, items: [], currency: config.currency }, config);
 		return fail("CART_CURRENCY_CHANGED", "The shop currency changed. The cart was emptied.");
 	}
 
 	// Re-price from the source of truth. Products an earlier request of
 	// this checkout already read (same cart version, recent) are reused.
-	const prep =
-		stored.checkoutPrep?.cartUpdatedAt === cart.updatedAt ? stored.checkoutPrep.products : {};
+	const samePrep = stored.checkoutPrep?.cartUpdatedAt === cart.updatedAt;
+	const prep = samePrep ? (stored.checkoutPrep?.products ?? {}) : {};
 	const known = new Map<string, LoadedProduct>();
 	for (const [id, p] of Object.entries(prep)) {
 		if (now - Date.parse(p.at) < PREP_TTL_MS) known.set(id, { id, fields: p.fields });
 	}
+
+	// The coupon, as an earlier request of this checkout read it, or read
+	// now. Reading it now means this request ends with CHECKOUT_CONTINUE.
+	let coupon: CartCoupon | undefined;
+	let couponAt: string | undefined;
+	let couponRead = false;
+	if (cart.coupon) {
+		const kept = samePrep ? stored.checkoutPrep?.coupon : undefined;
+		if (
+			kept &&
+			kept.snapshot.code === cart.coupon.code &&
+			now - Date.parse(kept.at) < PREP_TTL_MS
+		) {
+			coupon = kept.snapshot;
+			couponAt = kept.at;
+		} else {
+			const { coupon: _old, ...withoutCoupon } = cart;
+			const check = await checkCoupon(ctx, cart.coupon.code, withoutCoupon);
+			if (!check.ok) {
+				const saved = await saveCart(ctx, withoutCoupon, config);
+				return fail("COUPON_INVALID", check.message, { cart: toCartView(saved, config) });
+			}
+			coupon = check.cartCoupon;
+			couponAt = new Date(now).toISOString();
+			couponRead = true;
+		}
+	}
+	const needed = finalCalls(coupon);
+
 	// One list page only on the first request of a checkout; a follow-up
 	// request reads what is left one by one.
 	const load = newProductLoad(
 		cart.items.map((l) => l.productId).filter((id) => !known.has(id)),
-		!stored.checkoutPrep || stored.checkoutPrep.cartUpdatedAt !== cart.updatedAt,
+		!samePrep,
 	);
-	await loadProducts(ctx, load, remaining(ctx) - FINAL_CALLS);
-	if (load.missing.size === 0 && load.pending.length > 0) {
+	// After reading the coupon, keep 1 call to store what was read.
+	await loadProducts(ctx, load, remaining(ctx) - (couponRead ? 1 : needed));
+	if (!couponRead && load.missing.size === 0 && load.pending.length > 0) {
 		// Too many to read in one request: read what fits now.
 		await loadProducts(ctx, load, remaining(ctx) - 1);
 	}
@@ -146,10 +193,11 @@ export async function createCheckoutHandler(
 		}
 		return fail("CART_INVALID", "Some items cannot be bought", { errors });
 	}
-	if (load.pending.length > 0 || remaining(ctx) < FINAL_CALLS) {
+	if (couponRead || load.pending.length > 0 || remaining(ctx) < needed) {
 		// Keep what was read on the cart record and let the storefront call
 		// again; the next request reads the rest and finishes.
-		await savePrep(ctx, cartId, stored, known, load, now);
+		const keptCoupon = coupon && couponAt ? { snapshot: coupon, at: couponAt } : undefined;
+		await savePrep(ctx, cartId, stored, known, load, now, keptCoupon);
 		return CONTINUE();
 	}
 	for (const [id, p] of load.found) known.set(id, p);
@@ -189,7 +237,7 @@ export async function createCheckoutHandler(
 
 	// Totals under the current shipping and tax settings. A changed total
 	// (price, shipping or tax) goes back to the shopper for review.
-	const repriced = priceCart({ ...cart, items }, config);
+	const repriced = priceCart({ ...cart, items, ...(coupon ? { coupon } : {}) }, config);
 	if (repriced.total.amount !== cart.total.amount) {
 		const saved = await saveCart(ctx, repriced, config);
 		return fail("CART_CHANGED", "Prices changed. Review the cart and try again.", {
@@ -208,6 +256,9 @@ export async function createCheckoutHandler(
 		currency: repriced.currency,
 		items: orderItems,
 		subtotal: repriced.subtotal,
+		...(repriced.coupons[0]
+			? { couponCode: repriced.coupons[0].code, discountTotal: repriced.discountTotal }
+			: {}),
 		shippingTotal: repriced.shippingTotal,
 		taxTotal: repriced.taxTotal,
 		total: repriced.total,
@@ -304,10 +355,26 @@ export async function createCheckoutHandler(
 	};
 
 	try {
-		// The cast bridges core's `emdash` PluginContext type to the
-		// `emdash/plugin` one; at runtime it only uses `ctx.http`.
+		// The casts bridge core's `emdash` PluginContext type to the
+		// `emdash/plugin` one; at runtime they only use `ctx.http`.
+		const stripeCtx = ctx as unknown as Parameters<typeof createCheckoutSession>[0];
+		if (repriced.discountTotal.amount > 0) {
+			// A single-use Stripe coupon for exactly the cart discount, so the
+			// hosted total matches the order. Same key on a double submit.
+			const stripeCoupon = await createOneTimeCoupon(
+				stripeCtx,
+				{
+					amountOff: repriced.discountTotal.amount,
+					currency: repriced.currency,
+					name: (repriced.coupons[0]?.code ?? "Discount").slice(0, 40),
+				},
+				{ secretKey },
+				`${idempotencyKey}_coupon`,
+			);
+			sessionInput.discounts = [{ coupon: stripeCoupon.id }];
+		}
 		const session = await createCheckoutSession(
-			ctx as unknown as Parameters<typeof createCheckoutSession>[0],
+			stripeCtx,
 			sessionInput,
 			{ secretKey },
 			idempotencyKey,
@@ -342,6 +409,7 @@ async function savePrep(
 	known: Map<string, LoadedProduct>,
 	load: ProductLoad,
 	now: number,
+	coupon?: { snapshot: CartCoupon; at: string },
 ) {
 	const at = new Date(now).toISOString();
 	const previous = stored.checkoutPrep?.products ?? {};
@@ -350,6 +418,10 @@ async function savePrep(
 	for (const [id, p] of load.found) products[id] = { fields: p.fields, at };
 	await cartsStore(ctx).put(cartId, {
 		...stored,
-		checkoutPrep: { cartUpdatedAt: stored.cart.updatedAt, products },
+		checkoutPrep: {
+			cartUpdatedAt: stored.cart.updatedAt,
+			products,
+			...(coupon ? { coupon } : {}),
+		},
 	});
 }
