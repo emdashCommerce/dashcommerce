@@ -21,7 +21,7 @@ import type {
 	VerifyWebhookInput,
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
-import { call, callEnvelope, PaystackApiError, type PaystackClientOptions } from "./client";
+import { PaystackApiError, type PaystackClientOptions, call, callEnvelope } from "./client";
 import { PAYSTACK_LOGO } from "./logo";
 import { verifyPaystackSignature } from "./webhook-verify";
 
@@ -353,7 +353,12 @@ function refundEvent(
 	return {
 		type: "refund.updated",
 		providerId: "paystack",
-		providerEventId: "",
+		// Paystack sends no event id, so the event name plus the refund id
+		// stands in for one. Core records it before the handler runs, so a
+		// repeat or overlapping delivery of the same status is skipped instead
+		// of reversing a failed refund twice. Each status keeps its own id, so
+		// `refund.pending` never blocks the later `refund.failed`.
+		providerEventId: `${eventName}:${String(id)}`,
 		providerRefundId: String(id),
 		status,
 		...(data?.transaction_reference ? { paymentReference: data.transaction_reference } : {}),
@@ -519,14 +524,13 @@ export const paystackPaymentProvider: PaymentProvider = {
 				// reference. /refund accepts either.
 				checkoutReference: d.reference,
 				paymentReference: d.reference,
-				// Paystack webhooks carry no event id (`data.id` is the transaction).
-				// Leaving this empty makes core skip event-level dedup, which it
-				// records before the handler runs and never releases: a delivery
-				// that failed (say Paystack's verify was briefly down) would turn
-				// every retry into a "duplicate" and the paid order would never be
-				// created. Core still refuses a second order for the same payment
-				// through its unique index on the payment reference.
-				providerEventId: "",
+				// Paystack webhooks carry no event id (`data.id` is the transaction),
+				// so the reference stands in for one. Core records it before the
+				// handler runs, so two overlapping deliveries never both run it.
+				// When confirming with Paystack fails, core releases the record, so
+				// Paystack's retry still creates the order. Other failures keep it,
+				// as they do for Stripe.
+				providerEventId: `charge.success:${d.reference}`,
 				amount: d.amount,
 				currency: d.currency.toUpperCase(),
 				customer: {

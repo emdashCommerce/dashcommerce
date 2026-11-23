@@ -6,8 +6,8 @@
 import { describe, expect, it } from "bun:test";
 import type { PaymentProviderRuntimeContext } from "@dashcommerce/core/payment-provider";
 import {
-	createPaystackCheckoutClient,
 	PAYSTACK_INLINE_SCRIPT,
+	createPaystackCheckoutClient,
 	registerPaystackCheckoutClient,
 } from "../src/checkout-client";
 import { paystackPaymentProvider } from "../src/provider";

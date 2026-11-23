@@ -3,8 +3,8 @@
  * credential fields, and refund.* events as refund.updated.
  */
 
-import { createHmac } from "node:crypto";
 import { describe, expect, it } from "bun:test";
+import { createHmac } from "node:crypto";
 import { paystackPaymentProvider } from "../src/provider";
 
 const sk = "sk_test_1234567890abcdef";
@@ -135,6 +135,7 @@ describe("refund.* events", () => {
 			expect(parsed).toMatchObject({
 				type: "refund.updated",
 				providerId: "paystack",
+				providerEventId: `${event}:19224707`,
 				providerRefundId: "19224707",
 				paymentReference: "dc-x",
 				status,
@@ -144,10 +145,15 @@ describe("refund.* events", () => {
 
 	it("handles the shape real deliveries have: a string id and a null refund_reference", () => {
 		const parsed = paystackPaymentProvider.parseWebhookEvent(
-			refundEvent("refund.processed", { id: "19244346", status: "processed", refund_reference: null }),
+			refundEvent("refund.processed", {
+				id: "19244346",
+				status: "processed",
+				refund_reference: null,
+			}),
 		);
 		expect(parsed).toMatchObject({
 			type: "refund.updated",
+			providerEventId: "refund.processed:19244346",
 			providerRefundId: "19244346",
 			status: "succeeded",
 		});

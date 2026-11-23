@@ -1,6 +1,6 @@
 /**
- * Runs @dashcommerce/paystack through released @dashcommerce/core's own
- * route handlers (create-session → webhook → order), with no core changes.
+ * Runs @dashcommerce/paystack through @dashcommerce/core's own route
+ * handlers (create-session → webhook → order).
  *
  * The HTTP stub behaves like Paystack where it matters: initialize echoes
  * the reference it was given, and verify answers only for a reference that
@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { type CartState, dashcommerce, type Order } from "@dashcommerce/core";
+import { type CartState, type Order, dashcommerce } from "@dashcommerce/core";
 import {
 	getPaymentProvider,
 	registerPaymentProvider,
@@ -50,6 +50,8 @@ interface FakePaystackOptions {
 	verifyStatus?: string;
 	/** Number of verify calls that fail with a 503 before Paystack recovers. */
 	verifyOutages?: number;
+	/** Milliseconds verify takes to answer, so two deliveries can overlap. */
+	verifyDelayMs?: number;
 }
 
 /**
@@ -62,6 +64,7 @@ function fakePaystack(options: FakePaystackOptions = {}) {
 	let nextId = 55443322;
 	let lastInit: Record<string, unknown> | null = null;
 	let outagesLeft = options.verifyOutages ?? 0;
+	let verifyCalls = 0;
 
 	async function fetch(url: string, init?: RequestInit): Promise<Response> {
 		const headers = new Headers(init?.headers);
@@ -95,6 +98,10 @@ function fakePaystack(options: FakePaystackOptions = {}) {
 			});
 		}
 		if (pathname.startsWith("/transaction/verify/")) {
+			verifyCalls++;
+			if (options.verifyDelayMs) {
+				await new Promise((resolve) => setTimeout(resolve, options.verifyDelayMs));
+			}
 			if (outagesLeft > 0) {
 				outagesLeft--;
 				return json({ status: false, message: "Service unavailable" }, 503);
@@ -161,7 +168,13 @@ function fakePaystack(options: FakePaystackOptions = {}) {
 		return json({ status: false, message: "Not found" }, 404);
 	}
 
-	return { fetch, transactions, refunds, getLastInit: () => lastInit };
+	return {
+		fetch,
+		transactions,
+		refunds,
+		getLastInit: () => lastInit,
+		getVerifyCalls: () => verifyCalls,
+	};
 }
 
 // Core's real storage config, so the stub enforces the same unique indexes
@@ -605,6 +618,34 @@ async function paystackSignatureHeader(payload: string, t = Math.floor(Date.now(
 	return `t=${t},v1=whk_test:${Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** A paid Paystack order with one KES 500 refund still pending at Paystack. */
+async function paidOrderWithPendingRefund(session: string) {
+	const paystack = fakePaystack();
+	const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+	const initRes = await startCheckout(ctx, session);
+	const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+	const reference = String(paystack.getLastInit()?.reference);
+	const tx = paystack.transactions.get(reference);
+	if (!tx) throw new Error("initialize did not register a transaction");
+	const charge = chargeSuccess(reference, orderDraftId, tx.id);
+	await deliverWebhook(ctx, charge, await sign(SECRET_KEY, charge));
+	const order = Array.from(getCol("orders").values())[0] as Order;
+
+	// Create the refund through the admin route, as a merchant would.
+	const refundRes = (await sandbox.routes["admin/orders/refund"].handler(
+		{
+			request: new Request(`http://test/admin/orders/refund?id=${order.id}`, { method: "POST" }),
+			input: { amount: 50000, currency: "KES" },
+		} as unknown as import("emdash").RouteContext,
+		ctx,
+	)) as Response;
+	expect(refundRes.status).toBe(200);
+	const refundRow = Array.from(getCol("refunds").values())[0] as { status: string };
+	expect(refundRow.status).toBe("pending");
+	const refundId = Number(paystack.refunds[0]?.id);
+	return { ctx, getCol, reference, refundId, order };
+}
+
 describe("@dashcommerce/paystack with core enablement", () => {
 	it("saves a restricted key and a whsec_ secret through the settings API", async () => {
 		const { ctx } = makeContext({}, fakePaystack().fetch);
@@ -693,29 +734,9 @@ describe("@dashcommerce/paystack with core enablement", () => {
 	});
 
 	it("moves a refund to succeeded when Paystack reports refund.processed", async () => {
-		const paystack = fakePaystack();
-		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
-		const initRes = await startCheckout(ctx, "sess_paystack_refund_evt");
-		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
-		const reference = String(paystack.getLastInit()?.reference);
-		const tx = paystack.transactions.get(reference);
-		if (!tx) throw new Error("initialize did not register a transaction");
-		const charge = chargeSuccess(reference, orderDraftId, tx.id);
-		await deliverWebhook(ctx, charge, await sign(SECRET_KEY, charge));
-		const order = Array.from(getCol("orders").values())[0] as Order;
-
-		// Create the refund through the admin route, as a merchant would.
-		const refundRes = (await sandbox.routes["admin/orders/refund"].handler(
-			{
-				request: new Request(`http://test/admin/orders/refund?id=${order.id}`, { method: "POST" }),
-				input: { amount: 50000, currency: "KES" },
-			} as unknown as import("emdash").RouteContext,
-			ctx,
-		)) as Response;
-		expect(refundRes.status).toBe(200);
-		const refundRow = Array.from(getCol("refunds").values())[0] as { status: string };
-		expect(refundRow.status).toBe("pending");
-		const refundId = Number(paystack.refunds[0]?.id);
+		const { ctx, getCol, reference, refundId } = await paidOrderWithPendingRefund(
+			"sess_paystack_refund_evt",
+		);
 
 		const event = JSON.stringify({
 			event: "refund.processed",
@@ -732,5 +753,86 @@ describe("@dashcommerce/paystack with core enablement", () => {
 		expect((Array.from(getCol("refunds").values())[0] as { status: string }).status).toBe(
 			"succeeded",
 		);
+	});
+
+	it("reverses a failed refund once when Paystack delivers refund.failed twice at the same time", async () => {
+		const { ctx, getCol, reference, refundId, order } = await paidOrderWithPendingRefund(
+			"sess_paystack_refund_failed_twice",
+		);
+		expect((getCol("orders").get(order.id) as Order).refundedTotal.amount).toBe(50000);
+
+		const event = JSON.stringify({
+			event: "refund.failed",
+			data: { id: String(refundId), status: "failed", transaction_reference: reference },
+		});
+		const signature = await sign(SECRET_KEY, event);
+		const responses = await Promise.all([
+			deliverWebhook(ctx, event, signature),
+			deliverWebhook(ctx, event, signature),
+		]);
+		const bodies = (await Promise.all(responses.map((r) => r.json()))) as Array<{
+			duplicate?: boolean;
+			refund?: string;
+		}>;
+		expect(responses.map((r) => r.status)).toEqual([200, 200]);
+		// One delivery runs the handler; core's event dedup skips the other.
+		expect(bodies.filter((b) => b.duplicate === true)).toHaveLength(1);
+		expect(bodies.filter((b) => b.refund === "updated")).toHaveLength(1);
+
+		const refund = Array.from(getCol("refunds").values())[0] as { status: string };
+		expect(refund.status).toBe("failed");
+		const after = getCol("orders").get(order.id) as Order;
+		expect(after.refundedTotal.amount).toBe(0);
+		expect(after.paymentStatus).toBe("paid");
+	});
+
+	it("runs refund.failed after refund.pending for the same refund", async () => {
+		const { ctx, getCol, reference, refundId, order } = await paidOrderWithPendingRefund(
+			"sess_paystack_refund_pending_then_failed",
+		);
+
+		const deliver = async (event: string, status: string) => {
+			const body = JSON.stringify({
+				event,
+				data: { id: String(refundId), status, transaction_reference: reference },
+			});
+			const res = await deliverWebhook(ctx, body, await sign(SECRET_KEY, body));
+			expect(res.status).toBe(200);
+			return (await res.json()) as { duplicate?: boolean; refund?: string };
+		};
+
+		// Each status has its own event id, so the earlier pending event does
+		// not make core skip the failure as a duplicate.
+		expect(await deliver("refund.pending", "pending")).toMatchObject({ refund: "unchanged" });
+		const failed = await deliver("refund.failed", "failed");
+		expect(failed.duplicate).toBeUndefined();
+		expect(failed.refund).toBe("updated");
+		expect((getCol("orders").get(order.id) as Order).refundedTotal.amount).toBe(0);
+	});
+
+	it("runs overlapping charge.success deliveries once", async () => {
+		// A slow verify keeps the first delivery in flight while the second arrives.
+		const paystack = fakePaystack({ verifyDelayMs: 20 });
+		const { ctx, getCol } = makeContext(paystackSettings, paystack.fetch);
+		const initRes = await startCheckout(ctx, "sess_paystack_overlap");
+		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+		const reference = String(paystack.getLastInit()?.reference);
+		const tx = paystack.transactions.get(reference);
+		if (!tx) throw new Error("initialize did not register a transaction");
+
+		const payload = chargeSuccess(reference, orderDraftId, tx.id);
+		const signature = await sign(SECRET_KEY, payload);
+		const responses = await Promise.all([
+			deliverWebhook(ctx, payload, signature),
+			deliverWebhook(ctx, payload, signature),
+		]);
+		const bodies = (await Promise.all(responses.map((r) => r.json()))) as Array<{
+			duplicate?: boolean;
+		}>;
+		expect(responses.map((r) => r.status)).toEqual([200, 200]);
+		expect(bodies.filter((b) => b.duplicate === true)).toHaveLength(1);
+		expect(getCol("orders").size).toBe(1);
+		// Only one delivery got as far as confirming with Paystack.
+		expect(paystack.getVerifyCalls()).toBe(1);
 	});
 });

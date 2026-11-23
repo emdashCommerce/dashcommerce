@@ -305,9 +305,9 @@ describe("paystackPaymentProvider", () => {
 			// passes paymentReference to getPaymentStatus before creating the order.
 			expect(parsed.paymentReference).toBe("dc-0123456789abcdef0123456789abcdef");
 			expect(parsed.checkoutReference).toBe("dc-0123456789abcdef0123456789abcdef");
-			// Paystack sends no event id; an empty one makes core rely on its
-			// per-payment unique index, so a failed delivery can be retried.
-			expect(parsed.providerEventId).toBe("");
+			// Paystack sends no event id; the reference stands in for one so
+			// core's event dedup skips a repeat delivery.
+			expect(parsed.providerEventId).toBe("charge.success:dc-0123456789abcdef0123456789abcdef");
 			expect(parsed.providerId).toBe("paystack");
 			expect(parsed.amount).toBe(350000);
 			expect(parsed.currency).toBe("KES");

@@ -82,7 +82,7 @@
         "typescript": "^5.9.3",
       },
       "peerDependencies": {
-        "@dashcommerce/core": "workspace:*",
+        "@dashcommerce/core": "^0.4.0",
       },
     },
     "packages/registry-setup": {

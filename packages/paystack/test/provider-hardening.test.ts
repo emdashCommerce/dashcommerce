@@ -9,8 +9,8 @@
  * the guard exists.
  */
 
-import { createHmac } from "node:crypto";
 import { describe, expect, it } from "bun:test";
+import { createHmac } from "node:crypto";
 import type { PaymentProviderRuntimeContext } from "@dashcommerce/core/payment-provider";
 import { paystackPaymentProvider } from "../src/provider";
 import { verifyPaystackSignature } from "../src/webhook-verify";
