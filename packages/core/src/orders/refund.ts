@@ -19,12 +19,13 @@
  */
 
 import type { PluginContext, StorageCollection } from "emdash";
+import { OversoldError, decrementForOrderItem } from "../inventory/decrement";
 import { restoreForOrderItem } from "../inventory/restore";
-import { CurrencyMismatchError, type Money, add } from "../money";
+import { CurrencyMismatchError, type Money, add, money } from "../money";
 import { loadPaymentProviderCredentials, requirePaymentProvider } from "../payment-provider";
 import type { StripeClientOptions } from "../stripe/client";
 import type { StripeRefund } from "../stripe/refunds";
-import type { Order, Refund } from "../types";
+import type { Order, OrderStatus, Refund } from "../types";
 import { randomId } from "../util/ids";
 import { loadOrder, loadOrderItems, refundsStore } from "./create";
 import { sendRefundReceipt } from "./receipt";
@@ -98,11 +99,22 @@ export async function refundOrder(ctx: PluginContext, input: RefundOrderInput): 
 		stripeRefundId: stripeRefund.id,
 		refundRequestId: input.idempotencyKey,
 		...(input.lineItemRefunds ? { lineItemRefunds: input.lineItemRefunds } : {}),
-		restocked: Boolean(input.restock),
+		restocked: Boolean(input.restock) && stripeRefund.status !== "failed",
+		orderStatusBefore: order.status,
 		createdAt: new Date().toISOString(),
 		...(input.createdByUserId ? { createdByUserId: input.createdByUserId } : {}),
 	};
 	await refundsStore(ctx).put(refundId, refund);
+
+	// A refund the provider failed straight away moves no money: keep the
+	// row for the record, but leave stock, totals and the customer alone.
+	if (refund.status === "failed") {
+		ctx.log.error("Refund failed at the payment provider; the order is unchanged", {
+			refundId: refund.id,
+			orderId: order.id,
+		});
+		return refund;
+	}
 
 	// Optional restock per line item.
 	if (input.restock && input.lineItemRefunds?.length) {
@@ -249,9 +261,11 @@ export async function recordRefundFromWebhook(
 					: "pending",
 		stripeRefundId: stripeRefund.id,
 		restocked: false,
+		orderStatusBefore: order.status,
 		createdAt: new Date().toISOString(),
 	};
 	await refundsStore(ctx).put(refundId, refund);
+	if (refund.status === "failed") return refund;
 
 	const newRefundedTotal = add(order.refundedTotal, amount);
 	const paymentStatus = derivePaymentStatus(order.paidTotal.amount, newRefundedTotal.amount);
@@ -280,9 +294,8 @@ export type ProviderRefundUpdateOutcome = "updated" | "unchanged" | "unknown" | 
  * order was paid through that provider. A settled refund (succeeded or
  * failed) never moves again.
  *
- * A failed refund is marked failed and logged as an error, but the order's
- * refunded total is not reduced: the operator decides, as with any refund
- * that fails at the provider.
+ * A refund that fails no longer counts: see `reverseFailedRefund`. It stays
+ * on the order, marked failed, and is logged as an error.
  */
 export async function applyProviderRefundUpdate(
 	ctx: PluginContext,
@@ -313,8 +326,9 @@ export async function applyProviderRefundUpdate(
 	if (refund.status !== "pending" || update.status === "pending") return "unchanged";
 
 	await refundsStore(ctx).put(refund.id, { ...refund, status: update.status });
-	if (update.status === "failed") {
-		ctx.log.error("Refund failed at the payment provider; the order still counts it as refunded", {
+	if (update.status === "failed" && order) {
+		await reverseFailedRefund(ctx, order, refund);
+		ctx.log.error("Refund failed at the payment provider; reversed on the order", {
 			providerId: update.providerId,
 			providerRefundId: update.providerRefundId,
 			refundId: refund.id,
@@ -322,4 +336,65 @@ export async function applyProviderRefundUpdate(
 		});
 	}
 	return "updated";
+}
+
+const REFUND_STATUSES: ReadonlySet<OrderStatus> = new Set(["refunded", "partially-refunded"]);
+
+/**
+ * Undo what a refund did to its order when the provider later fails it:
+ * take its amount back off the refunded total, derive the payment and order
+ * status again, and take back stock the refund put back. With no refund
+ * left counting, the order returns to the status its first refund recorded.
+ * Stock already sold again is not taken back; that is logged instead.
+ */
+async function reverseFailedRefund(
+	ctx: PluginContext,
+	order: Order,
+	refund: Refund,
+): Promise<void> {
+	const refunded = Math.max(0, order.refundedTotal.amount - refund.amount.amount);
+	let status: OrderStatus = deriveOrderStatusFromRefunds(
+		order.status,
+		order.paidTotal.amount,
+		refunded,
+	);
+	if (refunded === 0 && REFUND_STATUSES.has(order.status)) {
+		status = (await statusBeforeFirstRefund(ctx, order.id)) ?? "processing";
+	}
+	await ordersStore(ctx).put(order.id, {
+		...order,
+		refundedTotal: money(order.refundedTotal.currency, refunded),
+		paymentStatus: derivePaymentStatus(order.paidTotal.amount, refunded),
+		status,
+		updatedAt: new Date().toISOString(),
+	});
+
+	if (!refund.restocked || !refund.lineItemRefunds?.length) return;
+	const items = new Map((await loadOrderItems(ctx, order.id)).map((it) => [it.id, it]));
+	for (const li of refund.lineItemRefunds) {
+		const orderItem = items.get(li.orderItemId);
+		if (!orderItem || li.quantity <= 0) continue;
+		try {
+			await decrementForOrderItem(ctx, { ...orderItem, quantity: li.quantity }, "refund_failed");
+		} catch (err) {
+			ctx.log.warn("Stock put back by a failed refund was not taken back", {
+				refundId: refund.id,
+				orderItemId: li.orderItemId,
+				reason: err instanceof OversoldError ? "already sold again" : String(err),
+			});
+		}
+	}
+}
+
+/** The order status recorded by the order's earliest refund, if any. */
+async function statusBeforeFirstRefund(
+	ctx: PluginContext,
+	orderId: string,
+): Promise<OrderStatus | undefined> {
+	const { items } = await refundsStore(ctx).query({ where: { orderId }, limit: 200 });
+	const earliest = items
+		.map((row) => row.data as Refund)
+		.filter((r) => r.orderStatusBefore && !REFUND_STATUSES.has(r.orderStatusBefore))
+		.sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+	return earliest?.orderStatusBefore;
 }

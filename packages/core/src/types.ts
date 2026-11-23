@@ -287,6 +287,12 @@ export interface Refund {
 		amount: Money;
 	}>;
 	restocked: boolean;
+	/**
+	 * The order's status when this refund was recorded. If every refund on
+	 * the order later fails, the order goes back to the status its first
+	 * refund recorded.
+	 */
+	orderStatusBefore?: OrderStatus;
 	createdAt: IsoDateTime;
 	createdByUserId?: string;
 }
@@ -565,7 +571,8 @@ export type InventoryLedgerReason =
 	| "refund"
 	| "admin_adjustment"
 	| "initial_stock"
-	| "restock";
+	| "restock"
+	| "refund_failed";
 
 export interface InventoryLedgerEntry {
 	id: string;
