@@ -172,6 +172,7 @@ export const stripePaymentProvider: PaymentProvider = {
 		connect: true,
 		subscriptions: true,
 	},
+	collectsCustomerDetails: true,
 
 	supportsCurrency(currency: string): boolean {
 		if (!currency || typeof currency !== "string") return false;
