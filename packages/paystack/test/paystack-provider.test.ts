@@ -146,8 +146,25 @@ describe("paystackPaymentProvider", () => {
 			});
 			await expect(
 				paystackPaymentProvider.initCheckout(ctx, checkoutInput({ currency: "EUR" }), credentials),
-			).rejects.toThrow(/does not support currency EUR/);
+			).rejects.toMatchObject({ code: "currency_not_supported", currency: "EUR" });
 			expect(calls).toBe(0);
+		});
+
+		it("reports Paystack's unsupported_currency refusal as a currency error", async () => {
+			const ctx = makeMockRuntimeContext(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: false,
+							message: "Currency not supported by merchant",
+							code: "unsupported_currency",
+						}),
+						{ status: 403 },
+					),
+			);
+			await expect(
+				paystackPaymentProvider.initCheckout(ctx, checkoutInput({ currency: "USD" }), credentials),
+			).rejects.toMatchObject({ code: "currency_not_supported", currency: "USD" });
 		});
 
 		it("throws before calling Paystack for subscription mode", async () => {

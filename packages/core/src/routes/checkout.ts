@@ -24,6 +24,7 @@ import { money, zero } from "../money";
 import {
 	DEFAULT_PAYMENT_PROVIDER_ID,
 	type InitCheckoutInput,
+	isCurrencyNotSupportedError,
 	loadPaymentProviderCredentials,
 	providerCheckoutStyles,
 	resolveProvider,
@@ -843,11 +844,28 @@ export const checkoutRoutes = {
 					: {}),
 			};
 
-			const checkoutResult = await provider.initCheckout(
-				ctx,
-				{ ...initCheckout, checkoutStyle: onPage ? "on_page" : "hosted" },
-				creds,
-			);
+			let checkoutResult: Awaited<ReturnType<typeof provider.initCheckout>>;
+			try {
+				checkoutResult = await provider.initCheckout(
+					ctx,
+					{ ...initCheckout, checkoutStyle: onPage ? "on_page" : "hosted" },
+					creds,
+				);
+			} catch (err) {
+				if (!isCurrencyNotSupportedError(err)) throw err;
+				ctx.log.warn("Payment provider refused the cart's currency", {
+					providerId: provider.id,
+					currency: err.currency,
+				});
+				return new Response(
+					JSON.stringify({
+						error: `This shop can't take payments in ${err.currency} right now. Choose another currency, or contact the shop.`,
+						code: "currency_not_supported",
+						currency: err.currency,
+					}),
+					{ status: 400, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			if (onPage) {
 				if (checkoutResult.kind !== "on_page") {
 					return new Response(

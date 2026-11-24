@@ -75,6 +75,8 @@ For provider authors, `PaymentProvider` can declare:
 
 Event-level dedup skips a repeated delivery even if the first one failed, so a duplicate side effect never runs. The exception is a failure to confirm the payment with the provider (`getPaymentStatus` throwing or not reporting paid). That failure happens before any side effect, so the provider's retry is processed.
 
+If the provider refuses the cart's currency (an account not enabled for it, say), throw `CurrencyNotSupportedError` from `initCheckout`. Core answers `create-session` with a 400 that tells the customer to choose another currency, instead of a 500.
+
 ## Seed merge CLI
 
 `@dashcommerce/core` ships a `dashcommerce-merge-seed` binary (on your `PATH` via `node_modules/.bin`). It writes the `products` collection and `product_category` / `product_tag` taxonomies into your EmDash `seed.json`, replacing any prior DashCommerce entries by slug / name. Unrelated keys in the seed file (settings, content, menus, other collections) are left intact.
