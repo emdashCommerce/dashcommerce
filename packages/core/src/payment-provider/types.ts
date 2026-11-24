@@ -222,6 +222,19 @@ export type NormalizedPaymentEvent =
 			shippingAddress?: PaymentProviderAddress;
 			billingAddress?: PaymentProviderAddress;
 			channel?: string;
+			/**
+			 * Provider-reported settlement of a split payment, when the
+			 * provider returns one. Amounts are integer minor units. Core
+			 * stores it on the order for reconciliation; it never changes the
+			 * vendor shares core computed.
+			 */
+			splitSettlement?: {
+				allocations: Array<{ accountReference: string; amountMinor: number }>;
+				platformRemainderMinor?: number;
+				providerFeeMinor?: number;
+				currency?: string;
+				raw?: unknown;
+			};
 			raw: unknown;
 	  }
 	| {
