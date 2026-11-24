@@ -14,6 +14,7 @@ export const LINKS = {
 	patches:
 		"https://github.com/emdashCommerce/dashcommerce/blob/main/packages/core/patches/README.md",
 	npm: "https://www.npmjs.com/package/@dashcommerce/core",
+	paystack: "https://github.com/emdashCommerce/dashcommerce/blob/main/packages/paystack/README.md",
 } as const;
 
 const ASTRO_CONFIG = `// astro.config.mjs
@@ -29,6 +30,19 @@ export default defineConfig({
     }),
   ],
 });`;
+
+const PAYSTACK_INSTALL = "npm install @dashcommerce/paystack";
+
+const PAYSTACK_MIDDLEWARE = `// src/middleware.ts
+import "@dashcommerce/paystack"; // registers the "paystack" provider
+import { defineMiddleware } from "astro:middleware";
+
+export const onRequest = defineMiddleware((_context, next) => next());`;
+
+const PAYSTACK_CONFIG = `plugins: [dashcommerce({ allowedHosts: ["api.paystack.co"] })],`;
+
+const PAYSTACK_WEBHOOK =
+	"https://<your-site>/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=paystack";
 
 const BUN_PATCH = `// package.json (Bun). Keep only the line for your installed EmDash version.
 {
@@ -78,7 +92,7 @@ export function renderSetupPage(): BlockResponse {
 			},
 			{
 				type: "section",
-				text: "DashCommerce is an MIT licensed commerce plugin for EmDash. It adds products (simple, variable, subscription and digital), a cart, Stripe checkout, orders with refunds, coupons, shipping zones, tax, inventory, reviews, subscriptions, and multi-vendor payouts through Stripe Connect. It runs on Cloudflare Workers or Node.js and adds its own pages to the EmDash admin.",
+				text: "DashCommerce is an MIT licensed commerce plugin for EmDash. It adds products (simple, variable, subscription and digital), a cart, checkout through Stripe or Paystack, orders with refunds, coupons, shipping zones, tax, inventory, reviews, subscriptions, and multi-vendor payouts through Stripe Connect. It runs on Cloudflare Workers or Node.js and adds its own pages to the EmDash admin.",
 			},
 			{
 				type: "fields",
@@ -86,7 +100,10 @@ export function renderSetupPage(): BlockResponse {
 					{ label: "npm package", value: "@dashcommerce/core" },
 					{ label: "EmDash versions DashCommerce supports", value: "0.37.x, or 1.1.0 to 1.6.x" },
 					{ label: "Hosting", value: "Cloudflare Workers or Node.js" },
-					{ label: "Payments", value: "Stripe (test mode works out of the box)" },
+					{
+						label: "Payments",
+						value: "Stripe (test mode works out of the box), or Paystack for card and M-Pesa",
+					},
 				],
 			},
 			{
@@ -165,7 +182,7 @@ export function renderSetupPage(): BlockResponse {
 			{ type: "code", language: "bash", code: SEED },
 			{
 				type: "section",
-				text: "6. Restart or redeploy the site. Open the DashCommerce settings page in the admin and paste your Stripe test keys.",
+				text: "6. Restart or redeploy the site. Open the DashCommerce settings page in the admin, choose your payment provider and paste its test keys.",
 			},
 			{
 				type: "actions",
@@ -180,6 +197,41 @@ export function renderSetupPage(): BlockResponse {
 						type: "link",
 						label: "Stripe setup",
 						target: { kind: "external", url: LINKS.stripe },
+						appearance: "secondary",
+					},
+				],
+			},
+			{ type: "divider" },
+			{ type: "header", text: "Taking payments with Paystack" },
+			{
+				type: "section",
+				text: "Paystack takes card and M-Pesa payments in KES, NGN, GHS, ZAR and USD. It needs @dashcommerce/core 0.4.0 or later.",
+			},
+			{ type: "section", text: "1. Install the Paystack package." },
+			{ type: "code", language: "bash", code: PAYSTACK_INSTALL },
+			{
+				type: "section",
+				text: "2. Import it in a module the server loads before any request, such as src/middleware.ts. Importing it in astro.config.mjs is not enough, because that file only runs at build time.",
+			},
+			{ type: "code", language: "ts", code: PAYSTACK_MIDDLEWARE },
+			{ type: "section", text: "3. Let DashCommerce call Paystack's API." },
+			{ type: "code", language: "ts", code: PAYSTACK_CONFIG },
+			{
+				type: "section",
+				text: "4. In the DashCommerce settings, choose Paystack, paste your secret key and webhook signing secret, and press Test Paystack connection.",
+			},
+			{
+				type: "section",
+				text: "5. In the Paystack dashboard, set the webhook URL. Keep ?provider=paystack on the end.",
+			},
+			{ type: "code", language: "bash", code: PAYSTACK_WEBHOOK },
+			{
+				type: "actions",
+				elements: [
+					{
+						type: "link",
+						label: "Paystack setup",
+						target: { kind: "external", url: LINKS.paystack },
 						appearance: "secondary",
 					},
 				],

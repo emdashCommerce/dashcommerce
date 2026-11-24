@@ -57,6 +57,10 @@ describe("setup page", () => {
 		expect(text).toContain("DashCommerce Lite");
 		expect(text).toContain("dashcommerce-lite");
 		expect(text).toContain("Don't install Lite alongside core.");
+		expect(text).toContain("npm install @dashcommerce/paystack");
+		expect(text).toContain('import "@dashcommerce/paystack"');
+		expect(text).toContain('allowedHosts: ["api.paystack.co"]');
+		expect(text).toContain("checkout/webhook?provider=paystack");
 		expect(text).not.toMatch(/in progress/i);
 	});
 
