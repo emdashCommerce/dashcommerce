@@ -338,6 +338,50 @@ export interface PaymentStatusResult {
 	reason?: string;
 }
 
+/** A bank or mobile-money provider in a country, for payout onboarding. */
+export interface PaymentProviderBank {
+	code: string;
+	name: string;
+}
+
+export interface ResolvePayoutAccountInput {
+	accountNumber: string;
+	bankCode: string;
+}
+
+export interface CreatePayoutAccountInput {
+	accountNumber: string;
+	bankCode: string;
+	/** ISO-2 country of the account. */
+	country: string;
+	businessName: string;
+	businessEmail: string;
+	businessMobile: string;
+	businessContact?: string;
+	businessContactMobile?: string;
+	/**
+	 * Default split type stored on the payout account, when the provider has
+	 * one. Core still sends exact per-vendor allocations on each payment; this
+	 * is only the account's fallback configuration.
+	 */
+	splitType?: "percentage" | "flat";
+	/** Decimal percentage (0.1) or a major-unit flat amount, per `splitType`. */
+	splitValue?: number;
+	metadata?: Record<string, string>;
+}
+
+/** What a provider returns after creating a vendor payout account. */
+export interface CreatedPayoutAccount {
+	accountReference: string;
+	accountName: string;
+	bankName?: string;
+	bankCode?: string;
+	country?: string;
+	/** Last four digits, never the full account number. */
+	maskedAccountNumber?: string;
+	metadata?: Record<string, string>;
+}
+
 export interface PaymentProvider {
 	readonly id: string;
 	readonly label: string;
@@ -432,4 +476,28 @@ export interface PaymentProvider {
 		ctx: PaymentProviderRuntimeContext,
 		credentials: PaymentProviderCredentials,
 	): Promise<ConnectionCheckResult>;
+
+	/**
+	 * Provider-managed payout onboarding. When a provider implements these,
+	 * Vendors can list banks, resolve an account name and create a vendor
+	 * payout account without sending the merchant to the provider's
+	 * dashboard. All three are optional and independent.
+	 */
+	listPayoutBanks?(
+		ctx: PaymentProviderRuntimeContext,
+		country: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<PaymentProviderBank[]>;
+
+	resolvePayoutAccount?(
+		ctx: PaymentProviderRuntimeContext,
+		input: ResolvePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<{ accountName: string }>;
+
+	createPayoutAccount?(
+		ctx: PaymentProviderRuntimeContext,
+		input: CreatePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<CreatedPayoutAccount>;
 }

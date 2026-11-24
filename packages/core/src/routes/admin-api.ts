@@ -17,7 +17,6 @@ import type {
 	Customer,
 	Order,
 	OrderItem,
-	ProductFields,
 	Refund,
 	Review,
 	ShippingClass,
@@ -207,6 +206,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 			capabilities: provider.capabilities ?? {},
 			checkoutStyles: providerCheckoutStyles(provider),
 			canCheckConnection: typeof provider.checkConnection === "function",
+			payoutOnboarding: typeof provider.createPayoutAccount === "function",
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
 				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),
@@ -1488,6 +1488,242 @@ async function createVendor(ctx: PluginContext, routeCtx: RouteContext): Promise
 	return json({ vendor }, 201);
 }
 
+function maskAccountNumber(value: string): string {
+	const trimmed = value.trim();
+	if (trimmed.length <= 4) return "••••";
+	return `••••${trimmed.slice(-4)}`;
+}
+
+async function listProviderPayoutBanks(ctx: PluginContext, req: Request): Promise<Response> {
+	const url = new URL(req.url);
+	const providerId = (url.searchParams.get("provider") ?? "").trim();
+	const country = (url.searchParams.get("country") ?? "").trim().toUpperCase();
+	if (!providerId) return json({ error: "provider is required" }, 400);
+	if (!/^[A-Z]{2}$/u.test(country)) {
+		return json({ error: "country must be an ISO-2 code" }, 400);
+	}
+	const provider = getPaymentProvider(providerId);
+	if (!provider?.listPayoutBanks) {
+		return json(
+			{ error: `Payment provider "${providerId}" does not support payout banks` },
+			400,
+		);
+	}
+	const credentials = await loadPaymentProviderCredentials(ctx.kv, providerId);
+	if (!credentials) {
+		return json({ error: `Payment provider "${providerId}" is not configured` }, 400);
+	}
+	try {
+		const banks = await provider.listPayoutBanks(ctx, country, credentials);
+		return json({ banks });
+	} catch (err) {
+		return json(
+			{ error: err instanceof Error ? err.message : "Could not load banks" },
+			502,
+		);
+	}
+}
+
+async function resolveProviderPayoutAccount(
+	ctx: PluginContext,
+	routeCtx: RouteContext,
+): Promise<Response> {
+	const input = (routeCtx.input ?? {}) as {
+		providerId?: string;
+		accountNumber?: string;
+		bankCode?: string;
+	};
+	const providerId = typeof input.providerId === "string" ? input.providerId.trim() : "";
+	const accountNumber =
+		typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
+	const bankCode = typeof input.bankCode === "string" ? input.bankCode.trim() : "";
+	if (!providerId) return json({ error: "providerId is required" }, 400);
+	if (!/^\S{4,34}$/u.test(accountNumber)) {
+		return json({ error: "accountNumber must be 4–34 characters with no spaces" }, 400);
+	}
+	if (!/^\S{1,16}$/u.test(bankCode)) {
+		return json({ error: "bankCode is required" }, 400);
+	}
+	const provider = getPaymentProvider(providerId);
+	if (!provider?.resolvePayoutAccount) {
+		return json(
+			{ error: `Payment provider "${providerId}" does not support account resolution` },
+			400,
+		);
+	}
+	const credentials = await loadPaymentProviderCredentials(ctx.kv, providerId);
+	if (!credentials) {
+		return json({ error: `Payment provider "${providerId}" is not configured` }, 400);
+	}
+	try {
+		const result = await provider.resolvePayoutAccount(
+			ctx,
+			{ accountNumber, bankCode },
+			credentials,
+		);
+		if (!result.accountName?.trim()) {
+			return json({ error: "Provider returned no account name" }, 502);
+		}
+		return json({ accountName: result.accountName.trim() });
+	} catch (err) {
+		return json(
+			{ error: err instanceof Error ? err.message : "Could not resolve the account" },
+			502,
+		);
+	}
+}
+
+async function createProviderPayoutAccount(
+	ctx: PluginContext,
+	routeCtx: RouteContext,
+): Promise<Response> {
+	const input = (routeCtx.input ?? {}) as {
+		providerId?: string;
+		vendorId?: string;
+		accountNumber?: string;
+		bankCode?: string;
+		country?: string;
+		businessName?: string;
+		businessEmail?: string;
+		businessMobile?: string;
+		businessContact?: string;
+		businessContactMobile?: string;
+		splitType?: string;
+		splitValue?: number;
+		metadata?: Record<string, string>;
+		replace?: boolean;
+	};
+	const providerId = typeof input.providerId === "string" ? input.providerId.trim() : "";
+	const vendorId = typeof input.vendorId === "string" ? input.vendorId.trim() : "";
+	const accountNumber =
+		typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
+	const bankCode = typeof input.bankCode === "string" ? input.bankCode.trim() : "";
+	const country = (typeof input.country === "string" ? input.country : "").trim().toUpperCase();
+	const businessName =
+		typeof input.businessName === "string" ? input.businessName.trim() : "";
+	const businessEmail =
+		typeof input.businessEmail === "string" ? input.businessEmail.trim() : "";
+	const businessMobile =
+		typeof input.businessMobile === "string" ? input.businessMobile.trim() : "";
+
+	if (!providerId || !vendorId) {
+		return json({ error: "providerId and vendorId are required" }, 400);
+	}
+	if (!/^\S{4,34}$/u.test(accountNumber)) {
+		return json({ error: "accountNumber must be 4–34 characters with no spaces" }, 400);
+	}
+	if (!/^\S{1,16}$/u.test(bankCode)) return json({ error: "bankCode is required" }, 400);
+	if (!/^[A-Z]{2}$/u.test(country)) {
+		return json({ error: "country must be an ISO-2 code" }, 400);
+	}
+	if (!businessName) return json({ error: "businessName is required" }, 400);
+	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail)) {
+		return json({ error: "A valid businessEmail is required" }, 400);
+	}
+	if (!businessMobile) return json({ error: "businessMobile is required" }, 400);
+
+	const splitType = input.splitType ?? "percentage";
+	if (splitType !== "percentage" && splitType !== "flat") {
+		return json({ error: "splitType must be percentage or flat" }, 400);
+	}
+	const splitValue = input.splitValue ?? (splitType === "percentage" ? 0.1 : 0);
+	if (typeof splitValue !== "number" || !Number.isFinite(splitValue) || splitValue < 0) {
+		return json({ error: "splitValue must be a non-negative number" }, 400);
+	}
+	if (splitType === "percentage" && splitValue > 1) {
+		return json({ error: "percentage splitValue is a decimal from 0 to 1" }, 400);
+	}
+	if (splitType === "flat" && splitValue <= 0) {
+		return json({ error: "flat splitValue must be positive" }, 400);
+	}
+
+	const provider = getPaymentProvider(providerId);
+	if (!provider?.createPayoutAccount) {
+		return json(
+			{ error: `Payment provider "${providerId}" does not support payout onboarding` },
+			400,
+		);
+	}
+	const credentials = await loadPaymentProviderCredentials(ctx.kv, providerId);
+	if (!credentials) {
+		return json({ error: `Payment provider "${providerId}" is not configured` }, 400);
+	}
+
+	const store = storeOf<Vendor>(ctx, "vendors");
+	const vendor = (await store.get(vendorId)) as Vendor | null;
+	if (!vendor) return json({ error: "Vendor not found" }, 404);
+	if (vendor.paymentAccounts?.[providerId] && input.replace !== true) {
+		return json(
+			{
+				error: `Vendor already has a ${providerId} payout account. Remove it or pass replace: true.`,
+			},
+			409,
+		);
+	}
+
+	try {
+		const created = await provider.createPayoutAccount(
+			ctx,
+			{
+				accountNumber,
+				bankCode,
+				country,
+				businessName,
+				businessEmail,
+				businessMobile,
+				...(typeof input.businessContact === "string" && input.businessContact.trim()
+					? { businessContact: input.businessContact.trim() }
+					: {}),
+				...(typeof input.businessContactMobile === "string" &&
+				input.businessContactMobile.trim()
+					? { businessContactMobile: input.businessContactMobile.trim() }
+					: {}),
+				splitType,
+				splitValue,
+				...(input.metadata ? { metadata: input.metadata } : {}),
+			},
+			credentials,
+		);
+		if (!created.accountReference?.trim()) {
+			return json({ error: "Provider returned no account reference" }, 502);
+		}
+		if (!created.accountName?.trim()) {
+			return json({ error: "Provider returned no account name" }, 502);
+		}
+		const now = new Date().toISOString();
+		const account: VendorPaymentAccount = {
+			accountReference: created.accountReference.trim(),
+			status: "active",
+			accountName: created.accountName.trim(),
+			...(created.bankName ? { bankName: created.bankName } : {}),
+			bankCode: created.bankCode ?? bankCode,
+			country: created.country ?? country,
+			maskedAccountNumber: created.maskedAccountNumber ?? maskAccountNumber(accountNumber),
+			...(created.metadata ? { metadata: created.metadata } : {}),
+			...(created.bankName ? { label: created.bankName } : {}),
+			createdAt: now,
+			updatedAt: now,
+		};
+		const accounts = { ...(vendor.paymentAccounts ?? {}), [providerId]: account };
+		const next: Vendor = {
+			...vendor,
+			paymentAccounts: accounts,
+			...(vendor.stripeAccountId ? {} : { onboardingStatus: "active" }),
+			updatedAt: now,
+		};
+		await store.put(vendorId, next);
+		return json({ vendor: { ...next, id: vendorId } }, 201);
+	} catch (err) {
+		return json(
+			{
+				error:
+					err instanceof Error ? err.message : "Could not create the payout account",
+			},
+			502,
+		);
+	}
+}
+
 async function refreshVendorFromStripe(
 	ctx: PluginContext,
 	vendorId: string,
@@ -2060,6 +2296,33 @@ export const adminApiRoutes = {
 				return patchVendor(ctx, id, routeCtx);
 			}
 			return json({ error: "Method not allowed" }, 405);
+		},
+	},
+	"admin/vendors/payout-banks": {
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+			const ctx = getCtx(routeCtx, _c);
+			if (!(await requireVendorRoutesEnabled(ctx))) return vendorRoutesOffResponse();
+			return listProviderPayoutBanks(ctx, routeCtx.request);
+		},
+	},
+	"admin/vendors/payout-account/resolve": {
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+			const ctx = getCtx(routeCtx, _c);
+			if (!(await requireVendorRoutesEnabled(ctx))) return vendorRoutesOffResponse();
+			if (routeCtx.request.method !== "POST") {
+				return json({ error: "Method not allowed" }, 405);
+			}
+			return resolveProviderPayoutAccount(ctx, routeCtx);
+		},
+	},
+	"admin/vendors/payout-account": {
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+			const ctx = getCtx(routeCtx, _c);
+			if (!(await requireVendorRoutesEnabled(ctx))) return vendorRoutesOffResponse();
+			if (routeCtx.request.method !== "POST") {
+				return json({ error: "Method not allowed" }, 405);
+			}
+			return createProviderPayoutAccount(ctx, routeCtx);
 		},
 	},
 	"admin/vendors/refresh": {
