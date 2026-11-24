@@ -11,6 +11,7 @@ export interface RequestedHostedCheckoutFeatures {
 	coupons?: boolean;
 	connect?: boolean;
 	subscriptions?: boolean;
+	splits?: boolean;
 }
 
 export function unsupportedHostedCheckoutFeatures(
@@ -22,6 +23,7 @@ export function unsupportedHostedCheckoutFeatures(
 	if (requested.coupons && !caps?.coupons) missing.push("coupons");
 	if (requested.connect && !caps?.connect) missing.push("connect");
 	if (requested.subscriptions && !caps?.subscriptions) missing.push("subscriptions");
+	if (requested.splits && !caps?.splits) missing.push("splits");
 	return missing;
 }
 

@@ -27,6 +27,7 @@ import type {
 	Subscription,
 	TaxRate,
 	Vendor,
+	VendorPaymentAccount,
 	VendorPayout,
 } from "../types";
 import { refundOrder } from "../orders/refund";
@@ -112,12 +113,34 @@ async function requireConnectEnabled(ctx: PluginContext): Promise<boolean> {
 	return (await ctx.kv.get<boolean>("settings:connectEnabled")) === true;
 }
 
+/**
+ * Vendor routes are useful when either Stripe Connect is on or a registered
+ * provider can split a payment across vendor accounts (Flutterwave
+ * subaccounts). The Stripe-only onboarding, refresh and payout routes still
+ * require Connect itself.
+ */
+async function requireVendorRoutesEnabled(ctx: PluginContext): Promise<boolean> {
+	if (await requireConnectEnabled(ctx)) return true;
+	return listPaymentProviders().some((provider) => provider.capabilities?.splits === true);
+}
+
 function connectOffResponse(): Response {
 	return json(
 		{
 			error: "marketplace_disabled",
 			message:
 				"Multi-vendor marketplace is disabled. Enable Stripe Connect in Settings to use vendor routes.",
+		},
+		409,
+	);
+}
+
+function vendorRoutesOffResponse(): Response {
+	return json(
+		{
+			error: "marketplace_disabled",
+			message:
+				"Multi-vendor marketplace is disabled. Enable Stripe Connect, or install a payment provider that supports split payments, to use vendor routes.",
 		},
 		409,
 	);
@@ -181,6 +204,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 		rows.push({
 			...card,
 			credentialFields: provider.credentialFields ?? {},
+			capabilities: provider.capabilities ?? {},
 			checkoutStyles: providerCheckoutStyles(provider),
 			canCheckConnection: typeof provider.checkConnection === "function",
 			secrets: {
@@ -1286,7 +1310,10 @@ async function listVendors(ctx: PluginContext, req: Request): Promise<Response> 
 			(v) =>
 				v.name.toLowerCase().includes(q) ||
 				v.email.toLowerCase().includes(q) ||
-				v.stripeAccountId.toLowerCase().includes(q),
+				(v.stripeAccountId ?? "").toLowerCase().includes(q) ||
+				Object.values(v.paymentAccounts ?? {}).some((account) =>
+					account.accountReference.toLowerCase().includes(q),
+				),
 		);
 	}
 	return json({ items, cursor: result.cursor, hasMore: result.hasMore });
@@ -1303,6 +1330,8 @@ async function patchVendor(
 	const input = (routeCtx.input ?? {}) as {
 		name?: string;
 		platformFeePercent?: number;
+		paymentAccount?: PaymentAccountInput;
+		paymentAccounts?: PaymentAccountInput[];
 	};
 	const patch: Partial<Vendor> = {};
 	if (typeof input.name === "string") {
@@ -1317,6 +1346,23 @@ async function patchVendor(
 		}
 		patch.platformFeePercent = fee;
 	}
+	const accountInputs =
+		input.paymentAccounts ?? (input.paymentAccount ? [input.paymentAccount] : []);
+	if (accountInputs.length > 0) {
+		const accounts = { ...(current.paymentAccounts ?? {}) };
+		for (const raw of accountInputs) {
+			const parsed = parsePaymentAccount(raw);
+			if (!parsed.ok) return json({ error: parsed.error }, 400);
+			if (parsed.account) accounts[parsed.providerId] = parsed.account;
+			else delete accounts[parsed.providerId];
+		}
+		patch.paymentAccounts = Object.keys(accounts).length > 0 ? accounts : undefined;
+		if (!current.stripeAccountId) {
+			patch.onboardingStatus = Object.values(accounts).some((a) => a.status === "active")
+				? "active"
+				: "pending";
+		}
+	}
 	if (Object.keys(patch).length === 0) {
 		return json({ error: "No updatable fields provided" }, 400);
 	}
@@ -1327,6 +1373,122 @@ async function patchVendor(
 	};
 	await store.put(vendorId, next);
 	return json({ vendor: { ...next, id: vendorId } });
+}
+
+interface PaymentAccountInput {
+	providerId?: string;
+	accountReference?: string | null;
+	status?: string;
+	currency?: string;
+	label?: string;
+}
+
+type ParsedPaymentAccount =
+	| { ok: true; providerId: string; account: VendorPaymentAccount | null }
+	| { ok: false; error: string };
+
+/**
+ * Validate a vendor payment account from the admin API. `accountReference:
+ * null` (or an empty string) removes the provider's account; anything else
+ * must name a registered provider that declares `capabilities.splits`.
+ */
+function parsePaymentAccount(input: PaymentAccountInput): ParsedPaymentAccount {
+	const providerId = typeof input.providerId === "string" ? input.providerId.trim() : "";
+	if (!providerId) return { ok: false, error: "paymentAccount.providerId is required" };
+	const provider = getPaymentProvider(providerId);
+	if (!provider) return { ok: false, error: `Unknown payment provider "${providerId}"` };
+	if (!provider.capabilities?.splits) {
+		return { ok: false, error: `Payment provider "${providerId}" does not support split payments` };
+	}
+
+	const rawReference = input.accountReference;
+	if (rawReference === null || (typeof rawReference === "string" && rawReference.trim() === "")) {
+		return { ok: true, providerId, account: null };
+	}
+	if (typeof rawReference !== "string") {
+		return { ok: false, error: "paymentAccount.accountReference must be a string or null" };
+	}
+	const accountReference = rawReference.trim();
+	if (!/^\S{4,128}$/u.test(accountReference)) {
+		return {
+			ok: false,
+			error: "paymentAccount.accountReference must be 4–128 characters with no spaces",
+		};
+	}
+
+	const status = input.status ?? "active";
+	if (status !== "active" && status !== "pending" && status !== "disabled") {
+		return { ok: false, error: "paymentAccount.status must be active, pending or disabled" };
+	}
+
+	const currencyRaw = input.currency?.trim().toUpperCase();
+	if (currencyRaw && !/^[A-Z]{3}$/u.test(currencyRaw)) {
+		return { ok: false, error: "paymentAccount.currency must be an ISO 4217 code" };
+	}
+
+	const label = input.label?.trim();
+	if (label && label.length > 80) {
+		return { ok: false, error: "paymentAccount.label must be at most 80 characters" };
+	}
+
+	return {
+		ok: true,
+		providerId,
+		account: {
+			accountReference,
+			status,
+			...(currencyRaw ? { currency: currencyRaw } : {}),
+			...(label ? { label } : {}),
+			updatedAt: new Date().toISOString(),
+		},
+	};
+}
+
+async function createVendor(ctx: PluginContext, routeCtx: RouteContext): Promise<Response> {
+	const input = (routeCtx.input ?? {}) as {
+		name?: string;
+		email?: string;
+		platformFeePercent?: number;
+		paymentAccount?: PaymentAccountInput;
+	};
+	const name = typeof input.name === "string" ? input.name.trim() : "";
+	if (!name) return json({ error: "name is required" }, 400);
+	const email = typeof input.email === "string" ? input.email.trim() : "";
+	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+		return json({ error: "A valid email is required" }, 400);
+	}
+	const fee = input.platformFeePercent ?? 0;
+	if (typeof fee !== "number" || !Number.isFinite(fee) || fee < 0 || fee > 100) {
+		return json({ error: "platformFeePercent must be between 0 and 100" }, 400);
+	}
+
+	const accounts: Record<string, VendorPaymentAccount> = {};
+	if (input.paymentAccount) {
+		const parsed = parsePaymentAccount(input.paymentAccount);
+		if (!parsed.ok) return json({ error: parsed.error }, 400);
+		if (parsed.account) accounts[parsed.providerId] = parsed.account;
+	}
+
+	const id = randomId();
+	const now = new Date().toISOString();
+	const vendor: Vendor = {
+		id,
+		stripeAccountId: "",
+		name,
+		email,
+		onboardingStatus: Object.values(accounts).some((a) => a.status === "active")
+			? "active"
+			: "pending",
+		platformFeePercent: fee,
+		detailsSubmitted: false,
+		chargesEnabled: false,
+		payoutsEnabled: false,
+		...(Object.keys(accounts).length > 0 ? { paymentAccounts: accounts } : {}),
+		createdAt: now,
+		updatedAt: now,
+	};
+	await storeOf<Vendor>(ctx, "vendors").put(id, vendor);
+	return json({ vendor }, 201);
 }
 
 async function refreshVendorFromStripe(
@@ -1877,7 +2039,7 @@ export const adminApiRoutes = {
 	"admin/vendors": {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
-			if (!(await requireConnectEnabled(ctx))) return connectOffResponse();
+			if (!(await requireVendorRoutesEnabled(ctx))) return vendorRoutesOffResponse();
 			return listVendors(ctx, routeCtx.request);
 		},
 	},
@@ -1891,7 +2053,10 @@ export const adminApiRoutes = {
 	"admin/vendors/item": {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
-			if (!(await requireConnectEnabled(ctx))) return connectOffResponse();
+			if (!(await requireVendorRoutesEnabled(ctx))) return vendorRoutesOffResponse();
+			if (routeCtx.request.method === "POST") {
+				return createVendor(ctx, routeCtx);
+			}
 			const id = queryOrPath(routeCtx.request, "id", "vendors");
 			if (!id) return json({ error: "Missing vendor id" }, 400);
 			if (routeCtx.request.method === "PATCH") {

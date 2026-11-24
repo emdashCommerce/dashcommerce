@@ -24,6 +24,7 @@ import { money, zero } from "../money";
 import {
 	DEFAULT_PAYMENT_PROVIDER_ID,
 	type InitCheckoutInput,
+	type PaymentProviderSplitAllocation,
 	loadPaymentProviderCredentials,
 	providerCheckoutStyles,
 	resolveProvider,
@@ -45,6 +46,7 @@ import { createPaymentIntent } from "../stripe/payment-intents";
 import type { CartLineItem, CartState, StockLockEntry } from "../types";
 import { randomId } from "../util/ids";
 import { getPublicSiteUrl } from "../util/site-url";
+import { computeProviderSplit } from "../vendors/provider-split";
 import { computeSplit, connectEnabled } from "../vendors/split";
 import { resolveSessionId } from "./cart";
 
@@ -592,7 +594,8 @@ export const checkoutRoutes = {
 
 			let transferDataPreview: { destination: string; amount?: number } | undefined;
 			let applicationFeePreview: number | undefined;
-			if (await connectEnabled(ctx)) {
+			const hasVendorItems = recalculated.items.some((item) => item.vendorId);
+			if (provider.id === "stripe" && (await connectEnabled(ctx))) {
 				try {
 					const plan = await computeSplit(ctx, recalculated);
 					if (plan.mode === "single-vendor") {
@@ -611,6 +614,7 @@ export const checkoutRoutes = {
 				coupons: recalculated.discountTotal.amount > 0 && !isSubscriptionCart,
 				connect: Boolean(transferDataPreview) || applicationFeePreview !== undefined,
 				subscriptions: isSubscriptionCart,
+				splits: provider.id !== "stripe" && hasVendorItems,
 			});
 			if (unsupported.length > 0) {
 				return new Response(
@@ -620,6 +624,26 @@ export const checkoutRoutes = {
 					}),
 					{ status: 409, headers: { "Content-Type": "application/json" } },
 				);
+			}
+
+			// Non-Stripe split: core computes exact per-vendor minor amounts
+			// from trusted cart prices and the vendor's payout account. The
+			// provider only routes them.
+			let allocations: PaymentProviderSplitAllocation[] | undefined;
+			let platformRemainderMinor: number | undefined;
+			if (provider.id !== "stripe" && hasVendorItems) {
+				try {
+					const plan = await computeProviderSplit(ctx, recalculated, provider.id);
+					allocations = plan.allocations;
+					platformRemainderMinor = plan.platformRemainderMinor;
+				} catch (err) {
+					return new Response(
+						JSON.stringify({
+							error: err instanceof Error ? err.message : "Vendor split computation failed",
+						}),
+						{ status: 409, headers: { "Content-Type": "application/json" } },
+					);
+				}
 			}
 
 			// Tax mode "stripe_tax" means defer tax calculation to Stripe.
@@ -695,7 +719,7 @@ export const checkoutRoutes = {
 			// create-intent. Multi-vendor carts are rejected the same way.
 			let transferData: { destination: string; amount?: number } | undefined;
 			let applicationFeeAmount: number | undefined;
-			if (await connectEnabled(ctx)) {
+			if (provider.id === "stripe" && (await connectEnabled(ctx))) {
 				try {
 					const plan = await computeSplit(ctx, recalculated);
 					if (plan.mode === "single-vendor") {
@@ -805,6 +829,8 @@ export const checkoutRoutes = {
 				allowPromotionCodes: false,
 				clientReferenceId: orderDraftId,
 				metadata,
+				...(allocations ? { allocations } : {}),
+				...(platformRemainderMinor !== undefined ? { platformRemainderMinor } : {}),
 				...(hasPhysical && recalculated.shippingAddress
 					? {
 							shippingAddressCollection: {

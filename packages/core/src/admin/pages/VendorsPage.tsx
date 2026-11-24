@@ -2,8 +2,9 @@
  * Vendors admin page.
  *
  * When multi-vendor marketplace is disabled, this page renders a first-run
- * empty state directing the operator to Settings. When enabled, it shows
- * onboarding + list + inline edit for platform fee and Stripe refresh.
+ * empty state directing the operator to Settings. When enabled (Stripe
+ * Connect, or a provider that can split payments), it shows onboarding, the
+ * vendor list, and inline edit for the platform fee and payout accounts.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +18,7 @@ import {
 	Loading,
 	Money,
 	NumberInput,
+	Select,
 	Table,
 	confirm,
 	countryOptions,
@@ -25,7 +27,7 @@ import {
 } from "../kit";
 import { EmptyState } from "../ui/EmptyState";
 import { StatusBadge } from "../ui/StatusBadge";
-import type { Vendor, VendorPayout } from "../../types";
+import type { Vendor, VendorPaymentAccount, VendorPayout } from "../../types";
 import { T } from "../theme";
 
 const STATUS_OPTIONS = [
@@ -38,6 +40,8 @@ const STATUS_OPTIONS = [
 interface SettingsGateState {
 	connectEnabled: boolean;
 	defaultFeePercent: number;
+	/** Registered providers that can split a payment across vendor accounts. */
+	splitsProviders: Array<{ id: string; label: string }>;
 }
 
 type PageState = "loading" | "disabled" | "ready" | "error";
@@ -60,9 +64,7 @@ export function VendorsPage() {
 	const [payouts, setPayouts] = useState<Record<string, VendorPayout[]>>({});
 	const [pending, setPending] = useState<Record<string, boolean>>({});
 	const [editing, setEditing] = useState<{
-		vendorId: string;
-		name: string;
-		fee: number;
+		vendor: Vendor;
 	} | null>(null);
 
 	const loadVendors = useCallback(async () => {
@@ -80,14 +82,25 @@ export function VendorsPage() {
 			try {
 				const settings = await api.get<Record<string, unknown>>("admin/settings");
 				const enabled = settings.connectEnabled === true;
+				const providers = Array.isArray(settings._providers)
+					? (settings._providers as Array<{
+							id: string;
+							label: string;
+							capabilities?: { splits?: boolean };
+						}>)
+					: [];
+				const splitsProviders = providers
+					.filter((provider) => provider.capabilities?.splits === true)
+					.map((provider) => ({ id: provider.id, label: provider.label }));
 				setGate({
 					connectEnabled: enabled,
 					defaultFeePercent:
 						typeof settings.connectPlatformFeePercent === "number"
 							? (settings.connectPlatformFeePercent as number)
 							: 0,
+					splitsProviders,
 				});
-				if (!enabled) {
+				if (!enabled && splitsProviders.length === 0) {
 					setPageState("disabled");
 					return;
 				}
@@ -125,7 +138,7 @@ export function VendorsPage() {
 			<Card title="Vendors">
 				<EmptyState
 					title="Multi-vendor marketplace is off"
-					description="Enable Stripe Connect in Settings to onboard vendors and split payouts on each sale. When disabled, all sales settle to your platform account."
+					description="Enable Stripe Connect in Settings, or install a payment provider that supports split payments, to onboard vendors and split payouts on each sale. When disabled, all sales settle to your platform account."
 					action={
 						<a
 							href="/_emdash/admin/plugins/dashcommerce/settings"
@@ -149,16 +162,20 @@ export function VendorsPage() {
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-			<VendorOnboardingCard
-				gate={gate as SettingsGateState}
-				api={api}
-				state={onboarding}
-				setState={setOnboarding}
-				onSuccess={async (url) => {
-					setLinkUrl(url);
-					await loadVendors();
-				}}
-			/>
+			{gate?.connectEnabled ? (
+				<VendorOnboardingCard
+					gate={gate}
+					api={api}
+					state={onboarding}
+					setState={setOnboarding}
+					onSuccess={async (url) => {
+						setLinkUrl(url);
+						await loadVendors();
+					}}
+				/>
+			) : gate && gate.splitsProviders.length > 0 ? (
+				<ProviderVendorCard gate={gate} api={api} onSuccess={loadVendors} />
+			) : null}
 			{linkUrl && (
 				<Card title="Onboarding link">
 					<Alert type="success" title="Send this link to the vendor">
@@ -261,9 +278,7 @@ export function VendorsPage() {
 											size="sm"
 											onClick={() =>
 												setEditing({
-													vendorId: v.id,
-													name: v.name,
-													fee: v.platformFeePercent,
+													vendor: v,
 												})
 											}
 										>
@@ -376,12 +391,13 @@ export function VendorsPage() {
 
 			{editing && (
 				<EditVendorModal
-					initial={editing}
+					initial={editing.vendor}
+					providers={gate?.splitsProviders ?? []}
 					onClose={() => setEditing(null)}
 					onSave={async (patch) => {
 						try {
 							await api.patch<{ vendor: Vendor }>(
-								`admin/vendors/item?id=${encodeURIComponent(editing.vendorId)}`,
+								`admin/vendors/item?id=${encodeURIComponent(editing.vendor.id)}`,
 								patch,
 							);
 							toast.success("Vendor updated");
@@ -519,23 +535,179 @@ function VendorOnboardingCard({
 	);
 }
 
+function ProviderVendorCard({
+	gate,
+	api,
+	onSuccess,
+}: {
+	gate: SettingsGateState;
+	api: ReturnType<typeof usePluginAPI>;
+	onSuccess: () => Promise<void>;
+}) {
+	const [name, setName] = useState("");
+	const [email, setEmail] = useState("");
+	const [fee, setFee] = useState<number | null>(gate.defaultFeePercent);
+	const [providerId, setProviderId] = useState(gate.splitsProviders[0]?.id ?? "");
+	const [accountReference, setAccountReference] = useState("");
+	const [submitting, setSubmitting] = useState(false);
+
+	const valid =
+		name.trim().length > 0 &&
+		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+		typeof fee === "number" &&
+		fee >= 0 &&
+		fee <= 100 &&
+		providerId.length > 0 &&
+		accountReference.trim().length >= 4;
+
+	async function add(): Promise<void> {
+		if (!valid) return;
+		setSubmitting(true);
+		try {
+			await api.post("admin/vendors/item", {
+				name: name.trim(),
+				email: email.trim(),
+				platformFeePercent: fee ?? 0,
+				paymentAccount: {
+					providerId,
+					accountReference: accountReference.trim(),
+					status: "active",
+				},
+			});
+			toast.success("Vendor added");
+			setName("");
+			setEmail("");
+			setAccountReference("");
+			await onSuccess();
+		} catch (err) {
+			toast.error("Could not add vendor", err instanceof Error ? err.message : undefined);
+		} finally {
+			setSubmitting(false);
+		}
+	}
+
+	return (
+		<Card title="Add a vendor">
+			<p style={{ color: T.textMuted, marginTop: 0 }}>
+				Paste the payout account id the provider gave you. For Flutterwave, create a collection
+				subaccount in the dashboard and use its <code>RS_…</code> id.
+			</p>
+			<FormField label="Vendor name">
+				<Input
+					value={name}
+					onChange={(e) => setName(e.currentTarget.value)}
+					placeholder="Acme Widgets"
+					disabled={submitting}
+				/>
+			</FormField>
+			<FormField label="Vendor email">
+				<Input
+					type="email"
+					value={email}
+					onChange={(e) => setEmail(e.currentTarget.value)}
+					placeholder="ops@acme.example"
+					disabled={submitting}
+				/>
+			</FormField>
+			{gate.splitsProviders.length > 1 && (
+				<FormField label="Payment provider">
+					<Select
+						value={providerId}
+						onChange={(e) => setProviderId(e.currentTarget.value)}
+						options={gate.splitsProviders.map((provider) => ({
+							value: provider.id,
+							label: provider.label,
+						}))}
+						disabled={submitting}
+					/>
+				</FormField>
+			)}
+			<FormField
+				label="Payout account"
+				description="The provider's account id for this vendor."
+			>
+				<Input
+					value={accountReference}
+					onChange={(e) => setAccountReference(e.currentTarget.value)}
+					placeholder="RS_…"
+					disabled={submitting}
+				/>
+			</FormField>
+			<FormField
+				label="Platform fee override"
+				description={`Leave at ${gate.defaultFeePercent}% to use the marketplace default.`}
+			>
+				<NumberInput
+					value={fee}
+					onChange={(v) => setFee(v ?? 0)}
+					min={0}
+					max={100}
+					step={0.1}
+					suffix="%"
+					disabled={submitting}
+				/>
+			</FormField>
+			<Button variant="primary" onClick={add} disabled={!valid || submitting}>
+				{submitting ? "Adding…" : "Add vendor"}
+			</Button>
+		</Card>
+	);
+}
+
+interface PaymentAccountDraft {
+	accountReference: string;
+	status: VendorPaymentAccount["status"];
+}
+
 function EditVendorModal({
 	initial,
+	providers,
 	onClose,
 	onSave,
 }: {
-	initial: { vendorId: string; name: string; fee: number };
+	initial: Vendor;
+	providers: Array<{ id: string; label: string }>;
 	onClose: () => void;
-	onSave: (patch: { name?: string; platformFeePercent?: number }) => Promise<void>;
+	onSave: (patch: {
+		name?: string;
+		platformFeePercent?: number;
+		paymentAccounts?: Array<{
+			providerId: string;
+			accountReference: string | null;
+			status: VendorPaymentAccount["status"];
+		}>;
+	}) => Promise<void>;
 }) {
 	const [name, setName] = useState(initial.name);
-	const [fee, setFee] = useState<number | null>(initial.fee);
+	const [fee, setFee] = useState<number | null>(initial.platformFeePercent);
+	const [accounts, setAccounts] = useState<Record<string, PaymentAccountDraft>>(() => {
+		const out: Record<string, PaymentAccountDraft> = {};
+		for (const provider of providers) {
+			const account = initial.paymentAccounts?.[provider.id];
+			out[provider.id] = {
+				accountReference: account?.accountReference ?? "",
+				status: account?.status ?? "active",
+			};
+		}
+		return out;
+	});
 	const [saving, setSaving] = useState(false);
 	const isValid =
 		name.trim().length > 0 &&
 		typeof fee === "number" &&
 		fee >= 0 &&
 		fee <= 100;
+
+	function setAccount(providerId: string, patch: Partial<PaymentAccountDraft>): void {
+		setAccounts((current) => ({
+			...current,
+			[providerId]: {
+				accountReference: current[providerId]?.accountReference ?? "",
+				status: current[providerId]?.status ?? "active",
+				...patch,
+			},
+		}));
+	}
 
 	return (
 		<div
@@ -559,9 +731,11 @@ function EditVendorModal({
 					background: T.surface,
 					border: `1px solid ${T.border}`,
 					borderRadius: 8,
-					maxWidth: 440,
+					maxWidth: 480,
 					width: "100%",
 					padding: "20px 24px",
+					maxHeight: "90vh",
+					overflowY: "auto",
 				}}
 			>
 				<h2 style={{ margin: "0 0 12px" }}>Edit vendor</h2>
@@ -586,6 +760,46 @@ function EditVendorModal({
 						disabled={saving}
 					/>
 				</FormField>
+				{providers.map((provider) => (
+					<div
+						key={provider.id}
+						style={{
+							marginTop: 12,
+							paddingTop: 12,
+							borderTop: `1px solid ${T.border}`,
+						}}
+					>
+						<FormField
+							label={`${provider.label} payout account`}
+							description="The account id the provider gave you (Flutterwave: RS_…). Leave blank to remove it."
+						>
+							<Input
+								value={accounts[provider.id]?.accountReference ?? ""}
+								onChange={(e) =>
+									setAccount(provider.id, { accountReference: e.currentTarget.value })
+								}
+								placeholder="RS_…"
+								disabled={saving}
+							/>
+						</FormField>
+						<FormField label="Account status">
+							<Select
+								value={accounts[provider.id]?.status ?? "active"}
+								onChange={(e) =>
+									setAccount(provider.id, {
+										status: e.currentTarget.value as VendorPaymentAccount["status"],
+									})
+								}
+								options={[
+									{ value: "active", label: "Active — can receive splits" },
+									{ value: "pending", label: "Pending — no splits yet" },
+									{ value: "disabled", label: "Disabled" },
+								]}
+								disabled={saving}
+							/>
+						</FormField>
+					</div>
+				))}
 				<div
 					style={{
 						display: "flex",
@@ -602,10 +816,26 @@ function EditVendorModal({
 						disabled={!isValid || saving}
 						onClick={async () => {
 							setSaving(true);
-							const patch: { name?: string; platformFeePercent?: number } = {};
+							const patch: {
+								name?: string;
+								platformFeePercent?: number;
+								paymentAccounts?: Array<{
+									providerId: string;
+									accountReference: string | null;
+									status: VendorPaymentAccount["status"];
+								}>;
+							} = {};
 							if (name.trim() !== initial.name) patch.name = name.trim();
-							if (fee !== initial.fee && typeof fee === "number")
+							if (fee !== initial.platformFeePercent && typeof fee === "number")
 								patch.platformFeePercent = fee;
+							if (providers.length > 0) {
+								patch.paymentAccounts = providers.map((provider) => ({
+									providerId: provider.id,
+									accountReference:
+										(accounts[provider.id]?.accountReference ?? "").trim() || null,
+									status: accounts[provider.id]?.status ?? "active",
+								}));
+							}
 							try {
 								await onSave(patch);
 							} finally {
