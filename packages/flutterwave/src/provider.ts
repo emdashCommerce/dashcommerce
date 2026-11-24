@@ -218,6 +218,7 @@ interface FlutterwaveRefundData {
 	comment?: string | null;
 	comments?: string | null;
 	flw_ref?: string;
+	meta?: unknown;
 	created_at?: string;
 	createdAt?: string;
 	transaction_id?: number;
@@ -255,6 +256,18 @@ function refundStatus(raw: string | undefined): RefundResult["status"] {
 
 function isFailedRefund(raw: string | undefined): boolean {
 	return refundStatus(raw) === "failed";
+}
+
+/**
+ * Flutterwave reports `completed` as soon as it accepts a refund, while the
+ * payout to the customer is a separate step tracked in `meta.disburse_status`
+ * (a string in some deliveries, an object in others). A `failed` value does
+ * not change the refund's status, but it means the customer has not been paid
+ * yet, so it is worth a log line.
+ */
+function disburseStatusOf(meta: unknown): string | undefined {
+	const value = metadataOf(meta)?.disburse_status;
+	return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -304,6 +317,14 @@ function refundTransactionId(refund: FlutterwaveRefundData): number | undefined 
  * Flutterwave's refund list is not filterable by transaction, so this walks
  * recent pages and matches the id and the tag. A failed refund does not
  * count, so it can be retried. The earliest match wins.
+ *
+ * `GET /v3/refunds` is not available to every key: a real test-mode run
+ * (24 Nov 2026) answered `400 {"message":"unauthorized"}` on an account that
+ * could create refunds and verify payments. That is an account/permission
+ * limit, not a transient failure, so refunds continue without the duplicate
+ * check and say so in the log. Any other failure still throws: a refund that
+ * cannot be de-duplicated because the network is down is better retried than
+ * guessed at.
  */
 async function findRefundForRequest(
 	ctx: PaymentProviderRuntimeContext,
@@ -312,25 +333,40 @@ async function findRefundForRequest(
 	refundRequestId: string,
 ): Promise<FlutterwaveRefundData | undefined> {
 	const matches: FlutterwaveRefundData[] = [];
-	for (let page = 1, totalPages = 1; page <= totalPages; page += 1) {
-		if (page > MAX_REFUND_PAGES) {
-			// Refunds are rare and the newest ones are listed first, so the
-			// retry that matters is almost always in range. Say so rather than
-			// blocking every refund on a store with a long refund history.
-			ctx.log.warn("Flutterwave refund list exceeded the lookup window", {
-				pagesScanned: MAX_REFUND_PAGES,
+	try {
+		for (let page = 1, totalPages = 1; page <= totalPages; page += 1) {
+			if (page > MAX_REFUND_PAGES) {
+				// Refunds are rare and the newest ones are listed first, so the
+				// retry that matters is almost always in range. Say so rather than
+				// blocking every refund on a store with a long refund history.
+				ctx.log.warn("Flutterwave refund list exceeded the lookup window", {
+					pagesScanned: MAX_REFUND_PAGES,
+					refundRequestId,
+				});
+				break;
+			}
+			const result = await listRefundPage(ctx, client, page);
+			for (const refund of result.data) {
+				if (refundTransactionId(refund) !== transactionId) continue;
+				const note = refund.comment ?? refund.comments ?? "";
+				if (COMMENT_REQUEST_ID.exec(note)?.[1] !== refundRequestId) continue;
+				if (!isFailedRefund(refund.status)) matches.push(refund);
+			}
+			totalPages = result.totalPages;
+		}
+	} catch (err) {
+		const unavailable =
+			err instanceof FlutterwaveApiError &&
+			(err.status === 401 || err.status === 403 || /unauthori[sz]ed|not found/i.test(err.message));
+		if (!unavailable) throw err;
+		ctx.log.warn(
+			"Flutterwave refund history is not available to this key; a retried refund cannot be de-duplicated",
+			{
 				refundRequestId,
-			});
-			break;
-		}
-		const result = await listRefundPage(ctx, client, page);
-		for (const refund of result.data) {
-			if (refundTransactionId(refund) !== transactionId) continue;
-			const note = refund.comment ?? refund.comments ?? "";
-			if (COMMENT_REQUEST_ID.exec(note)?.[1] !== refundRequestId) continue;
-			if (!isFailedRefund(refund.status)) matches.push(refund);
-		}
-		totalPages = result.totalPages;
+				reason: err.message,
+			},
+		);
+		return undefined;
 	}
 
 	matches.sort(
@@ -746,6 +782,15 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			}));
 
 		const amount = toMinorUnits(data.amount_refunded) ?? input.amount ?? 0;
+		if (disburseStatusOf(data.meta) === "failed") {
+			ctx.log.warn(
+				"Flutterwave accepted the refund but its disbursement failed; the customer has not been paid yet",
+				{
+					providerRefundId: String(data.id),
+					refundRequestId: input.refundRequestId,
+				},
+			);
+		}
 		return {
 			providerRefundId: String(data.id),
 			refundRequestId: input.refundRequestId,

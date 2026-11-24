@@ -1,0 +1,18 @@
+{
+	"id": 115037,
+	"amount_refunded": 500,
+	"status": "completed",
+	"flw_ref": "3294702781",
+	"destination": "payment_source",
+	"comments": "probe partial (refundRequestId=probe-refund-1)",
+	"meta": {
+		"source": "ledgerbalance",
+		"isPartialRefund": true,
+		"disburse_ref": "CC-REFD-31047843128-3294702781",
+		"disburse_status": "failed"
+	},
+	"created_at": "2026-11-24T13:57:23.000Z",
+	"wallet_id": 2607410,
+	"account_id": 123456,
+	"tx_id": 9877019
+}

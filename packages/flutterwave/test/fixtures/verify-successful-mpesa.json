@@ -1,0 +1,30 @@
+{
+	"id": 10633588,
+	"tx_ref": "dc-0123456789abcdef0123456789abcdef",
+	"flw_ref": "3294702781",
+	"device_fingerprint": "sanitized",
+	"amount": 1500,
+	"currency": "KES",
+	"charged_amount": 1500,
+	"app_fee": 73.5,
+	"merchant_fee": 0,
+	"processor_response": "Transaction Successful",
+	"auth_model": "LIPA_MPESA",
+	"ip": "203.0.113.10",
+	"narration": "FLW-PBF MPESA Transaction ",
+	"status": "successful",
+	"payment_type": "mpesa",
+	"created_at": "2026-11-24T13:56:39.000Z",
+	"account_id": 123456,
+	"meta": {
+		"MOMO_NETWORK": "SAFARICOM"
+	},
+	"amount_settled": 1426.5,
+	"customer": {
+		"id": 1234567,
+		"name": "Test Buyer",
+		"phone_number": "254700000000",
+		"email": "buyer@example.com",
+		"created_at": "2026-11-24T13:56:39.000Z"
+	}
+}

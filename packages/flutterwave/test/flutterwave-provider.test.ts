@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
 	InitCheckoutInput,
 	PaymentProviderRuntimeContext,
@@ -9,6 +11,13 @@ import {
 	toMajorUnits,
 	toMinorUnits,
 } from "../src/provider";
+
+function fixture(name: string): Record<string, unknown> {
+	return JSON.parse(readFileSync(join(import.meta.dir, "fixtures", name), "utf8")) as Record<
+		string,
+		unknown
+	>;
+}
 
 function makeMockRuntimeContext(
 	fetchHandler: (url: string, init?: RequestInit) => Promise<Response>,
@@ -395,6 +404,35 @@ describe("flutterwavePaymentProvider", () => {
 			expect(event.orderDraftId).toBe(draftId);
 		});
 
+		it("parses a charge.completed built from a real test-mode verify response", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({
+					event: "charge.completed",
+					"event.type": "M-PESA_TRANSACTION",
+					data: fixture("verify-successful-mpesa.json"),
+				}),
+			);
+			expect(event.type).toBe("charge.succeeded");
+			if (event.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(event.amount).toBe(150000);
+			expect(event.currency).toBe("KES");
+			expect(event.channel).toBe("M-Pesa");
+			expect(event.paymentReference).toBe("10633588");
+			expect(event.customer.email).toBe("buyer@example.com");
+			expect(event.orderDraftId).toBe("0123456789abcdef0123456789abcdef");
+		});
+
+		it("parses a refund object as Flutterwave really sends it", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify(fixture("refund-completed.json")),
+			);
+			expect(event.type).toBe("refund.updated");
+			if (event.type !== "refund.updated") throw new Error("expected refund.updated");
+			expect(event.providerRefundId).toBe("115037");
+			expect(event.providerEventId).toBe("refund:115037:succeeded");
+			expect(event.status).toBe("succeeded");
+		});
+
 		it("normalises a failed charge", () => {
 			const event = flutterwavePaymentProvider.parseWebhookEvent(
 				JSON.stringify(chargeEvent({ status: "failed", processor_response: "insufficient funds" })),
@@ -682,6 +720,59 @@ describe("flutterwavePaymentProvider", () => {
 			);
 			expect(refunds).toHaveLength(2);
 			expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+		});
+
+		it("still refunds when the refund history is not available to the key", async () => {
+			// A real test-mode account (24 Nov 2026) answered
+			// 400 {"message":"unauthorized"} for GET /v3/refunds while it could
+			// create refunds. Refunds must not be blocked by that.
+			const paths: string[] = [];
+			const ctx = makeMockRuntimeContext(async (url) => {
+				const { pathname } = new URL(url);
+				paths.push(pathname);
+				if (pathname === "/v3/refunds") return flutterwaveError("unauthorized", 400);
+				if (pathname === "/v3/transactions/908790/refund") {
+					return flutterwaveOk({ id: 8612, amount_refunded: 500, status: "completed" });
+				}
+				return flutterwaveError("Not found", 404);
+			});
+
+			const result = await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "908790",
+					refundRequestId: "refund-req-1",
+					amount: 50000,
+					currency: "KES",
+				},
+				credentials,
+			);
+			expect(result.providerRefundId).toBe("8612");
+			expect(paths).toContain("/v3/transactions/908790/refund");
+		});
+
+		it("refuses to refund blind when the refund history is briefly unavailable", async () => {
+			const paths: string[] = [];
+			const ctx = makeMockRuntimeContext(async (url) => {
+				const { pathname } = new URL(url);
+				paths.push(pathname);
+				if (pathname === "/v3/refunds") return flutterwaveError("Service unavailable", 503);
+				return flutterwaveOk({ id: 8612, amount_refunded: 500, status: "completed" });
+			});
+
+			await expect(
+				flutterwavePaymentProvider.refund(
+					ctx,
+					{
+						paymentReference: "908790",
+						refundRequestId: "refund-req-1",
+						amount: 50000,
+						currency: "KES",
+					},
+					credentials,
+				),
+			).rejects.toThrow(/Service unavailable/);
+			expect(paths).not.toContain("/v3/transactions/908790/refund");
 		});
 
 		it("resolves a tx_ref to the numeric id before refunding", async () => {
