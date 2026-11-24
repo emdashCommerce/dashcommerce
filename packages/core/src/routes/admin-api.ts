@@ -149,6 +149,20 @@ function providerCredentialSpec(key: string): { prefixes?: readonly string[] } |
 	return providerCredentialSetting(key)?.spec;
 }
 
+/**
+ * `paymentProvider` must name a provider registered on this server. The
+ * schema only checks its shape (it can't see the registry), so without this
+ * a typo or a provider whose package isn't imported would save and then
+ * fail at checkout.
+ */
+function unregisteredProviderError(value: unknown): string | null {
+	if (typeof value !== "string" || getPaymentProvider(value)) return null;
+	const registered = listPaymentProviders()
+		.map((p) => p.id)
+		.join(", ");
+	return `paymentProvider "${value}" is not a registered payment provider. Registered: ${registered}. Import the provider's package in a server module first.`;
+}
+
 function isSecretSetting(key: string): boolean {
 	return SECRET_SETTINGS_KEYS.has(key) || providerCredentialSetting(key) !== undefined;
 }
@@ -1980,6 +1994,11 @@ export const adminApiRoutes = {
 					currentEnabledCurrencies: currentEnabled ?? undefined,
 					extraSecret: providerCredentialSpec,
 				});
+				const providerError = unregisteredProviderError(report.values.paymentProvider);
+				if (providerError) {
+					report.ok = false;
+					report.errors.paymentProvider = providerError;
+				}
 				if (!report.ok) {
 					return json({ error: "invalid_settings", errors: report.errors }, 400);
 				}
@@ -2091,6 +2110,10 @@ export const adminApiRoutes = {
 			const body = (routeCtx.input ?? {}) as { key?: string; value?: unknown };
 			if (!body.key) return json({ ok: false, error: "key required" }, 400);
 			const result = validateSettingsKey(body.key, body.value, providerCredentialSpec);
+			if (result.ok && body.key === "paymentProvider") {
+				const providerError = unregisteredProviderError(result.value);
+				if (providerError) return json({ ok: false, error: providerError });
+			}
 			if (result.ok) return json({ ok: true, value: result.value });
 			return json({ ok: false, error: result.error });
 		},
