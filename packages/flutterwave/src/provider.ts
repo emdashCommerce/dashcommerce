@@ -242,6 +242,7 @@ interface FlutterwaveChargeData {
 	amount?: number | string;
 	currency?: string;
 	charged_amount?: number | string;
+	app_fee?: number | string;
 	status?: string;
 	payment_type?: string;
 	processor_response?: string;
@@ -316,6 +317,73 @@ function isFailedRefund(raw: string | undefined): boolean {
 function disburseStatusOf(meta: unknown): string | undefined {
 	const value = metadataOf(meta)?.disburse_status;
 	return typeof value === "string" ? value : undefined;
+}
+
+interface ChargeSplitSettlement {
+	allocations: Array<{ accountReference: string; amountMinor: number }>;
+	platformRemainderMinor?: number;
+	providerFeeMinor?: number;
+	currency?: string;
+	raw?: unknown;
+}
+
+function safeJsonObject(value: string): Record<string, unknown> | undefined {
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Flutterwave reports what each subaccount actually earned in
+ * `meta.split_settlement_info`, a JSON string keyed by subaccount id:
+ *
+ *   { "RS_A…": { merchant_commission, subaccount_earning },
+ *     "RS_B…": { … }, "total_merchant_commission": 76.5 }
+ *
+ * Amounts are in major units; core wants minor. `app_fee` is the provider's
+ * fee. Core records this on the order for reconciliation and never reprices
+ * the vendor shares with it.
+ */
+function splitSettlementFrom(
+	meta: unknown,
+	currency: string,
+	appFee: unknown,
+): ChargeSplitSettlement | undefined {
+	const raw = metadataOf(meta)?.split_settlement_info;
+	const info =
+		typeof raw === "string"
+			? safeJsonObject(raw)
+			: raw && typeof raw === "object"
+				? (raw as Record<string, unknown>)
+				: undefined;
+	if (!info) return undefined;
+
+	const allocations: Array<{ accountReference: string; amountMinor: number }> = [];
+	let platformRemainderMinor: number | undefined;
+	for (const [key, value] of Object.entries(info)) {
+		if (key === "total_merchant_commission") {
+			const amount = toMinorUnits(value);
+			if (amount !== undefined) platformRemainderMinor = amount;
+			continue;
+		}
+		if (!value || typeof value !== "object") continue;
+		const amount = toMinorUnits((value as Record<string, unknown>).subaccount_earning);
+		if (amount !== undefined) {
+			allocations.push({ accountReference: key, amountMinor: amount });
+		}
+	}
+	if (allocations.length === 0) return undefined;
+	const fee = toMinorUnits(appFee);
+	return {
+		allocations,
+		...(platformRemainderMinor !== undefined ? { platformRemainderMinor } : {}),
+		...(fee !== undefined ? { providerFeeMinor: fee } : {}),
+		currency,
+		raw: info,
+	};
 }
 
 /**
@@ -729,6 +797,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		}
 
 		const channel = channelLabel(d.payment_type);
+		const splitSettlement = splitSettlementFrom(d.meta, currency, d.app_fee);
 		return {
 			type: "charge.succeeded",
 			orderDraftId,
@@ -751,6 +820,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				...(d.customer?.phone_number ? { phone: d.customer.phone_number } : {}),
 			},
 			...(channel ? { channel } : {}),
+			...(splitSettlement ? { splitSettlement } : {}),
 			raw: payload,
 		};
 	},

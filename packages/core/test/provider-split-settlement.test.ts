@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import type { PluginContext, RouteContext } from "emdash";
 import {
 	type NormalizedPaymentEvent,
@@ -9,6 +9,8 @@ import {
 import sandbox from "../src/sandbox-entry";
 import type { Order, Vendor } from "../src/types";
 import { makeRouteContext, ticketCart } from "./helpers/route-harness";
+
+afterEach(() => resetPaymentProviders());
 
 const DRAFT_ID = "0123456789abcdef0123456789abcdef";
 

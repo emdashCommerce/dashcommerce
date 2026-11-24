@@ -117,6 +117,10 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 6. Checkout computes each vendor's line subtotal minus the platform fee. Tax, shipping and platform-owned items stay with the platform. A vendor with no active account, a non-positive share, or a settlement currency that differs from the cart's blocks checkout with a readable 409.
 7. Flutterwave's `flat_subaccount` pays each vendor that exact amount. Flutterwave's transaction fee and the NGN 50 stamp duty (over NGN 10,000) come out of the platform remainder, not the vendor shares. If the settlement is less than the sum of the vendor amounts, Flutterwave does not split that payment and sends the whole settlement to your main account — check the dashboard for those.
 
+### Reconciliation
+
+After a split payment, Flutterwave's verify response includes `meta.split_settlement_info`: what each subaccount actually earned and the platform's commission. The package parses it (with `app_fee`) into core's `splitSettlement`, and core stores it on the order as `providerSplits`, mapping each subaccount reference to its vendor. The admin order detail shows it under **Split settlement**. It records what Flutterwave settled; it never reprices the shares DashCommerce computed.
+
 Country-specific subaccount `meta` (SWIFT/routing/branch) is not collected by the form yet. The API accepts it for the US, Ghana, Tanzania, Rwanda, Uganda and SEPA countries; add it with the provider API until the form supports those countries.
 
 ## Develop

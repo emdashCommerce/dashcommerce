@@ -620,6 +620,21 @@ describe("flutterwavePaymentProvider", () => {
 			expect(event.orderDraftId).toBe("0123456789abcdef0123456789abcdef");
 			expect(event.amount).toBe(150000);
 			expect(event.paymentReference).toBe("10633643");
+			expect(event.splitSettlement).toMatchObject({
+				allocations: [
+					{
+						accountReference: "RS_CD57DC0FB468D17CC4EF6E28A2B70A62",
+						amountMinor: 90_000,
+					},
+					{
+						accountReference: "RS_A075186F846E729B97277DA02E6CD019",
+						amountMinor: 45_000,
+					},
+				],
+				platformRemainderMinor: 7_650,
+				providerFeeMinor: 7_350,
+				currency: "KES",
+			});
 			const raw = event.raw as { data: { meta: { split_settlement_info: string } } };
 			const split = JSON.parse(raw.data.meta.split_settlement_info) as Record<
 				string,

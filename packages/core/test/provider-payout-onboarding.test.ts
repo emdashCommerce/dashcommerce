@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { PluginContext, RouteContext } from "emdash";
 import {
 	createMockPaymentProvider,
@@ -9,6 +9,7 @@ import { adminApiRoutes } from "../src/routes/admin-api";
 import type { Vendor } from "../src/types";
 import { makeRouteContext } from "./helpers/route-harness";
 
+beforeEach(() => resetPaymentProviders());
 afterEach(() => resetPaymentProviders());
 
 function onboardingProvider() {

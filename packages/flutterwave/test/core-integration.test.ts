@@ -415,6 +415,7 @@ function chargeCompleted(
 	id: number,
 	amountMajor = 1500,
 	status = "successful",
+	extraMeta: Record<string, unknown> = {},
 ) {
 	return JSON.stringify({
 		event: "charge.completed",
@@ -426,6 +427,7 @@ function chargeCompleted(
 			amount: amountMajor,
 			currency: "KES",
 			charged_amount: amountMajor,
+			app_fee: Number((amountMajor * 0.049).toFixed(2)),
 			status,
 			payment_type: "mpesa",
 			processor_response: "Approved",
@@ -435,7 +437,7 @@ function chargeCompleted(
 				phone_number: "+254700000000",
 				email: "supporter@example.com",
 			},
-			meta: { orderDraftId },
+			meta: { orderDraftId, ...extraMeta },
 		},
 	});
 }
@@ -690,6 +692,42 @@ describe("@dashcommerce/flutterwave through core", () => {
 			{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 1350 },
 			{ id: "RS_V2", transaction_charge_type: "flat_subaccount", transaction_charge: 1350 },
 		]);
+
+		const body = (await res.json()) as { orderDraftId: string };
+		const txRef = String(flutterwave.getLastInit()?.tx_ref);
+		const tx = flutterwave.transactions.get(txRef);
+		if (!tx) throw new Error("checkout did not register a transaction");
+
+		// Flutterwave reports what each subaccount actually earned. Core stores
+		// it on the order for reconciliation.
+		const payload = chargeCompleted(txRef, body.orderDraftId, tx.id, 3000, "successful", {
+			split_settlement_info: JSON.stringify({
+				RS_V1: { merchant_commission: 0, subaccount_earning: 1350 },
+				total_merchant_commission: 153,
+				RS_V2: { merchant_commission: 0, subaccount_earning: 1350 },
+			}),
+		});
+		const webhook = await deliverWebhook(ctx, payload, SECRET_HASH);
+		expect(webhook.status).toBe(200);
+
+		const order = Array.from(getCol("orders").values())[0] as Order;
+		expect(order.providerSplits).toMatchObject({
+			providerId: "flutterwave",
+			allocations: [
+				{
+					vendorId: "v1",
+					accountReference: "RS_V1",
+					amount: { amount: 135_000, currency: "KES" },
+				},
+				{
+					vendorId: "v2",
+					accountReference: "RS_V2",
+					amount: { amount: 135_000, currency: "KES" },
+				},
+			],
+			platformRemainder: { amount: 15_300, currency: "KES" },
+			providerFee: { amount: 14_700, currency: "KES" },
+		});
 	});
 
 	it("returns Inline data in embedded mode and still creates the order from the webhook", async () => {
