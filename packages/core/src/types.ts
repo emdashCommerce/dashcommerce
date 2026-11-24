@@ -203,6 +203,27 @@ export interface VendorSplit {
 	stripePaymentIntentId?: string; // when multi-PI model is used
 }
 
+/** One vendor's share of a split payment, as the provider settled it. */
+export interface OrderProviderSplitAllocation {
+	/** Matched vendor, when core can resolve the provider account reference. */
+	vendorId?: string;
+	accountReference: string;
+	amount: Money;
+}
+
+/**
+ * Provider-reported settlement of a split payment, stored for reconciliation.
+ * This never changes the shares core computed; it records what the provider
+ * says each account actually earned, plus its fee and the platform remainder.
+ */
+export interface OrderProviderSplit {
+	providerId: string;
+	allocations: OrderProviderSplitAllocation[];
+	platformRemainder?: Money;
+	providerFee?: Money;
+	capturedAt: IsoDateTime;
+}
+
 export interface Order {
 	id: string;
 	orderNumber: string; // human-facing, zero-padded incrementing
@@ -225,6 +246,8 @@ export interface Order {
 	taxLines: TaxLine[];
 	couponCodes: string[];
 	vendorSplits?: VendorSplit[];
+	/** Provider-reported settlement of a split payment, for reconciliation. */
+	providerSplits?: OrderProviderSplit;
 	subscriptionIds?: string[];
 	stripePaymentIntentId: string; // unique — Stripe PaymentIntent id
 	/**

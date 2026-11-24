@@ -29,6 +29,7 @@ import type { PluginContext, RouteContext, StorageCollection } from "emdash";
 import { deleteLock, getLock } from "../cart/lock";
 import { clear as clearCart } from "../cart/store";
 import { sendSubscriptionRenewed, sendVendorActivated, sendVendorPayout } from "../emails";
+import { money } from "../money";
 import { createOrderFromPaymentIntent, findOrderByPaymentIntent } from "../orders/create";
 import { applyProviderRefundUpdate, recordRefundFromWebhook } from "../orders/refund";
 import {
@@ -54,7 +55,15 @@ import {
 } from "../subscriptions/create";
 import { handleInvoicePaymentFailed } from "../subscriptions/dunning";
 import type { CartState, StripeEventRecord } from "../types";
-import type { Address, CountryCode, Customer, Order } from "../types";
+import type {
+	Address,
+	CountryCode,
+	CurrencyCode,
+	Customer,
+	Order,
+	OrderProviderSplit,
+	Vendor,
+} from "../types";
 import { randomId } from "../util/ids";
 import { isUniqueViolation } from "../util/storage";
 import { findVendorByStripeAccountId, upsertVendorFromStripeAccount } from "../vendors/onboarding";
@@ -64,6 +73,16 @@ import { type CheckoutDraftSnapshot, draftKey } from "./checkout";
 type StripeEventsStore = StorageCollection<StripeEventRecord>;
 function stripeEventsStore(ctx: PluginContext): StripeEventsStore {
 	return (ctx.storage as unknown as { stripe_events: StripeEventsStore }).stripe_events;
+}
+
+type OrdersStore = StorageCollection<Order>;
+function ordersStore(ctx: PluginContext): OrdersStore {
+	return (ctx.storage as unknown as { orders: OrdersStore }).orders;
+}
+
+type VendorsStore = StorageCollection<Vendor>;
+function vendorsStore(ctx: PluginContext): VendorsStore {
+	return (ctx.storage as unknown as { vendors: VendorsStore }).vendors;
 }
 
 /**
@@ -658,6 +677,52 @@ function toCartAddress(addr: PaymentProviderAddress): Address {
 	};
 }
 
+/**
+ * Record what the provider says it settled for a split payment. This is
+ * informational: the order already exists, and a failure here must not make
+ * the webhook retry (which would be answered as a duplicate). The provider's
+ * account references are mapped to vendors when possible.
+ */
+async function recordProviderSplitSettlement(
+	ctx: PluginContext,
+	order: Order,
+	event: Extract<NormalizedPaymentEvent, { type: "charge.succeeded" }>,
+): Promise<void> {
+	const settlement = event.splitSettlement;
+	if (!settlement || settlement.allocations.length === 0) return;
+	const currency = (settlement.currency ?? event.currency).toUpperCase() as CurrencyCode;
+	const vendors = (await vendorsStore(ctx).query({ limit: 2000 })).items;
+	const byReference = new Map<string, string>();
+	for (const row of vendors) {
+		const vendor = row.data as Vendor;
+		const reference = vendor.paymentAccounts?.[event.providerId]?.accountReference;
+		if (reference) byReference.set(reference, vendor.id);
+	}
+	const providerSplits: OrderProviderSplit = {
+		providerId: event.providerId,
+		allocations: settlement.allocations.map((allocation) => {
+			const vendorId = byReference.get(allocation.accountReference);
+			return {
+				...(vendorId ? { vendorId } : {}),
+				accountReference: allocation.accountReference,
+				amount: money(currency, allocation.amountMinor),
+			};
+		}),
+		...(typeof settlement.platformRemainderMinor === "number"
+			? { platformRemainder: money(currency, settlement.platformRemainderMinor) }
+			: {}),
+		...(typeof settlement.providerFeeMinor === "number"
+			? { providerFee: money(currency, settlement.providerFeeMinor) }
+			: {}),
+		capturedAt: new Date().toISOString(),
+	};
+	await ordersStore(ctx).put(order.id, {
+		...order,
+		providerSplits,
+		updatedAt: new Date().toISOString(),
+	});
+}
+
 async function handleNormalizedChargeSucceeded(
 	ctx: PluginContext,
 	event: Extract<NormalizedPaymentEvent, { type: "charge.succeeded" }>,
@@ -764,6 +829,17 @@ async function handleNormalizedChargeSucceeded(
 				sessionId: cart.sessionId,
 				error: err instanceof Error ? err.message : String(err),
 			});
+		}
+		if (event.splitSettlement) {
+			try {
+				await recordProviderSplitSettlement(ctx, order, event);
+			} catch (err) {
+				ctx.log.warn("Could not record the provider split settlement", {
+					orderId: order.id,
+					providerId: event.providerId,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 	}
 
