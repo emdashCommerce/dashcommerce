@@ -95,7 +95,14 @@ export async function callEnvelope<T = Record<string, unknown>>(
 	}
 
 	if (!res.ok || parsed.status !== "success") {
+		const dataRecord =
+			parsed.data && typeof parsed.data === "object"
+				? (parsed.data as Record<string, unknown>)
+				: undefined;
+		const nestedMessage =
+			typeof dataRecord?.message === "string" ? dataRecord.message : undefined;
 		const msg =
+			nestedMessage ||
 			parsed.message ||
 			(typeof parsed.data === "string" ? parsed.data : undefined) ||
 			`Flutterwave API error (${res.status})`;

@@ -121,6 +121,8 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 
 After a split payment, Flutterwave's verify response includes `meta.split_settlement_info`: what each subaccount actually earned and the platform's commission. The package parses it (with `app_fee`) into core's `splitSettlement`, and core stores it on the order as `providerSplits`, mapping each subaccount reference to its vendor. The admin order detail shows it under **Split settlement**. It records what Flutterwave settled; it never reprices the shares DashCommerce computed.
 
+Refunding a split payment is different from a normal refund: Flutterwave can answer `400` with "Refund request successfully logged" and no refund id (seen in test mode). The package treats that as a failure so the order is not marked refunded. Check the Flutterwave dashboard and process the refund there.
+
 Country-specific subaccount `meta` (SWIFT/routing/branch) is not collected by the form yet. The API accepts it for the US, Ghana, Tanzania, Rwanda, Uganda and SEPA countries; add it with the provider API until the form supports those countries.
 
 ## Develop

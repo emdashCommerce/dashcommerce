@@ -998,6 +998,38 @@ describe("flutterwavePaymentProvider", () => {
 			expect(paths).not.toContain("/v3/transactions/908790/refund");
 		});
 
+		it("surfaces the nested message when Flutterwave logs a split refund without creating one", async () => {
+			const ctx = makeMockRuntimeContext(async (url) => {
+				const { pathname } = new URL(url);
+				if (pathname === "/v3/refunds") {
+					return flutterwaveOk([], { page_info: { total_pages: 1 } });
+				}
+				if (pathname === "/v3/transactions/123/refund") {
+					return new Response(
+						JSON.stringify({
+							status: "error",
+							message: "Some error occured",
+							data: { data: null, message: "Refund request successfully logged" },
+						}),
+						{ status: 400, headers: { "Content-Type": "application/json" } },
+					);
+				}
+				return flutterwaveError("Not found", 404);
+			});
+			await expect(
+				flutterwavePaymentProvider.refund(
+					ctx,
+					{
+						paymentReference: "123",
+						refundRequestId: "split-refund",
+						amount: 10_000,
+						currency: "KES",
+					},
+					credentials,
+				),
+			).rejects.toThrow(/Refund request successfully logged/);
+		});
+
 		it("resolves a tx_ref to the numeric id before refunding", async () => {
 			const paths: string[] = [];
 			const ctx = makeMockRuntimeContext(async (url) => {
