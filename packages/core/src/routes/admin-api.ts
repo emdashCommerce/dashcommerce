@@ -186,6 +186,9 @@ async function providerSettingsRows(ctx: PluginContext) {
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
 				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),
+				...(provider.credentialFields?.publicKey
+					? { publicKey: await secretStatus(ctx, `${provider.id}PublicKey`) }
+					: {}),
 			},
 		});
 	}
