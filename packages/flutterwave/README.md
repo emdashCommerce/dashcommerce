@@ -46,6 +46,7 @@ Flutterwave sends `charge.completed` for failed attempts too, with `data.status`
 Verified against Flutterwave's real test API with a Nigerian test account (KES wallet):
 
 - `GET /v3/balances`, `POST /v3/payments` and a real KES 1,500 M-Pesa payment all worked. The payment was completed through Flutterwave Inline on `checkout-v3.flutterwave.com`, which is the path `./checkout-client` now ships.
+- A refund attempt on the split payment returned `400` with the nested message `Refund request successfully logged` and no refund id. The package treats that as a failure (the order is not marked refunded) and surfaces the nested message; the README points the merchant to the Flutterwave dashboard.
 - Payout onboarding, through this package's methods: `listPayoutBanks` returned 598 NG banks; `resolvePayoutAccount` resolved test account `0690000033` to `Bale Gary`; `createPayoutAccount` created `RS_043B…` with the masked number and resolved name, then the probe subaccount was deleted.
 - On-page, through this package's `./checkout-client`: Inline loaded from `checkout.flutterwave.com/v3.js` on Pay, completed a real KES 1,500 M-Pesa payment (transaction `10633614`), and the `callback` moved the page to `onFinished`. `getPaymentStatus` reported `succeeded` with `150000` minor units, and a KES 100 partial refund succeeded (refund `115045`).
 - `GET /v3/transactions/:id/verify` and `verify_by_reference?tx_ref=` both returned the payment, and the provider's `getPaymentStatus` reported `succeeded` with `150000` minor units for a `1500` KES charge.
