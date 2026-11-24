@@ -453,8 +453,9 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 
 	brandColour: "#f5a623",
 	description: "Card, M-Pesa and mobile money across Africa, settled in your local currency.",
-	// Hosted page only; Flutterwave Inline needs a public key core does not store.
-	checkoutStyles: ["hosted"],
+	// Hosted page, or Flutterwave Inline over the store's checkout
+	// (./checkout-client), which needs the account's public key.
+	checkoutStyles: ["hosted", "on_page"],
 
 	webhookHeaders: ["verif-hash"],
 
@@ -468,6 +469,11 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			label: "Flutterwave secret hash",
 			prefixes: [],
 			help: "The secret hash you set under Settings → Webhooks. Flutterwave sends it back in the verif-hash header on every delivery.",
+		},
+		publicKey: {
+			label: "Flutterwave public key",
+			prefixes: ["FLWPUBK_TEST-", "FLWPUBK-"],
+			help: "Settings → API Keys. Only needed for on-page checkout (Flutterwave Inline); it is safe to expose to the browser.",
 		},
 	},
 
@@ -504,6 +510,33 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const name = input.customer.name ?? (addressName || undefined);
 		const phone = input.customer.phone ?? address?.phone;
 		const paymentOptions = mapPaymentOptions(input.preferredChannels, currency);
+
+		if (input.checkoutStyle === "on_page") {
+			const publicKey = credentials.publicKey?.trim();
+			if (!publicKey) {
+				throw new Error(
+					"Flutterwave on-page checkout needs the public key; add it in Settings → Payment provider",
+				);
+			}
+			// Inline creates the transaction in the browser, so there is no
+			// server-side /payments call. The order still comes only from the
+			// signed webhook and the live verify.
+			return {
+				kind: "on_page",
+				checkoutReference: checkoutRef,
+				client: {
+					publicKey,
+					txRef: checkoutRef,
+					amount: String(toMajorUnits(input.amount)),
+					currency,
+					customerEmail: email,
+					...(name ? { customerName: name } : {}),
+					...(phone ? { customerPhone: phone } : {}),
+					...(paymentOptions ? { paymentOptions: paymentOptions.join(",") } : {}),
+					orderDraftId: input.orderDraftId,
+				},
+			};
+		}
 
 		const data = await call<{ link?: string }>(ctx, {
 			client,

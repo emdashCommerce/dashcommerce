@@ -1,6 +1,6 @@
 # @dashcommerce/flutterwave
 
-A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's hosted checkout by card, M-Pesa or mobile money. DashCommerce creates the order when Flutterwave's signed `charge.completed` webhook arrives and the transaction is confirmed with Flutterwave.
+A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's hosted checkout, or in Flutterwave Inline over the store's own checkout, by card, M-Pesa or mobile money. DashCommerce creates the order when Flutterwave's signed `charge.completed` webhook arrives and the transaction is confirmed with Flutterwave.
 
 > **Needs `@dashcommerce/core` 0.4.0 or later.** 0.4.0 is the first core release that can call `api.flutterwave.com`, save a second provider's keys, pass its webhook header to the provider and take refund updates. This package's first release, 0.1.0, goes out with it.
 
@@ -22,7 +22,7 @@ A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's
 | Payment options | With no channel hint, Flutterwave shows every method enabled on the account. A hint is mapped to Flutterwave's option names, and generic `mobile_money` is resolved by currency (`KES` → `mpesa`, `GHS` → `mobilemoneyghana`, …) |
 | Customer details | Flutterwave's hosted page collects neither a shipping address nor a name for the store, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for email and address before payment. The email is also required by `POST /v3/payments` |
 | Not supported | Coupons, split payments and subscriptions. `capabilities` declares all three as `false` |
-| On-page checkout | Not offered. Flutterwave Inline needs the account's public key (`FLWPUBK-…`), which core's provider settings do not store; hosted checkout is the equivalent flow today |
+| On-page checkout | With checkout set to "On your page", Flutterwave Inline opens over the store's checkout using the public key and `tx_ref` from create-session. `checkout.flutterwave.com/v3.js` loads only when the customer presses Pay. The modal's `callback`/`onclose` only move the customer; the order still comes from the signed webhook and a live verify. `redirect_url` is deliberately not passed, because Inline gives it precedence over `callback` |
 
 ## Webhook verification
 
@@ -42,11 +42,12 @@ Flutterwave sends `charge.completed` for failed attempts too, with `data.status`
 
 Verified against Flutterwave's real test API with a Nigerian test account (KES wallet):
 
-- `GET /v3/balances`, `POST /v3/payments` and a real KES 1,500 M-Pesa payment all worked. The payment was completed through Flutterwave Inline on `checkout-v3.flutterwave.com`, which proves the Inline path this package does not ship yet.
+- `GET /v3/balances`, `POST /v3/payments` and a real KES 1,500 M-Pesa payment all worked. The payment was completed through Flutterwave Inline on `checkout-v3.flutterwave.com`, which is the path `./checkout-client` now ships.
+- On-page, through this package's `./checkout-client`: Inline loaded from `checkout.flutterwave.com/v3.js` on Pay, completed a real KES 1,500 M-Pesa payment (transaction `10633614`), and the `callback` moved the page to `onFinished`. `getPaymentStatus` reported `succeeded` with `150000` minor units, and a KES 100 partial refund succeeded (refund `115045`).
 - `GET /v3/transactions/:id/verify` and `verify_by_reference?tx_ref=` both returned the payment, and the provider's `getPaymentStatus` reported `succeeded` with `150000` minor units for a `1500` KES charge.
 - A KES 500 partial refund succeeded with `status: "completed"`, and the `comments` tag came back exactly as sent. `meta.disburse_status` was `failed` in test mode, which is why the provider logs it.
 - The hosted link Flutterwave issued pointed at `checkout-v2.dev-flutterwave.com`, which Cloudflare blocked from this network. The production host `checkout.flutterwave.com` did not recognise that test link. If your test link is blocked too, use a different network or ask Flutterwave support; the API side is unaffected.
-- The public key and the secret key do **not** share their hash segment, so the public key cannot be derived from the secret key. Inline needs the public key stored, which is the core change described in the issue.
+- The public key and the secret key do **not** share their hash segment, so the public key is stored separately (`settings:flutterwavePublicKey`) and handed to the Inline client by create-session; it cannot be derived.
 
 ## Use
 
@@ -76,10 +77,23 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
    |---|---|
    | Secret key | Settings → API Keys. Test keys start `FLWSECK_TEST-`; live keys start `FLWSECK-` |
    | Secret hash | The secret hash you set under Settings → Webhooks. Flutterwave sends it back in `verif-hash` |
+   | Public key | Settings → API Keys. Only for on-page checkout (Inline); test keys start `FLWPUBK_TEST-`, live keys `FLWPUBK-`. It is safe to expose to the browser |
 
    Save, then press **Test Flutterwave connection**. It makes one read-only call (`GET /v3/balances`) and says whether Flutterwave accepts the key, in test or live mode.
 
-5. **Set the webhook URL** in the Flutterwave dashboard, including `?provider=flutterwave`:
+   Under **How customers pay**, choose hosted (Flutterwave's page) or on your page (Inline). On-page checkout refuses to start if the public key is not saved.
+
+5. **For on-page checkout, load the browser client** in your checkout page's client script, so Vite bundles it:
+
+   ```astro
+   <script>
+     import "@dashcommerce/flutterwave/checkout-client";
+   </script>
+   ```
+
+   If your site sends a Content-Security-Policy, allow `https://checkout.flutterwave.com` for scripts and frames.
+
+6. **Set the webhook URL** in the Flutterwave dashboard, including `?provider=flutterwave`:
 
    ```
    https://<your-site>/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=flutterwave
@@ -87,7 +101,7 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 
    Without the query, core picks the provider from the `verif-hash` header. That works today, but the query keeps Flutterwave's webhooks going to Flutterwave even if another provider later uses the same header. Enable **refund** webhooks as well, so `refund.updated` reaches the store.
 
-6. **Use the same secret hash for every environment you point at the same site.** Flutterwave's dashboard has one webhook configuration; a test-mode delivery and a live-mode delivery both carry that value.
+7. **Use the same secret hash for every environment you point at the same site.** Flutterwave's dashboard has one webhook configuration; a test-mode delivery and a live-mode delivery both carry that value.
 
 ## Develop
 

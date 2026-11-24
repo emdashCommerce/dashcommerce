@@ -64,9 +64,9 @@ describe("flutterwavePaymentProvider", () => {
 	const credentials = { secretKey: "FLWSECK_TEST-1234567890abcdef-X" };
 
 	describe("declared to core", () => {
-		it("is a hosted provider that claims the verif-hash header", () => {
+		it("is a hosted and on-page provider that claims the verif-hash header", () => {
 			expect(flutterwavePaymentProvider.id).toBe("flutterwave");
-			expect(flutterwavePaymentProvider.checkoutStyles).toEqual(["hosted"]);
+			expect(flutterwavePaymentProvider.checkoutStyles).toEqual(["hosted", "on_page"]);
 			expect(flutterwavePaymentProvider.webhookHeaders).toEqual(["verif-hash"]);
 			expect(flutterwavePaymentProvider.collectsCustomerDetails).toBeUndefined();
 			expect(flutterwavePaymentProvider.capabilities).toEqual({
@@ -76,10 +76,11 @@ describe("flutterwavePaymentProvider", () => {
 			});
 		});
 
-		it("accepts only Flutterwave secret keys and any secret hash", () => {
+		it("accepts Flutterwave secret keys, a public key and any secret hash", () => {
 			const fields = flutterwavePaymentProvider.credentialFields;
 			expect(fields?.secretKey?.prefixes).toEqual(["FLWSECK_TEST-", "FLWSECK-"]);
 			expect(fields?.webhookSecret?.prefixes).toEqual([]);
+			expect(fields?.publicKey?.prefixes).toEqual(["FLWPUBK_TEST-", "FLWPUBK-"]);
 		});
 	});
 
@@ -293,6 +294,77 @@ describe("flutterwavePaymentProvider", () => {
 			await expect(
 				flutterwavePaymentProvider.initCheckout(ctx, checkoutInput(), credentials),
 			).rejects.toThrow("Flutterwave did not return a hosted checkout link");
+		});
+
+		describe("on-page (Flutterwave Inline)", () => {
+			const withPublicKey = { ...credentials, publicKey: "FLWPUBK_TEST-abc123-X" };
+
+			it("returns the browser client data without calling the API", async () => {
+				let calls = 0;
+				const ctx = makeMockRuntimeContext(async () => {
+					calls++;
+					return flutterwaveOk({});
+				});
+
+				const result = await flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({ checkoutStyle: "on_page" }),
+					withPublicKey,
+				);
+
+				expect(calls).toBe(0);
+				expect(result.kind).toBe("on_page");
+				if (result.kind !== "on_page") throw new Error("expected on_page");
+				expect(result.checkoutReference).toBe("dc-0123456789abcdef0123456789abcdef");
+				expect(result.client).toEqual({
+					publicKey: "FLWPUBK_TEST-abc123-X",
+					txRef: "dc-0123456789abcdef0123456789abcdef",
+					amount: "2500",
+					currency: "KES",
+					customerEmail: "fan@example.com",
+					orderDraftId: "0123456789abcdef0123456789abcdef",
+				});
+			});
+
+			it("passes the customer's name, phone and channel hints", async () => {
+				const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+				const result = await flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({
+						checkoutStyle: "on_page",
+						preferredChannels: ["card", "mpesa"],
+						customer: { email: "fan@example.com", phone: "+254700000000" },
+						shippingAddress: { firstName: "Aidi", lastName: "Onyango" },
+					}),
+					withPublicKey,
+				);
+				if (result.kind !== "on_page") throw new Error("expected on_page");
+				expect(result.client.customerName).toBe("Aidi Onyango");
+				expect(result.client.customerPhone).toBe("+254700000000");
+				expect(result.client.paymentOptions).toBe("card,mpesa");
+			});
+
+			it("refuses on-page checkout without the public key", async () => {
+				const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+				await expect(
+					flutterwavePaymentProvider.initCheckout(
+						ctx,
+						checkoutInput({ checkoutStyle: "on_page" }),
+						credentials,
+					),
+				).rejects.toThrow(/needs the public key/);
+			});
+
+			it("still validates the cart before asking for a public key", async () => {
+				const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+				await expect(
+					flutterwavePaymentProvider.initCheckout(
+						ctx,
+						checkoutInput({ checkoutStyle: "on_page", currency: "JPY" }),
+						withPublicKey,
+					),
+				).rejects.toThrow(/does not support currency JPY/);
+			});
 		});
 	});
 

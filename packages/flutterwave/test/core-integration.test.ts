@@ -21,6 +21,7 @@ import { flutterwavePaymentProvider } from "../src/provider";
 
 const SECRET_KEY = "FLWSECK_TEST-1234567890abcdef-X";
 const SECRET_HASH = "flw-test-secret-hash";
+const PUBLIC_KEY = "FLWPUBK_TEST-1234567890abcdef-X";
 
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -638,7 +639,56 @@ describe("@dashcommerce/flutterwave through core", () => {
 		expect(flutterwave.refunds).toHaveLength(2);
 	});
 
-	it("saves Flutterwave keys through the settings API and refuses a public key", async () => {
+	it("returns Inline data in embedded mode and still creates the order from the webhook", async () => {
+		const flutterwave = fakeFlutterwave();
+		const { ctx, getCol } = makeContext(
+			{
+				...flutterwaveSettings,
+				"settings:checkoutMode": "embedded",
+				"settings:flutterwavePublicKey": PUBLIC_KEY,
+			},
+			flutterwave.fetch,
+		);
+
+		const initRes = await startCheckout(ctx, "sess_flw_onpage_1");
+		expect(initRes.status).toBe(200);
+		const body = (await initRes.json()) as {
+			kind: string;
+			client: Record<string, string>;
+			returnUrl: string;
+			orderDraftId: string;
+		};
+		expect(body.kind).toBe("on_page");
+		expect(body.client.publicKey).toBe(PUBLIC_KEY);
+		expect(body.client.txRef).toBe(`dc-${body.orderDraftId}`);
+		expect(body.client.amount).toBe("1500");
+		expect(body.client.customerEmail).toBe("supporter@example.com");
+		expect(body.returnUrl).toContain(`/thank-you/${body.orderDraftId}`);
+
+		// Inline creates the transaction in the browser, so the fake only learns
+		// about it when the signed webhook arrives.
+		const tx = { id: 777001, amountMinor: 150000, currency: "KES", status: "successful" };
+		flutterwave.transactions.set(body.client.txRef ?? "", tx);
+
+		const res = await deliverWebhook(
+			ctx,
+			chargeCompleted(body.client.txRef ?? "", body.orderDraftId, tx.id),
+			SECRET_HASH,
+		);
+		expect(res.status).toBe(200);
+		expect(getCol("orders").size).toBe(1);
+	});
+
+	it("refuses embedded checkout when the public key is missing", async () => {
+		const flutterwave = fakeFlutterwave();
+		const { ctx } = makeContext(
+			{ ...flutterwaveSettings, "settings:checkoutMode": "embedded" },
+			flutterwave.fetch,
+		);
+		await expect(startCheckout(ctx, "sess_flw_onpage_2")).rejects.toThrow(/needs the public key/);
+	});
+
+	it("saves Flutterwave keys through the settings API and refuses a public key as a secret", async () => {
 		const { ctx } = makeContext({}, fakeFlutterwave().fetch);
 		const routeCtx = {
 			request: new Request("http://test/admin/settings", { method: "POST" }),
@@ -646,16 +696,18 @@ describe("@dashcommerce/flutterwave through core", () => {
 				paymentProvider: "flutterwave",
 				flutterwaveSecretKey: SECRET_KEY,
 				flutterwaveWebhookSecret: SECRET_HASH,
+				flutterwavePublicKey: PUBLIC_KEY,
 			},
 		} as unknown as import("emdash").RouteContext;
 		const res = (await sandbox.routes["admin/settings"].handler(routeCtx, ctx)) as Response;
 		expect(res.status).toBe(200);
 		expect(await ctx.kv.get("settings:flutterwaveSecretKey")).toBe(SECRET_KEY);
+		expect(await ctx.kv.get("settings:flutterwavePublicKey")).toBe(PUBLIC_KEY);
 
 		const bad = (await sandbox.routes["admin/settings"].handler(
 			{
 				request: new Request("http://test/admin/settings", { method: "POST" }),
-				input: { flutterwaveSecretKey: "FLWPUBK_TEST-1234567890abcdef-X" },
+				input: { flutterwaveSecretKey: PUBLIC_KEY },
 			} as unknown as import("emdash").RouteContext,
 			ctx,
 		)) as Response;
