@@ -8,22 +8,18 @@
  * context (field definition, entry metadata) without needing changes here.
  *
  * Behaviour:
- *  - Reads `settings:connectEnabled` via the admin settings API on mount.
- *  - When multi-vendor is off, renders an info banner instead of the picker.
- *  - When on, fetches `admin/vendors` and renders a searchable Combobox of
- *    active/pending vendors, dimming entries with `chargesEnabled=false`.
+ *  - Reads `settings:connectEnabled` and the registered providers' `splits`
+ *    capability via the admin settings API on mount.
+ *  - Marketplace mode is Stripe Connect **or** a provider that can split
+ *    payments (Flutterwave subaccounts).
+ *  - When neither is on, renders an info banner instead of the picker.
+ *  - When on, fetches `admin/vendors` and renders a searchable Combobox,
+ *    dimming vendors with no active payout account.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import {
-	Alert,
-	Combobox,
-	FormField,
-	Loading,
-	usePluginAPI,
-	type ComboboxOption,
-} from "../kit";
 import type { Vendor } from "../../types";
+import { Alert, Combobox, type ComboboxOption, FormField, Loading, usePluginAPI } from "../kit";
 
 export interface VendorSelectProps {
 	value?: string | null;
@@ -35,7 +31,9 @@ export interface VendorSelectProps {
 export function VendorSelect(props: VendorSelectProps) {
 	const api = usePluginAPI();
 	const [vendors, setVendors] = useState<Vendor[] | null>(null);
-	const [connectEnabled, setConnectEnabled] = useState<boolean | null>(null);
+	const [marketplaceEnabled, setMarketplaceEnabled] = useState<boolean | null>(null);
+	const [connectEnabled, setConnectEnabled] = useState(false);
+	const [splitsProviders, setSplitsProviders] = useState<Array<{ id: string; label: string }>>([]);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -44,22 +42,31 @@ export function VendorSelect(props: VendorSelectProps) {
 			try {
 				const settings = await api.get<Record<string, unknown>>("admin/settings");
 				if (!alive) return;
-				const on = settings.connectEnabled === true;
-				setConnectEnabled(on);
-				if (on) {
+				const connect = settings.connectEnabled === true;
+				const providers = Array.isArray(settings._providers)
+					? (settings._providers as Array<{
+							id: string;
+							label: string;
+							capabilities?: { splits?: boolean };
+						}>)
+					: [];
+				const splits = providers
+					.filter((provider) => provider.capabilities?.splits === true)
+					.map((provider) => ({ id: provider.id, label: provider.label }));
+				const enabled = connect || splits.length > 0;
+				setConnectEnabled(connect);
+				setSplitsProviders(splits);
+				setMarketplaceEnabled(enabled);
+				if (enabled) {
 					try {
 						const res = await api.get<{ items: Vendor[] }>("admin/vendors");
 						if (alive) setVendors(res.items ?? []);
 					} catch (err) {
-						if (alive)
-							setError(
-								err instanceof Error ? err.message : "Could not load vendors",
-							);
+						if (alive) setError(err instanceof Error ? err.message : "Could not load vendors");
 					}
 				}
 			} catch (err) {
-				if (alive)
-					setError(err instanceof Error ? err.message : "Could not load settings");
+				if (alive) setError(err instanceof Error ? err.message : "Could not load settings");
 			}
 		}
 		load();
@@ -71,29 +78,33 @@ export function VendorSelect(props: VendorSelectProps) {
 	const options = useMemo<ComboboxOption[]>(() => {
 		if (!vendors) return [];
 		return vendors.map((v) => {
-			const statusHint =
-				v.onboardingStatus === "active" && v.chargesEnabled
-					? "Active"
-					: v.onboardingStatus === "restricted"
-						? "Restricted"
-						: "Pending";
+			const stripeReady = connectEnabled && v.chargesEnabled;
+			const providerReady = splitsProviders.some(
+				(provider) => v.paymentAccounts?.[provider.id]?.status === "active",
+			);
+			const ready = stripeReady || providerReady;
+			const statusHint = ready
+				? "Active"
+				: v.onboardingStatus === "restricted"
+					? "Restricted"
+					: "Pending";
 			return {
 				value: v.id,
 				label: `${v.name} · ${v.email}`,
 				hint: statusHint,
-				disabled: !v.chargesEnabled,
+				disabled: !ready,
 			};
 		});
-	}, [vendors]);
+	}, [vendors, connectEnabled, splitsProviders]);
 
 	const { value, onChange, field, readOnly } = props;
 	const label = field?.label ?? "Vendor";
 
-	if (connectEnabled === null) {
+	if (marketplaceEnabled === null) {
 		return <Loading label="Loading vendor options…" />;
 	}
 
-	if (!connectEnabled) {
+	if (!marketplaceEnabled) {
 		return (
 			<FormField
 				label={label}
@@ -101,8 +112,8 @@ export function VendorSelect(props: VendorSelectProps) {
 				{...(field?.required ? { required: true } : {})}
 			>
 				<Alert type="info" title="Multi-vendor marketplace is off">
-					Enable it in Settings → Stripe Connect to assign products to vendors.
-					Leave this field blank for now.
+					Enable it in Settings, or install a payment provider that supports split payments, to
+					assign products to vendors. Leave this field blank for now.
 				</Alert>
 			</FormField>
 		);
