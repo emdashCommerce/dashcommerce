@@ -591,6 +591,29 @@ describe("flutterwavePaymentProvider", () => {
 			expect(event.orderDraftId).toBe("0123456789abcdef0123456789abcdef");
 		});
 
+		it("parses a real split payment and keeps the split settlement in raw", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({
+					event: "charge.completed",
+					"event.type": "M-PESA_TRANSACTION",
+					data: fixture("verify-split-mpesa.json"),
+				}),
+			);
+			expect(event.type).toBe("charge.succeeded");
+			if (event.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(event.orderDraftId).toBe("0123456789abcdef0123456789abcdef");
+			expect(event.amount).toBe(150000);
+			expect(event.paymentReference).toBe("10633643");
+			const raw = event.raw as { data: { meta: { split_settlement_info: string } } };
+			const split = JSON.parse(raw.data.meta.split_settlement_info) as Record<
+				string,
+				{ subaccount_earning?: number }
+			> & { total_merchant_commission?: number };
+			expect(split.RS_CD57DC0FB468D17CC4EF6E28A2B70A62?.subaccount_earning).toBe(900);
+			expect(split.RS_A075186F846E729B97277DA02E6CD019?.subaccount_earning).toBe(450);
+			expect(split.total_merchant_commission).toBe(76.5);
+		});
+
 		it("parses a refund object as Flutterwave really sends it", () => {
 			const event = flutterwavePaymentProvider.parseWebhookEvent(
 				JSON.stringify(fixture("refund-completed.json")),
