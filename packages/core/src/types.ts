@@ -537,6 +537,21 @@ export interface ReviewSummary {
 // Vendors (Stripe Connect)
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A vendor's payout account at one payment provider. Flutterwave uses a
+ * collection subaccount (`RS_...`); Stripe keeps using `stripeAccountId`.
+ * The account reference is provider-owned and never a secret.
+ */
+export interface VendorPaymentAccount {
+	accountReference: string;
+	status: "active" | "pending" | "disabled";
+	/** Settlement currency, when the provider ties the account to one. */
+	currency?: CurrencyCode;
+	/** Human label for the admin, e.g. the bank name. */
+	label?: string;
+	updatedAt: IsoDateTime;
+}
+
 export interface Vendor {
 	id: string;
 	stripeAccountId: string; // acct_xxx, unique
@@ -547,6 +562,11 @@ export interface Vendor {
 	detailsSubmitted: boolean;
 	chargesEnabled: boolean;
 	payoutsEnabled: boolean;
+	/**
+	 * Payout accounts for providers other than Stripe, keyed by provider id.
+	 * Stripe Connect keeps its own fields above.
+	 */
+	paymentAccounts?: Record<string, VendorPaymentAccount>;
 	createdAt: IsoDateTime;
 	updatedAt: IsoDateTime;
 }

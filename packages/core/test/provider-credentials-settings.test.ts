@@ -116,6 +116,7 @@ describe("provider credentials in the settings API", () => {
 				},
 			},
 			checkoutStyles: ["hosted"],
+			capabilities: {},
 			canCheckConnection: false,
 			secrets: {
 				secretKey: { isSet: true, hint: "••••1234" },
