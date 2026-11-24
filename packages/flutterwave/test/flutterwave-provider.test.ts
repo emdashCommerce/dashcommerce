@@ -73,6 +73,7 @@ describe("flutterwavePaymentProvider", () => {
 				coupons: false,
 				connect: false,
 				subscriptions: false,
+				splits: true,
 			});
 		});
 
@@ -364,6 +365,102 @@ describe("flutterwavePaymentProvider", () => {
 						withPublicKey,
 					),
 				).rejects.toThrow(/does not support currency JPY/);
+			});
+		});
+
+		describe("split payments", () => {
+			const allocations = [
+				{ vendorId: "v1", accountReference: "RS_V1", amountMinor: 90_000 },
+				{ vendorId: "v2", accountReference: "RS_V2", amountMinor: 60_000 },
+			];
+
+			it("sends each allocation as a flat subaccount charge", async () => {
+				let body: Record<string, unknown> = {};
+				const ctx = makeMockRuntimeContext(async (_url, init) => {
+					body = JSON.parse(String(init?.body));
+					return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+				});
+
+				await flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({
+						amount: 200_000,
+						allocations,
+						platformRemainderMinor: 50_000,
+					}),
+					credentials,
+				);
+
+				expect(body.subaccounts).toEqual([
+					{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 900 },
+					{ id: "RS_V2", transaction_charge_type: "flat_subaccount", transaction_charge: 600 },
+				]);
+			});
+
+			it("passes the split to Inline as JSON in the client payload", async () => {
+				const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+				const result = await flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({
+						checkoutStyle: "on_page",
+						amount: 200_000,
+						allocations,
+						platformRemainderMinor: 50_000,
+					}),
+					{ ...credentials, publicKey: "FLWPUBK_TEST-abc123-X" },
+				);
+				if (result.kind !== "on_page") throw new Error("expected on_page");
+				expect(JSON.parse(result.client.subaccounts ?? "[]")).toEqual([
+					{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 900 },
+					{ id: "RS_V2", transaction_charge_type: "flat_subaccount", transaction_charge: 600 },
+				]);
+			});
+
+			it("sends no subaccounts for a cart without vendor allocations", async () => {
+				let body: Record<string, unknown> = {};
+				const ctx = makeMockRuntimeContext(async (_url, init) => {
+					body = JSON.parse(String(init?.body));
+					return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+				});
+				await flutterwavePaymentProvider.initCheckout(ctx, checkoutInput(), credentials);
+				expect(body.subaccounts).toBeUndefined();
+			});
+
+			it("refuses an empty account, a zero share or shares above the total", async () => {
+				const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+				await expect(
+					flutterwavePaymentProvider.initCheckout(
+						ctx,
+						checkoutInput({
+							allocations: [{ vendorId: "v1", accountReference: " ", amountMinor: 1_000 }],
+						}),
+						credentials,
+					),
+				).rejects.toThrow(/no Flutterwave subaccount id/);
+
+				await expect(
+					flutterwavePaymentProvider.initCheckout(
+						ctx,
+						checkoutInput({
+							allocations: [{ vendorId: "v1", accountReference: "RS_V1", amountMinor: 0 }],
+						}),
+						credentials,
+					),
+				).rejects.toThrow(/positive integer/);
+
+				await expect(
+					flutterwavePaymentProvider.initCheckout(
+						ctx,
+						checkoutInput({
+							amount: 100_000,
+							allocations: [
+								{ vendorId: "v1", accountReference: "RS_V1", amountMinor: 100_000 },
+								{ vendorId: "v2", accountReference: "RS_V2", amountMinor: 1 },
+							],
+						}),
+						credentials,
+					),
+				).rejects.toThrow(/exceed the checkout amount/);
 			});
 		});
 	});

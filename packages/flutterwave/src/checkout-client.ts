@@ -26,6 +26,11 @@ interface FlutterwaveCheckoutOptions {
 	customer: { email: string; name?: string; phone_number?: string };
 	meta?: Record<string, string>;
 	payment_options?: string;
+	subaccounts?: Array<{
+		id: string;
+		transaction_charge_type?: string;
+		transaction_charge?: number;
+	}>;
 	callback?: (payment: unknown) => void;
 	onclose?: (incomplete: boolean) => void;
 }
@@ -76,6 +81,21 @@ export function createFlutterwaveCheckoutClient(win: Window, doc: Document): OnP
 				return;
 			}
 
+			// The server sends the split as JSON so the client payload stays a
+			// flat map of strings. A malformed value must not open a payment
+			// that would settle entirely to the platform.
+			let subaccounts: FlutterwaveCheckoutOptions["subaccounts"];
+			if (client.subaccounts) {
+				try {
+					const parsed = JSON.parse(client.subaccounts) as unknown;
+					if (!Array.isArray(parsed)) throw new Error("not an array");
+					subaccounts = parsed as FlutterwaveCheckoutOptions["subaccounts"];
+				} catch {
+					callbacks.onError("Flutterwave split details are invalid");
+					return;
+				}
+			}
+
 			loadScript().then(
 				() => {
 					if (!w.FlutterwaveCheckout) {
@@ -108,6 +128,7 @@ export function createFlutterwaveCheckoutClient(win: Window, doc: Document): OnP
 							},
 							...(client.orderDraftId ? { meta: { orderDraftId: client.orderDraftId } } : {}),
 							...(client.paymentOptions ? { payment_options: client.paymentOptions } : {}),
+							...(subaccounts && subaccounts.length > 0 ? { subaccounts } : {}),
 							callback: () => finish(),
 							onclose: () => close(),
 						});

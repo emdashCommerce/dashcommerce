@@ -23,6 +23,7 @@ A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's
 | Customer details | Flutterwave's hosted page collects neither a shipping address nor a name for the store, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for email and address before payment. The email is also required by `POST /v3/payments` |
 | Not supported | Coupons, split payments and subscriptions. `capabilities` declares all three as `false` |
 | On-page checkout | With checkout set to "On your page", Flutterwave Inline opens over the store's checkout using the public key and `tx_ref` from create-session. `checkout.flutterwave.com/v3.js` loads only when the customer presses Pay. The modal's `callback`/`onclose` only move the customer; the order still comes from the signed webhook and a live verify. `redirect_url` is deliberately not passed, because Inline gives it precedence over `callback` |
+| Split payments | When the cart has vendor-owned items, core sends exact per-vendor minor amounts (`allocations`); the package maps each to `subaccounts: [{ id, transaction_charge_type: "flat_subaccount", transaction_charge }]` for hosted and Inline. Each vendor receives exactly the amount core computed. A vendor without an active account blocks checkout with a 409 rather than settling everything to the platform |
 
 ## Webhook verification
 
@@ -102,6 +103,15 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
    Without the query, core picks the provider from the `verif-hash` header. That works today, but the query keeps Flutterwave's webhooks going to Flutterwave even if another provider later uses the same header. Enable **refund** webhooks as well, so `refund.updated` reaches the store.
 
 7. **Use the same secret hash for every environment you point at the same site.** Flutterwave's dashboard has one webhook configuration; a test-mode delivery and a live-mode delivery both carry that value.
+
+### Split payments
+
+1. Create a **collection subaccount** in Flutterwave for each vendor (dashboard, or `POST /v3/subaccounts`), and copy its `RS_…` id.
+2. In DashCommerce → **Vendors**, add the vendor (or edit one), paste the id under the Flutterwave payout account, set the status to **Active**, and set the platform fee.
+3. Checkout computes each vendor's line subtotal minus the platform fee. Tax, shipping and platform-owned items stay with the platform. A vendor with no active account, a non-positive share, or a settlement currency that differs from the cart's blocks checkout with a readable 409.
+4. Flutterwave's `flat_subaccount` pays each vendor that exact amount. Flutterwave's transaction fee and the NGN 50 stamp duty (over NGN 10,000) come out of the platform remainder, not the vendor shares. If the settlement is less than the sum of the vendor amounts, Flutterwave does not split that payment and sends the whole settlement to your main account — check the dashboard for those.
+
+Creating subaccounts through the Flutterwave API from DashCommerce (bank details, KYC) is not part of this package yet; the `RS_…` id is entered by the merchant.
 
 ## Develop
 

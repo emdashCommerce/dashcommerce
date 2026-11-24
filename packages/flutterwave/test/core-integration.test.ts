@@ -347,8 +347,35 @@ const flutterwaveSettings = {
 	"settings:flutterwaveWebhookSecret": SECRET_HASH,
 };
 
-async function startCheckout(ctx: import("emdash").PluginContext, sessionId: string) {
-	await ctx.kv.set(`cart:${sessionId}`, ticketCart(sessionId));
+function vendorRecord(id: string) {
+	return {
+		id,
+		stripeAccountId: "",
+		name: `Vendor ${id}`,
+		email: `${id}@example.com`,
+		onboardingStatus: "active",
+		platformFeePercent: 0,
+		detailsSubmitted: false,
+		chargesEnabled: false,
+		payoutsEnabled: false,
+		paymentAccounts: {
+			flutterwave: {
+				accountReference: `RS_${id.toUpperCase()}`,
+				status: "active",
+				updatedAt: "2026-01-01T00:00:00Z",
+			},
+		},
+		createdAt: "2026-01-01T00:00:00Z",
+		updatedAt: "2026-01-01T00:00:00Z",
+	};
+}
+
+async function startCheckout(
+	ctx: import("emdash").PluginContext,
+	sessionId: string,
+	cart: CartState = ticketCart(sessionId),
+) {
+	await ctx.kv.set(`cart:${sessionId}`, cart);
 	const request = new Request("http://test/checkout/create-session", {
 		method: "POST",
 		headers: { "Content-Type": "application/json", Cookie: `dashcommerce_sid=${sessionId}` },
@@ -637,6 +664,32 @@ describe("@dashcommerce/flutterwave through core", () => {
 			{ secretKey: SECRET_KEY },
 		);
 		expect(flutterwave.refunds).toHaveLength(2);
+	});
+
+	it("sends vendor allocations to Flutterwave as flat subaccounts", async () => {
+		const flutterwave = fakeFlutterwave();
+		const { ctx, getCol } = makeContext(flutterwaveSettings, flutterwave.fetch);
+		getCol("vendors").set("v1", vendorRecord("v1"));
+		getCol("vendors").set("v2", vendorRecord("v2"));
+
+		const sessionId = "sess_flw_split";
+		const cart = ticketCart(sessionId);
+		const base = cart.items[0];
+		if (!base) throw new Error("ticket cart has no line");
+		cart.items = [
+			{ ...base, lineId: "l1", vendorId: "v1" },
+			{ ...base, lineId: "l2", vendorId: "v2" },
+		];
+		cart.subtotal = { amount: 300_000, currency: "KES" };
+		cart.total = { amount: 300_000, currency: "KES" };
+
+		const res = await startCheckout(ctx, sessionId, cart);
+		expect(res.status).toBe(200);
+		// 10% default platform fee: each vendor gets 135000 minor = 1350 major.
+		expect(flutterwave.getLastInit()?.subaccounts).toEqual([
+			{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 1350 },
+			{ id: "RS_V2", transaction_charge_type: "flat_subaccount", transaction_charge: 1350 },
+		]);
 	});
 
 	it("returns Inline data in embedded mode and still creates the order from the webhook", async () => {

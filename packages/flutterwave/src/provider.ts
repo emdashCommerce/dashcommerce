@@ -168,6 +168,50 @@ function mapPaymentOptions(
 	return mapped.size > 0 ? Array.from(mapped) : undefined;
 }
 
+interface FlutterwaveSubaccount {
+	id: string;
+	transaction_charge_type: "flat_subaccount";
+	transaction_charge: number;
+}
+
+/**
+ * Flutterwave's `flat_subaccount` charge pays a subaccount an exact amount;
+ * core's allocations are already exact minor-unit shares, so they map one to
+ * one. Validate before sending: a bad share must fail checkout rather than
+ * settle the whole payment to the platform.
+ */
+function subaccountsFor(input: InitCheckoutInput): FlutterwaveSubaccount[] | undefined {
+	if (!input.allocations || input.allocations.length === 0) return undefined;
+	let total = 0;
+	const subaccounts = input.allocations.map((allocation) => {
+		const reference = allocation.accountReference?.trim();
+		if (!reference) {
+			throw new Error(`Vendor ${allocation.vendorId} has no Flutterwave subaccount id`);
+		}
+		if (!Number.isSafeInteger(allocation.amountMinor) || allocation.amountMinor <= 0) {
+			throw new Error(
+				`Vendor ${allocation.vendorId}'s split amount must be a positive integer in minor units`,
+			);
+		}
+		total += allocation.amountMinor;
+		if (!Number.isSafeInteger(total)) {
+			throw new Error("Split allocations exceed the safe integer range");
+		}
+		return {
+			id: reference,
+			transaction_charge_type: "flat_subaccount" as const,
+			transaction_charge: toMajorUnits(allocation.amountMinor),
+		};
+	});
+	if (total > input.amount) {
+		throw new Error(`Split allocations (${total}) exceed the checkout amount (${input.amount})`);
+	}
+	if (input.platformRemainderMinor !== undefined && input.platformRemainderMinor < 0) {
+		throw new Error("Platform remainder cannot be negative");
+	}
+	return subaccounts;
+}
+
 function channelLabel(type: string | undefined): string | undefined {
 	if (!type) return undefined;
 	const value = type.toLowerCase();
@@ -449,6 +493,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		coupons: false,
 		connect: false,
 		subscriptions: false,
+		splits: true,
 	},
 
 	brandColour: "#f5a623",
@@ -510,6 +555,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const name = input.customer.name ?? (addressName || undefined);
 		const phone = input.customer.phone ?? address?.phone;
 		const paymentOptions = mapPaymentOptions(input.preferredChannels, currency);
+		const subaccounts = subaccountsFor(input);
 
 		if (input.checkoutStyle === "on_page") {
 			const publicKey = credentials.publicKey?.trim();
@@ -533,6 +579,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 					...(name ? { customerName: name } : {}),
 					...(phone ? { customerPhone: phone } : {}),
 					...(paymentOptions ? { paymentOptions: paymentOptions.join(",") } : {}),
+					...(subaccounts ? { subaccounts: JSON.stringify(subaccounts) } : {}),
 					orderDraftId: input.orderDraftId,
 				},
 			};
@@ -556,6 +603,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 					orderDraftId: input.orderDraftId,
 				},
 				...(paymentOptions ? { payment_options: paymentOptions.join(",") } : {}),
+				...(subaccounts ? { subaccounts } : {}),
 			},
 		});
 

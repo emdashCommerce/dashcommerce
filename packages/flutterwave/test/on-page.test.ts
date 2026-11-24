@@ -213,6 +213,42 @@ describe("Flutterwave checkout client", () => {
 		expect(b.appended).toHaveLength(0);
 	});
 
+	it("passes a server-provided split to Inline", async () => {
+		const b = fakeBrowser();
+		const client = createFlutterwaveCheckoutClient(
+			b.win as unknown as Window,
+			b.doc as unknown as Document,
+		);
+		const r = recorder();
+		client.open(
+			{
+				...clientData,
+				subaccounts: JSON.stringify([
+					{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 900 },
+				]),
+			},
+			r.callbacks,
+		);
+		b.loadScript();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(b.opened[0]?.subaccounts).toEqual([
+			{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 900 },
+		]);
+	});
+
+	it("refuses a malformed split instead of opening an unsplit payment", () => {
+		const b = fakeBrowser();
+		const client = createFlutterwaveCheckoutClient(
+			b.win as unknown as Window,
+			b.doc as unknown as Document,
+		);
+		const r = recorder();
+		client.open({ ...clientData, subaccounts: "not json" }, r.callbacks);
+		expect(r.events).toEqual(["error:Flutterwave split details are invalid"]);
+		expect(b.appended).toHaveLength(0);
+	});
+
 	it("registers itself next to other providers' clients", () => {
 		const b = fakeBrowser();
 		const other = { open() {} };
