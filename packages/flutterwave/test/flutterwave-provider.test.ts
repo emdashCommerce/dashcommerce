@@ -70,7 +70,7 @@ describe("flutterwavePaymentProvider", () => {
 			expect(flutterwavePaymentProvider.webhookHeaders).toEqual(["verif-hash"]);
 			expect(flutterwavePaymentProvider.collectsCustomerDetails).toBeUndefined();
 			expect(flutterwavePaymentProvider.capabilities).toEqual({
-				coupons: false,
+				coupons: true,
 				connect: false,
 				subscriptions: false,
 				splits: true,
@@ -288,6 +288,22 @@ describe("flutterwavePaymentProvider", () => {
 				),
 			).rejects.toThrow(/does not support subscription checkout/);
 			expect(calls).toBe(0);
+		});
+
+		it("charges the discounted total when the cart has a coupon", async () => {
+			let body: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (_url, init) => {
+				body = JSON.parse(String(init?.body));
+				return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+			});
+			// 10,000 minor with a 10% cart discount: core sends the net total.
+			await flutterwavePaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({ amount: 9_000 }),
+				credentials,
+			);
+			expect(body.amount).toBe(90);
+			expect(flutterwavePaymentProvider.capabilities?.coupons).toBe(true);
 		});
 
 		it("fails when Flutterwave returns no link", async () => {

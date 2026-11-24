@@ -13,14 +13,18 @@
 
 import type {
 	ConnectionCheckResult,
+	CreatePayoutAccountInput,
 	CreateRefundInput,
+	CreatedPayoutAccount,
 	InitCheckoutInput,
 	InitCheckoutResult,
 	NormalizedPaymentEvent,
 	PaymentProvider,
+	PaymentProviderBank,
 	PaymentProviderCredentials,
 	PaymentProviderRuntimeContext,
 	RefundResult,
+	ResolvePayoutAccountInput,
 	VerifyWebhookInput,
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
@@ -490,7 +494,9 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 	id: "flutterwave",
 	label: "Flutterwave",
 	capabilities: {
-		coupons: false,
+		// DashCommerce applies the discount to the amount it charges; no
+		// provider-side coupon object is needed.
+		coupons: true,
 		connect: false,
 		subscriptions: false,
 		splits: true,
@@ -780,6 +786,159 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			ok: true,
 			...modeResult,
 			message: `Connected${mode ? ` in ${mode} mode` : ""}. The key can read account balances.`,
+		};
+	},
+
+	async listPayoutBanks(
+		ctx: PaymentProviderRuntimeContext,
+		country: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<PaymentProviderBank[]> {
+		const iso = country?.trim().toUpperCase();
+		if (!/^[A-Z]{2}$/u.test(iso)) {
+			throw new Error("Flutterwave bank lookup needs an ISO-2 country code");
+		}
+		const data = await call<Array<{ code?: string; name?: string }>>(ctx, {
+			client: toFlutterwaveClient(credentials),
+			method: "GET",
+			path: `/banks/${encodeURIComponent(iso)}`,
+		});
+		if (!Array.isArray(data)) {
+			throw new Error("Flutterwave returned no bank list for that country");
+		}
+		return data
+			.filter(
+				(bank): bank is { code: string; name: string } =>
+					typeof bank?.code === "string" &&
+					bank.code.trim() !== "" &&
+					typeof bank?.name === "string" &&
+					bank.name.trim() !== "",
+			)
+			.map((bank) => ({ code: bank.code.trim(), name: bank.name.trim() }));
+	},
+
+	async resolvePayoutAccount(
+		ctx: PaymentProviderRuntimeContext,
+		input: ResolvePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<{ accountName: string }> {
+		const accountNumber = input.accountNumber?.trim();
+		const bankCode = input.bankCode?.trim();
+		if (!accountNumber || !bankCode) {
+			throw new Error("Flutterwave account resolution needs an account number and bank code");
+		}
+		const data = await call<{ account_number?: string; account_name?: string }>(ctx, {
+			client: toFlutterwaveClient(credentials),
+			path: "/accounts/resolve",
+			body: {
+				account_number: accountNumber,
+				account_bank: bankCode,
+			},
+		});
+		const accountName = data?.account_name?.trim();
+		if (!accountName) {
+			throw new Error("Flutterwave returned no account name for that account");
+		}
+		return { accountName };
+	},
+
+	async createPayoutAccount(
+		ctx: PaymentProviderRuntimeContext,
+		input: CreatePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<CreatedPayoutAccount> {
+		const accountNumber = input.accountNumber?.trim();
+		const bankCode = input.bankCode?.trim();
+		const country = input.country?.trim().toUpperCase();
+		const businessName = input.businessName?.trim();
+		const businessEmail = input.businessEmail?.trim();
+		const businessMobile = input.businessMobile?.trim();
+		if (
+			!accountNumber ||
+			!bankCode ||
+			!country ||
+			!businessName ||
+			!businessEmail ||
+			!businessMobile
+		) {
+			throw new Error(
+				"Flutterwave subaccount creation needs the account number, bank, country, business name, email and mobile",
+			);
+		}
+		if (!/^[A-Z]{2}$/u.test(country)) {
+			throw new Error("Flutterwave subaccount country must be an ISO-2 code");
+		}
+
+		const splitType = input.splitType ?? "percentage";
+		const splitValue = input.splitValue ?? (splitType === "percentage" ? 0.1 : 0);
+		if (splitType !== "percentage" && splitType !== "flat") {
+			throw new Error("Flutterwave split type must be percentage or flat");
+		}
+		if (!Number.isFinite(splitValue) || splitValue < 0) {
+			throw new Error("Flutterwave split value must be a non-negative number");
+		}
+		if (splitType === "percentage" && splitValue > 1) {
+			throw new Error("Flutterwave percentage split value is a decimal from 0 to 1");
+		}
+		if (splitType === "flat" && splitValue <= 0) {
+			throw new Error("Flutterwave flat split value must be positive");
+		}
+
+		const data = await call<{
+			id?: number;
+			account_number?: string;
+			account_bank?: string;
+			full_name?: string;
+			subaccount_id?: string;
+			bank_name?: string;
+			split_type?: string;
+			split_value?: number;
+		}>(ctx, {
+			client: toFlutterwaveClient(credentials),
+			path: "/subaccounts",
+			body: {
+				account_bank: bankCode,
+				account_number: accountNumber,
+				business_name: businessName,
+				business_email: businessEmail,
+				business_mobile: businessMobile,
+				country,
+				split_type: splitType,
+				split_value: splitValue,
+				...(input.businessContact ? { business_contact: input.businessContact } : {}),
+				...(input.businessContactMobile
+					? { business_contact_mobile: input.businessContactMobile }
+					: {}),
+				...(input.metadata
+					? {
+							meta: Object.entries(input.metadata).map(([meta_name, meta_value]) => ({
+								meta_name,
+								meta_value,
+							})),
+						}
+					: {}),
+			},
+		});
+
+		const accountReference = data?.subaccount_id?.trim();
+		if (!accountReference) {
+			throw new Error("Flutterwave returned no subaccount id");
+		}
+		const accountName = data?.full_name?.trim();
+		if (!accountName) {
+			throw new Error("Flutterwave returned no account name for the subaccount");
+		}
+		return {
+			accountReference,
+			accountName,
+			...(data.bank_name ? { bankName: data.bank_name } : {}),
+			bankCode: data.account_bank?.trim() || bankCode,
+			country,
+			maskedAccountNumber:
+				accountNumber.length > 4 ? `••••${accountNumber.slice(-4)}` : "••••",
+			...(typeof data.id === "number"
+				? { metadata: { providerAccountId: String(data.id) } }
+				: {}),
 		};
 	},
 

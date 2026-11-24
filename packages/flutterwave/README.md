@@ -21,9 +21,11 @@ A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's
 | Currencies | NGN, USD, GBP, EUR, KES, GHS, ZAR, UGX, TZS, RWF, XOF, XAF, ZMW, MWK and EGP. Your Flutterwave account must be enabled for the currency you sell in |
 | Payment options | With no channel hint, Flutterwave shows every method enabled on the account. A hint is mapped to Flutterwave's option names, and generic `mobile_money` is resolved by currency (`KES` → `mpesa`, `GHS` → `mobilemoneyghana`, …) |
 | Customer details | Flutterwave's hosted page collects neither a shipping address nor a name for the store, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for email and address before payment. The email is also required by `POST /v3/payments` |
-| Not supported | Coupons, split payments and subscriptions. `capabilities` declares all three as `false` |
+| Not supported | Subscriptions. `capabilities` declares `subscriptions: false` |
+| Discounts | Cart discounts are applied to the amount Flutterwave charges, so `capabilities.coupons` is `true`. No provider-side coupon object is created; the customer sees the net total on Flutterwave's page |
+| Vendor onboarding | In Vendors, choose the country and bank, enter the account number, **verify the account name**, then create the collection subaccount. The full account number is never stored; the `RS_…` id, resolved name, bank and last four are. A manually created `RS_…` id can still be pasted in |
 | On-page checkout | With checkout set to "On your page", Flutterwave Inline opens over the store's checkout using the public key and `tx_ref` from create-session. `checkout.flutterwave.com/v3.js` loads only when the customer presses Pay. The modal's `callback`/`onclose` only move the customer; the order still comes from the signed webhook and a live verify. `redirect_url` is deliberately not passed, because Inline gives it precedence over `callback` |
-| Split payments | When the cart has vendor-owned items, core sends exact per-vendor minor amounts (`allocations`); the package maps each to `subaccounts: [{ id, transaction_charge_type: "flat_subaccount", transaction_charge }]` for hosted and Inline. Each vendor receives exactly the amount core computed. A vendor without an active account blocks checkout with a 409 rather than settling everything to the platform |
+| Split payments | When the cart has vendor-owned items, core sends exact per-vendor minor amounts (`allocations`); the package maps each to `subaccounts: [{ id, transaction_charge_type: "flat_subaccount", transaction_charge }]` for hosted and Inline. Each vendor receives exactly the amount core computed. The subaccount's default `split_type` can be percentage or flat, but DashCommerce overrides it per payment so the shares stay exact. A vendor without an active account blocks checkout with a 409 rather than settling everything to the platform |
 
 ## Webhook verification
 
@@ -44,6 +46,7 @@ Flutterwave sends `charge.completed` for failed attempts too, with `data.status`
 Verified against Flutterwave's real test API with a Nigerian test account (KES wallet):
 
 - `GET /v3/balances`, `POST /v3/payments` and a real KES 1,500 M-Pesa payment all worked. The payment was completed through Flutterwave Inline on `checkout-v3.flutterwave.com`, which is the path `./checkout-client` now ships.
+- Payout onboarding, through this package's methods: `listPayoutBanks` returned 598 NG banks; `resolvePayoutAccount` resolved test account `0690000033` to `Bale Gary`; `createPayoutAccount` created `RS_043B…` with the masked number and resolved name, then the probe subaccount was deleted.
 - On-page, through this package's `./checkout-client`: Inline loaded from `checkout.flutterwave.com/v3.js` on Pay, completed a real KES 1,500 M-Pesa payment (transaction `10633614`), and the `callback` moved the page to `onFinished`. `getPaymentStatus` reported `succeeded` with `150000` minor units, and a KES 100 partial refund succeeded (refund `115045`).
 - `GET /v3/transactions/:id/verify` and `verify_by_reference?tx_ref=` both returned the payment, and the provider's `getPaymentStatus` reported `succeeded` with `150000` minor units for a `1500` KES charge.
 - A KES 500 partial refund succeeded with `status: "completed"`, and the `comments` tag came back exactly as sent. `meta.disburse_status` was `failed` in test mode, which is why the provider logs it.
@@ -106,12 +109,15 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 
 ### Split payments
 
-1. Create a **collection subaccount** in Flutterwave for each vendor (dashboard, or `POST /v3/subaccounts`), and copy its `RS_…` id.
-2. In DashCommerce → **Vendors**, add the vendor (or edit one), paste the id under the Flutterwave payout account, set the status to **Active**, and set the platform fee.
-3. Checkout computes each vendor's line subtotal minus the platform fee. Tax, shipping and platform-owned items stay with the platform. A vendor with no active account, a non-positive share, or a settlement currency that differs from the cart's blocks checkout with a readable 409.
-4. Flutterwave's `flat_subaccount` pays each vendor that exact amount. Flutterwave's transaction fee and the NGN 50 stamp duty (over NGN 10,000) come out of the platform remainder, not the vendor shares. If the settlement is less than the sum of the vendor amounts, Flutterwave does not split that payment and sends the whole settlement to your main account — check the dashboard for those.
+1. In DashCommerce → **Vendors**, add the vendor (or edit one) and open the Flutterwave payout account section.
+2. Choose the country and bank, enter the account number, and press **Verify account**. Flutterwave returns the account holder's name; check it before continuing.
+3. Fill in the business name, email and mobile (prefilled from the vendor), and choose the account's default split type and value. DashCommerce overrides this per payment with the exact vendor amount, so it is only the fallback for payments made outside DashCommerce.
+4. Press **Create payout account**. The `RS_…` id, resolved name, bank and last four digits are stored on the vendor; the full account number is not.
+5. If you already created the subaccount in Flutterwave, paste its `RS_…` id instead and set the status to **Active**.
+6. Checkout computes each vendor's line subtotal minus the platform fee. Tax, shipping and platform-owned items stay with the platform. A vendor with no active account, a non-positive share, or a settlement currency that differs from the cart's blocks checkout with a readable 409.
+7. Flutterwave's `flat_subaccount` pays each vendor that exact amount. Flutterwave's transaction fee and the NGN 50 stamp duty (over NGN 10,000) come out of the platform remainder, not the vendor shares. If the settlement is less than the sum of the vendor amounts, Flutterwave does not split that payment and sends the whole settlement to your main account — check the dashboard for those.
 
-Creating subaccounts through the Flutterwave API from DashCommerce (bank details, KYC) is not part of this package yet; the `RS_…` id is entered by the merchant.
+Country-specific subaccount `meta` (SWIFT/routing/branch) is not collected by the form yet. The API accepts it for the US, Ghana, Tanzania, Rwanda, Uganda and SEPA countries; add it with the provider API until the form supports those countries.
 
 ## Develop
 
