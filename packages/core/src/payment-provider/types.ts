@@ -147,6 +147,8 @@ export type InitCheckoutResult =
 			 * Pay over the store's page. `client` is handed to the provider's
 			 * browser client (see the package's checkout-client entry), e.g.
 			 * Paystack's `{ accessCode }`. Never trusted as proof of payment.
+			 * Public: `create-session` sends it to the browser as JSON, so
+			 * never put a secret key or webhook secret in it.
 			 */
 			kind: "on_page";
 			checkoutReference: string;
