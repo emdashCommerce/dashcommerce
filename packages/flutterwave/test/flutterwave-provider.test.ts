@@ -1,0 +1,779 @@
+import { describe, expect, it } from "bun:test";
+import type {
+	InitCheckoutInput,
+	PaymentProviderRuntimeContext,
+} from "@dashcommerce/core/payment-provider";
+import {
+	flutterwavePaymentProvider,
+	flutterwaveReferenceFor,
+	toMajorUnits,
+	toMinorUnits,
+} from "../src/provider";
+
+function makeMockRuntimeContext(
+	fetchHandler: (url: string, init?: RequestInit) => Promise<Response>,
+): PaymentProviderRuntimeContext {
+	return {
+		http: { fetch: fetchHandler },
+		log: { info() {}, warn() {}, error() {} },
+	};
+}
+
+function checkoutInput(overrides: Partial<InitCheckoutInput> = {}): InitCheckoutInput {
+	return {
+		orderDraftId: "0123456789abcdef0123456789abcdef",
+		amount: 250000, // KES 2,500.00
+		currency: "KES",
+		customer: { email: "fan@example.com" },
+		lineItems: [],
+		successUrl: "https://shop.example/thank-you",
+		cancelUrl: "https://shop.example/checkout",
+		...overrides,
+	};
+}
+
+function flutterwaveOk(data: unknown, meta?: unknown): Response {
+	return new Response(
+		JSON.stringify({ status: "success", message: "ok", data, ...(meta ? { meta } : {}) }),
+		{
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+		},
+	);
+}
+
+function flutterwaveError(message: string, status = 400): Response {
+	return new Response(JSON.stringify({ status: "error", message, data: null }), {
+		status,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+const TX_REFERENCE = /^[A-Za-z0-9.=-]+$/;
+
+describe("flutterwavePaymentProvider", () => {
+	const credentials = { secretKey: "FLWSECK_TEST-1234567890abcdef-X" };
+
+	describe("declared to core", () => {
+		it("is a hosted provider that claims the verif-hash header", () => {
+			expect(flutterwavePaymentProvider.id).toBe("flutterwave");
+			expect(flutterwavePaymentProvider.checkoutStyles).toEqual(["hosted"]);
+			expect(flutterwavePaymentProvider.webhookHeaders).toEqual(["verif-hash"]);
+			expect(flutterwavePaymentProvider.collectsCustomerDetails).toBeUndefined();
+			expect(flutterwavePaymentProvider.capabilities).toEqual({
+				coupons: false,
+				connect: false,
+				subscriptions: false,
+			});
+		});
+
+		it("accepts only Flutterwave secret keys and any secret hash", () => {
+			const fields = flutterwavePaymentProvider.credentialFields;
+			expect(fields?.secretKey?.prefixes).toEqual(["FLWSECK_TEST-", "FLWSECK-"]);
+			expect(fields?.webhookSecret?.prefixes).toEqual([]);
+		});
+	});
+
+	describe("supportsCurrency", () => {
+		it("supports the currencies Flutterwave collects in", () => {
+			for (const currency of ["NGN", "KES", "GHS", "ZAR", "USD", "GBP", "EUR", "UGX", "TZS"]) {
+				expect(flutterwavePaymentProvider.supportsCurrency(currency)).toBe(true);
+			}
+			expect(flutterwavePaymentProvider.supportsCurrency("ngn")).toBe(true);
+			expect(flutterwavePaymentProvider.supportsCurrency(" KES ")).toBe(true);
+		});
+
+		it("rejects other currencies", () => {
+			expect(flutterwavePaymentProvider.supportsCurrency("JPY")).toBe(false);
+			expect(flutterwavePaymentProvider.supportsCurrency("")).toBe(false);
+		});
+	});
+
+	describe("amount conversion", () => {
+		it("converts core minor units to Flutterwave major units", () => {
+			expect(toMajorUnits(250000)).toBe(2500);
+			expect(toMajorUnits(1)).toBe(0.01);
+			expect(toMajorUnits(0)).toBe(0);
+		});
+
+		it("converts Flutterwave major units back to core minor units", () => {
+			expect(toMinorUnits(2500)).toBe(250000);
+			expect(toMinorUnits("0.01")).toBe(1);
+			expect(toMinorUnits(12.345)).toBe(1235);
+		});
+
+		it("refuses a negative or fractional minor amount", () => {
+			expect(() => toMajorUnits(-1)).toThrow(/non-negative integer/);
+			expect(() => toMajorUnits(1.5)).toThrow(/non-negative integer/);
+		});
+
+		it("ignores a missing or malformed major amount", () => {
+			expect(toMinorUnits(undefined)).toBeUndefined();
+			expect(toMinorUnits("abc")).toBeUndefined();
+			expect(toMinorUnits(-1)).toBeUndefined();
+		});
+	});
+
+	describe("flutterwaveReferenceFor", () => {
+		it("produces a reference Flutterwave accepts from a core draft id", () => {
+			const ref = flutterwaveReferenceFor("0123456789abcdef0123456789abcdef");
+			expect(ref).toBe("dc-0123456789abcdef0123456789abcdef");
+			expect(ref).toMatch(TX_REFERENCE);
+		});
+
+		it("replaces characters Flutterwave rejects", () => {
+			expect(flutterwaveReferenceFor("draft_flw_1")).toMatch(TX_REFERENCE);
+		});
+	});
+
+	describe("initCheckout", () => {
+		it("creates a hosted payment in major units and returns the link", async () => {
+			let capturedUrl = "";
+			let capturedBody: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (url, init) => {
+				capturedUrl = url;
+				capturedBody = JSON.parse(String(init?.body));
+				return flutterwaveOk({
+					link: "https://checkout.flutterwave.com/v3/hosted/pay/test-link",
+				});
+			});
+
+			const result = await flutterwavePaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({ preferredChannels: ["card", "mpesa"] }),
+				credentials,
+			);
+
+			expect(capturedUrl).toBe("https://api.flutterwave.com/v3/payments");
+			expect(capturedBody.tx_ref).toBe("dc-0123456789abcdef0123456789abcdef");
+			expect(String(capturedBody.tx_ref)).toMatch(TX_REFERENCE);
+			expect(capturedBody.amount).toBe(2500);
+			expect(capturedBody.currency).toBe("KES");
+			expect(capturedBody.redirect_url).toBe("https://shop.example/thank-you");
+			expect(capturedBody.payment_options).toBe("card,mpesa");
+			expect((capturedBody.customer as Record<string, string>).email).toBe("fan@example.com");
+			expect((capturedBody.meta as Record<string, string>).orderDraftId).toBe(
+				"0123456789abcdef0123456789abcdef",
+			);
+
+			expect(result.kind).toBe("redirect");
+			if (result.kind !== "redirect") throw new Error("expected redirect");
+			expect(result.redirectUrl).toBe("https://checkout.flutterwave.com/v3/hosted/pay/test-link");
+			expect(result.checkoutReference).toBe("dc-0123456789abcdef0123456789abcdef");
+		});
+
+		it("resolves a generic mobile-money hint with the cart's currency", async () => {
+			let body: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (_url, init) => {
+				body = JSON.parse(String(init?.body));
+				return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+			});
+			await flutterwavePaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({ currency: "GHS", preferredChannels: ["mobile_money"] }),
+				credentials,
+			);
+			expect(body.payment_options).toBe("mobilemoneyghana");
+		});
+
+		it("passes the customer's name and phone when the cart has them", async () => {
+			let body: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (_url, init) => {
+				body = JSON.parse(String(init?.body));
+				return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+			});
+			await flutterwavePaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({
+					customer: { email: "fan@example.com", phone: "+254700000000" },
+					shippingAddress: { firstName: "Aidi", lastName: "Onyango" },
+				}),
+				credentials,
+			);
+			expect(body.customer).toEqual({
+				email: "fan@example.com",
+				name: "Aidi Onyango",
+				phonenumber: "+254700000000",
+			});
+		});
+
+		it("strips Stripe's session placeholder from the return URL", async () => {
+			let body: Record<string, unknown> = {};
+			const ctx = makeMockRuntimeContext(async (_url, init) => {
+				body = JSON.parse(String(init?.body));
+				return flutterwaveOk({ link: "https://checkout.flutterwave.com/v3/hosted/pay/x" });
+			});
+			await flutterwavePaymentProvider.initCheckout(
+				ctx,
+				checkoutInput({
+					successUrl: "https://shop.example/thank-you?session_id={CHECKOUT_SESSION_ID}&utm=email",
+				}),
+				credentials,
+			);
+			const callback = new URL(String(body.redirect_url));
+			expect(callback.searchParams.get("session_id")).toBeNull();
+			expect(callback.searchParams.get("utm")).toBe("email");
+		});
+
+		it("throws before calling Flutterwave when the email is missing", async () => {
+			let calls = 0;
+			const ctx = makeMockRuntimeContext(async () => {
+				calls++;
+				return new Response("{}");
+			});
+			await expect(
+				flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({ customer: { email: "" } }),
+					credentials,
+				),
+			).rejects.toThrow("Flutterwave requires customer email to initialize checkout");
+			expect(calls).toBe(0);
+		});
+
+		it("throws before calling Flutterwave when the email is malformed", async () => {
+			let calls = 0;
+			const ctx = makeMockRuntimeContext(async () => {
+				calls++;
+				return new Response("{}");
+			});
+			await expect(
+				flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({ customer: { email: "invalid-email" } }),
+					credentials,
+				),
+			).rejects.toThrow("Flutterwave requires a valid customer email to initialize checkout");
+			expect(calls).toBe(0);
+		});
+
+		it("throws before calling Flutterwave for an unsupported currency", async () => {
+			let calls = 0;
+			const ctx = makeMockRuntimeContext(async () => {
+				calls++;
+				return new Response("{}");
+			});
+			await expect(
+				flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({ currency: "JPY" }),
+					credentials,
+				),
+			).rejects.toThrow(/does not support currency JPY/);
+			expect(calls).toBe(0);
+		});
+
+		it("throws before calling Flutterwave for subscription mode", async () => {
+			let calls = 0;
+			const ctx = makeMockRuntimeContext(async () => {
+				calls++;
+				return new Response("{}");
+			});
+			await expect(
+				flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({ mode: "subscription" }),
+					credentials,
+				),
+			).rejects.toThrow(/does not support subscription checkout/);
+			expect(calls).toBe(0);
+		});
+
+		it("fails when Flutterwave returns no link", async () => {
+			const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+			await expect(
+				flutterwavePaymentProvider.initCheckout(ctx, checkoutInput(), credentials),
+			).rejects.toThrow("Flutterwave did not return a hosted checkout link");
+		});
+	});
+
+	describe("verifyWebhook", () => {
+		it("accepts the configured secret hash", async () => {
+			const result = await flutterwavePaymentProvider.verifyWebhook({
+				rawBody: "{}",
+				signatureHeader: "my-secret-hash",
+				secret: "my-secret-hash",
+			});
+			expect(result.ok).toBe(true);
+		});
+
+		it("refuses a different hash", async () => {
+			const result = await flutterwavePaymentProvider.verifyWebhook({
+				rawBody: "{}",
+				signatureHeader: "not-the-hash",
+				secret: "my-secret-hash",
+			});
+			expect(result.ok).toBe(false);
+			expect(result.reason).toContain("verif-hash");
+		});
+
+		it("refuses a missing header or a missing secret", async () => {
+			expect(
+				(
+					await flutterwavePaymentProvider.verifyWebhook({
+						rawBody: "{}",
+						signatureHeader: "",
+						secret: "my-secret-hash",
+					})
+				).ok,
+			).toBe(false);
+			expect(
+				(
+					await flutterwavePaymentProvider.verifyWebhook({
+						rawBody: "{}",
+						signatureHeader: "my-secret-hash",
+						secret: "",
+					})
+				).ok,
+			).toBe(false);
+		});
+	});
+
+	describe("parseWebhookEvent", () => {
+		const draftId = "0123456789abcdef0123456789abcdef";
+
+		function chargeEvent(overrides: Record<string, unknown> = {}) {
+			return {
+				event: "charge.completed",
+				"event.type": "CARD_TRANSACTION",
+				data: {
+					id: 285959875,
+					tx_ref: `dc-${draftId}`,
+					flw_ref: "FLW-MOCK-123",
+					amount: 1500,
+					currency: "KES",
+					charged_amount: 1500,
+					status: "successful",
+					payment_type: "mpesa",
+					processor_response: "Approved",
+					customer: {
+						id: 1,
+						name: "Aidi Onyango",
+						phone_number: "+254700000000",
+						email: "fan@example.com",
+					},
+					meta: { orderDraftId: draftId },
+					...overrides,
+				},
+			};
+		}
+
+		it("normalises a successful charge, converting the amount to minor units", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(JSON.stringify(chargeEvent()));
+			expect(event.type).toBe("charge.succeeded");
+			if (event.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(event.orderDraftId).toBe(draftId);
+			expect(event.providerId).toBe("flutterwave");
+			expect(event.providerEventId).toBe("charge.completed:285959875:successful");
+			expect(event.paymentReference).toBe("285959875");
+			expect(event.checkoutReference).toBe(`dc-${draftId}`);
+			expect(event.amount).toBe(150000);
+			expect(event.currency).toBe("KES");
+			expect(event.channel).toBe("M-Pesa");
+			expect(event.customer).toEqual({
+				email: "fan@example.com",
+				name: "Aidi Onyango",
+				phone: "+254700000000",
+			});
+		});
+
+		it("reads meta when Flutterwave sends it as a JSON string", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify(chargeEvent({ meta: JSON.stringify({ orderDraftId: draftId }) })),
+			);
+			expect(event.type).toBe("charge.succeeded");
+		});
+
+		it("finds the draft from the reference when meta is absent", () => {
+			const payload = chargeEvent();
+			const { meta: _meta, ...data } = payload.data as Record<string, unknown>;
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({ ...payload, data }),
+			);
+			expect(event.type).toBe("charge.succeeded");
+			if (event.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+			expect(event.orderDraftId).toBe(draftId);
+		});
+
+		it("normalises a failed charge", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify(chargeEvent({ status: "failed", processor_response: "insufficient funds" })),
+			);
+			expect(event.type).toBe("charge.failed");
+			if (event.type !== "charge.failed") throw new Error("expected charge.failed");
+			expect(event.orderDraftId).toBe(draftId);
+			expect(event.providerEventId).toBe("charge.completed:285959875:failed");
+			expect(event.reason).toBe("insufficient funds");
+		});
+
+		it("leaves a pending charge unhandled", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify(chargeEvent({ status: "pending" })),
+			);
+			expect(event.type).toBe("unhandled");
+		});
+
+		it("normalises the refund webhook, which has no event field", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({
+					id: 99025,
+					AmountRefunded: 100,
+					status: "completed",
+					FlwRef: "4687213286",
+					TransactionId: 9231836,
+					createdAt: "2026-01-30T08:35:45.000Z",
+				}),
+			);
+			expect(event.type).toBe("refund.updated");
+			if (event.type !== "refund.updated") throw new Error("expected refund.updated");
+			expect(event.providerId).toBe("flutterwave");
+			expect(event.providerRefundId).toBe("99025");
+			expect(event.providerEventId).toBe("refund:99025:succeeded");
+			expect(event.status).toBe("succeeded");
+		});
+
+		it("maps a pending refund and keeps each status a separate event", () => {
+			const event = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({
+					id: 99025,
+					AmountRefunded: 100,
+					status: "pending-momo",
+					TransactionId: 9231836,
+				}),
+			);
+			if (event.type !== "refund.updated") throw new Error("expected refund.updated");
+			expect(event.status).toBe("pending");
+			expect(event.providerEventId).toBe("refund:99025:pending");
+		});
+
+		it("accepts a string refund id and an event wrapper", () => {
+			const bare = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({ id: "99025", AmountRefunded: 100, status: "completed" }),
+			);
+			if (bare.type !== "refund.updated") throw new Error("expected refund.updated");
+			expect(bare.providerRefundId).toBe("99025");
+
+			const wrapped = flutterwavePaymentProvider.parseWebhookEvent(
+				JSON.stringify({ event: "refund.completed", data: { id: 99025, status: "completed" } }),
+			);
+			if (wrapped.type !== "refund.updated") throw new Error("expected refund.updated");
+			expect(wrapped.providerRefundId).toBe("99025");
+			expect(wrapped.status).toBe("succeeded");
+		});
+
+		it("leaves malformed, unparseable and unknown events unhandled", () => {
+			expect(flutterwavePaymentProvider.parseWebhookEvent("not json").type).toBe("unhandled");
+			expect(flutterwavePaymentProvider.parseWebhookEvent("null").type).toBe("unhandled");
+			expect(flutterwavePaymentProvider.parseWebhookEvent("{}").type).toBe("unhandled");
+			expect(
+				flutterwavePaymentProvider.parseWebhookEvent(
+					JSON.stringify({ event: "transfer.completed", data: {} }),
+				).type,
+			).toBe("unhandled");
+		});
+	});
+
+	describe("getPaymentStatus", () => {
+		it("verifies by numeric transaction id", async () => {
+			let requested = "";
+			const ctx = makeMockRuntimeContext(async (url) => {
+				requested = url;
+				return flutterwaveOk({
+					id: 285959875,
+					tx_ref: "dc-abc",
+					amount: 1500,
+					currency: "KES",
+					status: "successful",
+					processor_response: "Approved",
+				});
+			});
+
+			const result = await flutterwavePaymentProvider.getPaymentStatus?.(
+				ctx,
+				"285959875",
+				credentials,
+			);
+			expect(requested).toBe("https://api.flutterwave.com/v3/transactions/285959875/verify");
+			expect(result).toEqual({
+				status: "succeeded",
+				paymentReference: "285959875",
+				amount: 150000,
+				currency: "KES",
+				reason: "Approved",
+			});
+		});
+
+		it("verifies a reference through verify_by_reference", async () => {
+			let requested = "";
+			const ctx = makeMockRuntimeContext(async (url) => {
+				requested = url;
+				return flutterwaveOk({
+					id: 285959875,
+					tx_ref: "dc-abc",
+					amount: "1500",
+					currency: "kes",
+					status: "failed",
+				});
+			});
+
+			const result = await flutterwavePaymentProvider.getPaymentStatus?.(
+				ctx,
+				"dc-abc",
+				credentials,
+			);
+			expect(requested).toBe(
+				"https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=dc-abc",
+			);
+			expect(result?.status).toBe("failed");
+			expect(result?.amount).toBe(150000);
+			expect(result?.currency).toBe("KES");
+		});
+
+		it("treats an unknown status as pending, never as paid", async () => {
+			const ctx = makeMockRuntimeContext(async () =>
+				flutterwaveOk({ id: 1, status: "weird", amount: 10, currency: "NGN" }),
+			);
+			const result = await flutterwavePaymentProvider.getPaymentStatus?.(ctx, "1", credentials);
+			expect(result?.status).toBe("pending");
+			expect(result?.reason).toContain("Unrecognised Flutterwave status");
+		});
+
+		it("fails without a reference and does not call Flutterwave", async () => {
+			let calls = 0;
+			const ctx = makeMockRuntimeContext(async () => {
+				calls++;
+				return flutterwaveOk({});
+			});
+			const result = await flutterwavePaymentProvider.getPaymentStatus?.(ctx, " ", credentials);
+			expect(result?.status).toBe("failed");
+			expect(calls).toBe(0);
+		});
+	});
+
+	describe("refund", () => {
+		function refundRuntime() {
+			const refunds: Array<Record<string, unknown>> = [];
+			let nextId = 8612;
+			const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = [];
+
+			const ctx = makeMockRuntimeContext(async (url, init) => {
+				const { pathname, searchParams } = new URL(url);
+				const method = init?.method ?? "GET";
+				const body = init?.body
+					? (JSON.parse(String(init.body)) as Record<string, unknown>)
+					: undefined;
+				calls.push({ method, path: pathname, ...(body ? { body } : {}) });
+
+				if (pathname === "/v3/refunds") {
+					const page = Number(searchParams.get("page") ?? "1");
+					return flutterwaveOk(page === 1 ? refunds : [], {
+						page_info: { current_page: page, total_pages: 1, page_size: 20 },
+					});
+				}
+				const match = /^\/v3\/transactions\/(\d+)\/refund$/.exec(pathname);
+				if (match) {
+					const transactionId = Number(match[1]);
+					const refund = {
+						id: nextId++,
+						transaction_id: transactionId,
+						amount_refunded: body?.amount,
+						status: "completed",
+						comment: body?.comments ?? null,
+						created_at: new Date(Date.UTC(2026, 10, 19, 2, refunds.length)).toISOString(),
+					};
+					refunds.push(refund);
+					return flutterwaveOk(refund);
+				}
+				return flutterwaveError("Not found", 404);
+			});
+
+			return { ctx, refunds, calls };
+		}
+
+		it("refunds in major units and tags the comment with the request id", async () => {
+			const { ctx, refunds, calls } = refundRuntime();
+			const result = await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "908790",
+					refundRequestId: "refund-req-1",
+					amount: 50000,
+					currency: "KES",
+					reason: "out of stock",
+				},
+				credentials,
+			);
+
+			const create = calls.find((c) => c.method === "POST");
+			expect(create?.path).toBe("/v3/transactions/908790/refund");
+			expect(create?.body?.amount).toBe(500);
+			expect(create?.body?.comments).toBe("out of stock (refundRequestId=refund-req-1)");
+			expect(refunds).toHaveLength(1);
+			expect(result).toEqual({
+				providerRefundId: "8612",
+				refundRequestId: "refund-req-1",
+				status: "succeeded",
+				amount: 50000,
+				currency: "KES",
+			});
+		});
+
+		it("returns the first refund on a retry instead of creating another", async () => {
+			const { ctx, refunds, calls } = refundRuntime();
+			const input = {
+				paymentReference: "908790",
+				refundRequestId: "refund-req-1",
+				amount: 50000,
+				currency: "KES",
+			};
+			const first = await flutterwavePaymentProvider.refund(ctx, input, credentials);
+			const retry = await flutterwavePaymentProvider.refund(ctx, input, credentials);
+
+			expect(retry.providerRefundId).toBe(first.providerRefundId);
+			expect(refunds).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+		});
+
+		it("creates a new refund for a different request id", async () => {
+			const { ctx, refunds } = refundRuntime();
+			await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "908790",
+					refundRequestId: "refund-req-1",
+					amount: 50000,
+					currency: "KES",
+				},
+				credentials,
+			);
+			await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "908790",
+					refundRequestId: "refund-req-2",
+					amount: 50000,
+					currency: "KES",
+				},
+				credentials,
+			);
+			expect(refunds).toHaveLength(2);
+		});
+
+		it("retries a request whose earlier refund failed", async () => {
+			const { ctx, refunds, calls } = refundRuntime();
+			refunds.push({
+				id: 7000,
+				transaction_id: 908790,
+				amount_refunded: 500,
+				status: "failed",
+				comment: "(refundRequestId=refund-req-1)",
+				created_at: "2026-11-19T01:00:00.000Z",
+			});
+
+			await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "908790",
+					refundRequestId: "refund-req-1",
+					amount: 50000,
+					currency: "KES",
+				},
+				credentials,
+			);
+			expect(refunds).toHaveLength(2);
+			expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+		});
+
+		it("resolves a tx_ref to the numeric id before refunding", async () => {
+			const paths: string[] = [];
+			const ctx = makeMockRuntimeContext(async (url) => {
+				const { pathname } = new URL(url);
+				paths.push(pathname);
+				if (pathname === "/v3/transactions/verify_by_reference") {
+					return flutterwaveOk({ id: 908790, tx_ref: "dc-abc", status: "successful" });
+				}
+				if (pathname === "/v3/refunds") {
+					return flutterwaveOk([], { page_info: { total_pages: 1 } });
+				}
+				if (pathname === "/v3/transactions/908790/refund") {
+					return flutterwaveOk({ id: 8612, amount_refunded: 1500, status: "completed" });
+				}
+				return flutterwaveError("Not found", 404);
+			});
+
+			await flutterwavePaymentProvider.refund(
+				ctx,
+				{
+					paymentReference: "dc-abc",
+					refundRequestId: "refund-req-1",
+					currency: "KES",
+				},
+				credentials,
+			);
+			expect(paths).toContain("/v3/transactions/verify_by_reference");
+			expect(paths).toContain("/v3/transactions/908790/refund");
+		});
+
+		it("requires a usable refundRequestId and a payment reference", async () => {
+			const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+			await expect(
+				flutterwavePaymentProvider.refund(
+					ctx,
+					{ paymentReference: "1", refundRequestId: "", currency: "KES" },
+					credentials,
+				),
+			).rejects.toThrow(/non-empty refundRequestId/);
+			await expect(
+				flutterwavePaymentProvider.refund(
+					ctx,
+					{ paymentReference: "1", refundRequestId: "has space", currency: "KES" },
+					credentials,
+				),
+			).rejects.toThrow(/without spaces or brackets/);
+			await expect(
+				flutterwavePaymentProvider.refund(
+					ctx,
+					{ paymentReference: "", refundRequestId: "ok", currency: "KES" },
+					credentials,
+				),
+			).rejects.toThrow(/requires paymentReference/);
+		});
+	});
+
+	describe("checkConnection", () => {
+		it("reports test mode and a readable key", async () => {
+			let requested = "";
+			const ctx = makeMockRuntimeContext(async (url) => {
+				requested = url;
+				return flutterwaveOk({ NGN: 1000 });
+			});
+			const result = await flutterwavePaymentProvider.checkConnection?.(ctx, credentials);
+			expect(requested).toBe("https://api.flutterwave.com/v3/balances");
+			expect(result?.ok).toBe(true);
+			expect(result?.mode).toBe("test");
+		});
+
+		it("reports live mode for a live key", async () => {
+			const ctx = makeMockRuntimeContext(async () => flutterwaveOk({}));
+			const result = await flutterwavePaymentProvider.checkConnection?.(ctx, {
+				secretKey: "FLWSECK-1234567890abcdef-X",
+			});
+			expect(result?.mode).toBe("live");
+		});
+
+		it("reports a refused key instead of throwing", async () => {
+			const ctx = makeMockRuntimeContext(async () =>
+				flutterwaveError("Authorization required", 401),
+			);
+			const result = await flutterwavePaymentProvider.checkConnection?.(ctx, credentials);
+			expect(result?.ok).toBe(false);
+			expect(result?.message).toContain("refused the key");
+		});
+	});
+
+	describe("formatAmount", () => {
+		it("shows major units", () => {
+			expect(flutterwavePaymentProvider.formatAmount(250000, "kes")).toBe("KES 2500.00");
+		});
+	});
+});
