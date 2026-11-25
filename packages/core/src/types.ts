@@ -514,6 +514,8 @@ export interface SubscriptionInvoice {
 	stripeInvoiceId: string;
 	/** Gateway that owns this invoice. Unset means Stripe. */
 	providerId?: string;
+	/** The provider's raw invoice/charge id, without the storage prefix. */
+	providerInvoiceId?: string;
 	subscriptionId: string;
 	amount: Money;
 	status: "draft" | "open" | "paid" | "uncollectible" | "void";

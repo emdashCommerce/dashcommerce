@@ -199,8 +199,9 @@ describe("provider-managed subscriptions", () => {
 		expect(sub.currentPeriodEnd).toBe("2026-03-01T00:00:00.000Z");
 		const invoice = Array.from(getCol("subscription_invoices").values())[0] as SubscriptionInvoice;
 		expect(invoice).toMatchObject({
-			stripeInvoiceId: "pay_sub_2",
+			stripeInvoiceId: "acme:pay_sub_2",
 			providerId: "acme",
+			providerInvoiceId: "pay_sub_2",
 			subscriptionId: sub.id,
 			status: "paid",
 		});
