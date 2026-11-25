@@ -127,8 +127,7 @@ async function handleCancel(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await cancel(ctx, {
@@ -158,8 +157,7 @@ async function handlePause(routeCtx: RouteContext, _ctx?: PluginContext): Promis
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await pause(ctx, {
@@ -186,8 +184,7 @@ async function handleResume(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await resume(ctx, {

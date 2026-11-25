@@ -473,7 +473,14 @@ export type SubscriptionStatus =
 
 export interface Subscription {
 	id: string;
-	stripeSubscriptionId: string; // unique
+	/**
+	 * Provider subscription id. Unique. Stripe uses `sub_…`; Flutterwave
+	 * uses the payment plan id, because DashCommerce creates one plan per
+	 * subscription. The field name is legacy.
+	 */
+	stripeSubscriptionId: string;
+	/** Gateway that owns this subscription. Unset means Stripe. */
+	providerId?: string;
 	customerId: string;
 	productId: string;
 	variantId?: string;
@@ -494,7 +501,13 @@ export interface Subscription {
 
 export interface SubscriptionInvoice {
 	id: string;
-	stripeInvoiceId: string; // unique
+	/**
+	 * Provider invoice/charge id. Unique. Stripe uses `in_…`; Flutterwave
+	 * uses the recurring transaction id. The field name is legacy.
+	 */
+	stripeInvoiceId: string;
+	/** Gateway that owns this invoice. Unset means Stripe. */
+	providerId?: string;
 	subscriptionId: string;
 	amount: Money;
 	status: "draft" | "open" | "paid" | "uncollectible" | "void";
