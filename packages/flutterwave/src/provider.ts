@@ -362,6 +362,23 @@ async function createSubscriptionPlan(
 	return String(data.id);
 }
 
+async function discardPlan(
+	ctx: PaymentProviderRuntimeContext,
+	client: ReturnType<typeof toFlutterwaveClient>,
+	planId: string | undefined,
+): Promise<void> {
+	if (!planId) return;
+	try {
+		await call(ctx, {
+			client,
+			method: "PUT",
+			path: `/payment-plans/${encodeURIComponent(planId)}/cancel`,
+		});
+	} catch {
+		// Best effort: the checkout error is the one the merchant needs.
+	}
+}
+
 function channelLabel(type: string | undefined): string | undefined {
 	if (!type) return undefined;
 	const value = type.toLowerCase();
@@ -827,31 +844,38 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			};
 		}
 
-		const data = await call<{ link?: string }>(ctx, {
-			client,
-			path: "/payments",
-			body: {
-				tx_ref: checkoutRef,
-				amount: toMajorUnits(input.amount),
-				currency,
-				redirect_url: flutterwaveCallbackUrl(input.successUrl),
-				customer: {
-					email,
-					...(name ? { name } : {}),
-					...(phone ? { phonenumber: phone } : {}),
+		let data: { link?: string };
+		try {
+			data = await call<{ link?: string }>(ctx, {
+				client,
+				path: "/payments",
+				body: {
+					tx_ref: checkoutRef,
+					amount: toMajorUnits(input.amount),
+					currency,
+					redirect_url: flutterwaveCallbackUrl(input.successUrl),
+					customer: {
+						email,
+						...(name ? { name } : {}),
+						...(phone ? { phonenumber: phone } : {}),
+					},
+					meta: {
+						...input.metadata,
+						...input.subscriptionMetadata,
+						orderDraftId: input.orderDraftId,
+					},
+					...(paymentOptions ? { payment_options: paymentOptions.join(",") } : {}),
+					...(subaccounts ? { subaccounts } : {}),
+					...(paymentPlan ? { payment_plan: paymentPlan } : {}),
 				},
-				meta: {
-					...input.metadata,
-					...input.subscriptionMetadata,
-					orderDraftId: input.orderDraftId,
-				},
-				...(paymentOptions ? { payment_options: paymentOptions.join(",") } : {}),
-				...(subaccounts ? { subaccounts } : {}),
-				...(paymentPlan ? { payment_plan: paymentPlan } : {}),
-			},
-		});
+			});
+		} catch (err) {
+			await discardPlan(ctx, client, paymentPlan);
+			throw err;
+		}
 
 		if (!data?.link) {
+			await discardPlan(ctx, client, paymentPlan);
 			throw new Error("Flutterwave did not return a hosted checkout link");
 		}
 		return {

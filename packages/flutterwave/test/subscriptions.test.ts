@@ -115,6 +115,31 @@ describe("Flutterwave subscription checkout", () => {
 		});
 	});
 
+	it("cancels the new plan when the hosted payment call fails", async () => {
+		const calls: Array<{ method: string; path: string }> = [];
+		const runtime = ctx(async (url, init) => {
+			const { pathname } = new URL(url);
+			calls.push({ method: init?.method ?? "GET", path: pathname });
+			if (pathname === "/v3/payment-plans") return ok({ id: 254811, name: "DC plan" });
+			if (pathname === "/v3/payments") {
+				return new Response(JSON.stringify({ status: "error", message: "boom", data: null }), {
+					status: 500,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+			if (pathname.endsWith("/cancel")) return ok({ id: 254811, status: "cancelled" });
+			return new Response("{}", { status: 404 });
+		});
+
+		await expect(
+			flutterwavePaymentProvider.initCheckout(runtime, subscriptionInput(), credentials),
+		).rejects.toThrow(/boom/);
+		expect(calls).toContainEqual({
+			method: "PUT",
+			path: "/v3/payment-plans/254811/cancel",
+		});
+	});
+
 	it("passes the plan to Inline on the on-page path", async () => {
 		const calls: string[] = [];
 		const runtime = ctx(async (url) => {
