@@ -37,11 +37,36 @@ const STATUS_OPTIONS = [
 	{ value: "restricted", label: "Restricted" },
 ];
 
+/** Best-effort initial country for payout onboarding, from the store currency. */
+const COUNTRY_BY_CURRENCY: Record<string, string> = {
+	NGN: "NG",
+	KES: "KE",
+	GHS: "GH",
+	ZAR: "ZA",
+	USD: "US",
+	GBP: "GB",
+	EUR: "IE",
+	XOF: "CI",
+	XAF: "CM",
+	ZMW: "ZM",
+	MWK: "MW",
+	TZS: "TZ",
+	UGX: "UG",
+	RWF: "RW",
+	EGP: "EG",
+};
+
 interface SettingsGateState {
 	connectEnabled: boolean;
 	defaultFeePercent: number;
+	defaultCurrency: string | null;
 	/** Registered providers that can split a payment across vendor accounts. */
-	splitsProviders: Array<{ id: string; label: string; payoutOnboarding: boolean }>;
+	splitsProviders: Array<{
+		id: string;
+		label: string;
+		payoutOnboarding: boolean;
+		payoutVerification: boolean;
+	}>;
 }
 
 type PageState = "loading" | "disabled" | "ready" | "error";
@@ -88,6 +113,7 @@ export function VendorsPage() {
 							label: string;
 							capabilities?: { splits?: boolean };
 							payoutOnboarding?: boolean;
+							payoutVerification?: boolean;
 						}>)
 					: [];
 				const splitsProviders = providers
@@ -96,6 +122,7 @@ export function VendorsPage() {
 						id: provider.id,
 						label: provider.label,
 						payoutOnboarding: provider.payoutOnboarding === true,
+						payoutVerification: provider.payoutVerification === true,
 					}));
 				setGate({
 					connectEnabled: enabled,
@@ -103,6 +130,10 @@ export function VendorsPage() {
 						typeof settings.connectPlatformFeePercent === "number"
 							? (settings.connectPlatformFeePercent as number)
 							: 0,
+					defaultCurrency:
+						typeof settings.defaultCurrency === "string"
+							? (settings.defaultCurrency as string)
+							: null,
 					splitsProviders,
 				});
 				if (!enabled && splitsProviders.length === 0) {
@@ -401,6 +432,8 @@ export function VendorsPage() {
 					initial={editing.vendor}
 					providers={gate?.splitsProviders ?? []}
 					api={api}
+					defaultFeePercent={gate?.defaultFeePercent ?? 0}
+					defaultCurrency={gate?.defaultCurrency ?? null}
 					onClose={() => setEditing(null)}
 					onChanged={async () => {
 						setEditing(null);
@@ -641,7 +674,7 @@ function ProviderVendorCard({
 				<Input
 					value={accountReference}
 					onChange={(e) => setAccountReference(e.currentTarget.value)}
-					placeholder="RS_…"
+					placeholder="Account id"
 					disabled={submitting}
 				/>
 			</FormField>
@@ -670,15 +703,26 @@ function PayoutAccountForm({
 	provider,
 	vendor,
 	api,
+	defaultFeePercent,
+	defaultCurrency,
 	onChanged,
 }: {
-	provider: { id: string; label: string; payoutOnboarding: boolean };
+	provider: {
+		id: string;
+		label: string;
+		payoutOnboarding: boolean;
+		payoutVerification: boolean;
+	};
 	vendor: Vendor;
 	api: ReturnType<typeof usePluginAPI>;
+	defaultFeePercent: number;
+	defaultCurrency: string | null;
 	onChanged: () => Promise<void>;
 }) {
 	const stored = vendor.paymentAccounts?.[provider.id];
-	const [country, setCountry] = useState("NG");
+	const initialCountry =
+		COUNTRY_BY_CURRENCY[(defaultCurrency ?? "").toUpperCase()] ?? "NG";
+	const [country, setCountry] = useState(initialCountry);
 	const [banks, setBanks] = useState<Array<{ code: string; name: string }> | null>(null);
 	const [bankCode, setBankCode] = useState("");
 	const [accountNumber, setAccountNumber] = useState("");
@@ -687,7 +731,9 @@ function PayoutAccountForm({
 	const [businessEmail, setBusinessEmail] = useState(vendor.email);
 	const [businessMobile, setBusinessMobile] = useState("");
 	const [splitType, setSplitType] = useState<"percentage" | "flat">("percentage");
-	const [splitValue, setSplitValue] = useState<number | null>(vendor.platformFeePercent || 10);
+	const [splitValue, setSplitValue] = useState<number | null>(
+		vendor.platformFeePercent > 0 ? vendor.platformFeePercent : defaultFeePercent,
+	);
 	const [verifying, setVerifying] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [removing, setRemoving] = useState(false);
@@ -724,7 +770,12 @@ function PayoutAccountForm({
 					{stored.bankName ?? stored.bankCode}
 					{stored.maskedAccountNumber ? ` ${stored.maskedAccountNumber}` : ""} ·{" "}
 					{stored.status}
+					{stored.verified === false ? " · unverified" : ""}
 				</Alert>
+				<p style={{ color: T.textMuted, fontSize: "0.9em", marginTop: 0 }}>
+					Removing it here detaches the account from this vendor in DashCommerce. The
+					account at the provider is unchanged.
+				</p>
 				<Button
 					size="sm"
 					disabled={removing}
@@ -746,12 +797,13 @@ function PayoutAccountForm({
 						}
 					}}
 				>
-					{removing ? "Removing…" : "Remove account"}
+					{removing ? "Removing…" : "Remove from vendor"}
 				</Button>
 			</div>
 		);
 	}
 
+	const requiresVerification = provider.payoutVerification;
 	const valid =
 		country.length === 2 &&
 		bankCode.length > 0 &&
@@ -759,7 +811,7 @@ function PayoutAccountForm({
 		businessName.trim().length > 0 &&
 		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail) &&
 		businessMobile.trim().length > 0 &&
-		accountName !== null &&
+		(!requiresVerification || accountName !== null) &&
 		typeof splitValue === "number" &&
 		splitValue >= 0 &&
 		(splitType === "flat" ? splitValue > 0 : splitValue <= 100);
@@ -826,18 +878,27 @@ function PayoutAccountForm({
 					disabled={creating}
 				/>
 			</FormField>
-			<FormField label="Bank" description={banks === null ? "Loading banks…" : undefined}>
-				<Select
-					value={bankCode}
-					onChange={(e) => {
-						setBankCode(e.currentTarget.value);
+			<FormField
+				label="Bank or mobile money"
+				description={
+					banks === null
+						? "Loading channels…"
+						: "Banks and mobile-money channels the provider supports."
+				}
+			>
+				<Combobox
+					value={bankCode || null}
+					onChange={(next) => {
+						setBankCode(next ?? "");
 						setAccountName(null);
 					}}
 					options={(banks ?? []).map((b) => ({ value: b.code, label: b.name }))}
+					placeholder="Search banks or mobile money…"
+					allowClear
 					disabled={creating || !banks}
 				/>
 			</FormField>
-			<FormField label="Account number">
+			<FormField label="Account or mobile number">
 				<Input
 					value={accountNumber}
 					onChange={(e) => {
@@ -847,16 +908,25 @@ function PayoutAccountForm({
 					disabled={creating}
 				/>
 			</FormField>
-			<Button
-				size="sm"
-				onClick={verify}
-				disabled={creating || verifying || !bankCode || accountNumber.trim().length < 4}
-			>
-				{verifying ? "Verifying…" : "Verify account"}
-			</Button>
-			{accountName && (
-				<Alert type="success" title="Account verified">
-					{accountName}
+			{requiresVerification ? (
+				<>
+					<Button
+						size="sm"
+						onClick={verify}
+						disabled={creating || verifying || !bankCode || accountNumber.trim().length < 4}
+					>
+						{verifying ? "Verifying…" : "Verify account"}
+					</Button>
+					{accountName && (
+						<Alert type="success" title="Account verified">
+							{accountName}
+						</Alert>
+					)}
+				</>
+			) : (
+				<Alert type="info" title="Verification is not available">
+					This provider cannot verify account names here. The account will be saved as
+					unverified.
 				</Alert>
 			)}
 			<FormField label="Business name">
@@ -925,13 +995,22 @@ function EditVendorModal({
 	initial,
 	providers,
 	api,
+	defaultFeePercent,
+	defaultCurrency,
 	onClose,
 	onSave,
 	onChanged,
 }: {
 	initial: Vendor;
-	providers: Array<{ id: string; label: string; payoutOnboarding: boolean }>;
+	providers: Array<{
+		id: string;
+		label: string;
+		payoutOnboarding: boolean;
+		payoutVerification: boolean;
+	}>;
 	api: ReturnType<typeof usePluginAPI>;
+	defaultFeePercent: number;
+	defaultCurrency: string | null;
 	onClose: () => void;
 	onSave: (patch: {
 		name?: string;
@@ -1033,6 +1112,8 @@ function EditVendorModal({
 							provider={provider}
 							vendor={initial}
 							api={api}
+							defaultFeePercent={defaultFeePercent}
+							defaultCurrency={defaultCurrency}
 							onChanged={onChanged}
 						/>
 					) : (
@@ -1046,14 +1127,14 @@ function EditVendorModal({
 						>
 							<FormField
 								label={`${provider.label} payout account`}
-								description="The account id the provider gave you (Flutterwave: RS_…). Leave blank to remove it."
+								description="The provider's payout account id (Flutterwave RS_…, Paystack ACCT_…). Leave blank to remove it."
 							>
 								<Input
 									value={accounts[provider.id]?.accountReference ?? ""}
 									onChange={(e) =>
 										setAccount(provider.id, { accountReference: e.currentTarget.value })
 									}
-									placeholder="RS_…"
+									placeholder="Account id"
 									disabled={saving}
 								/>
 							</FormField>

@@ -396,7 +396,10 @@ export interface CreatePayoutAccountInput {
 /** What a provider returns after creating a vendor payout account. */
 export interface CreatedPayoutAccount {
 	accountReference: string;
-	accountName: string;
+	/** Absent when the provider cannot resolve account names. */
+	accountName?: string;
+	/** False when the provider created the account but has not verified it. */
+	verified?: boolean;
 	bankName?: string;
 	bankCode?: string;
 	country?: string;

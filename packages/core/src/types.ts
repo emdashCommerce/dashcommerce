@@ -570,6 +570,8 @@ export interface VendorPaymentAccount {
 	status: "active" | "pending" | "disabled";
 	/** Account holder name returned by the provider's account resolution. */
 	accountName?: string;
+	/** False when the provider created the account but has not verified it. */
+	verified?: boolean;
 	bankName?: string;
 	bankCode?: string;
 	/** ISO-2 country of the payout account. */
