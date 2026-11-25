@@ -22,7 +22,6 @@ function splitsProvider() {
 function vendor(id: string, overrides: Partial<Vendor> = {}): Vendor {
 	return {
 		id,
-		stripeAccountId: "",
 		name: `Vendor ${id}`,
 		email: `${id}@example.com`,
 		onboardingStatus: "pending",
@@ -103,8 +102,27 @@ describe("creating a vendor with a provider account", () => {
 			accountReference: "RS_ABC123",
 			status: "active",
 		});
-		expect(created.stripeAccountId).toBe("");
+		expect(created).not.toHaveProperty("stripeAccountId");
 		expect(getCol("vendors").size).toBe(1);
+	});
+
+	it("creates more than one vendor without a Stripe account", async () => {
+		registerPaymentProvider(splitsProvider());
+		const { ctx, getCol } = makeRouteContext({ "settings:flwSecretKey": "test-key" });
+		const first = await call(ctx, "admin/vendors/item", "POST", {
+			name: "Vendor A",
+			email: "a@example.com",
+		});
+		const second = await call(ctx, "admin/vendors/item", "POST", {
+			name: "Vendor B",
+			email: "b@example.com",
+		});
+		expect(first.status).toBe(201);
+		expect(second.status).toBe(201);
+		expect(getCol("vendors").size).toBe(2);
+		for (const row of getCol("vendors").values()) {
+			expect(row).not.toHaveProperty("stripeAccountId");
+		}
 	});
 
 	it("rejects an unknown provider, a non-splitting provider and a bad reference", async () => {

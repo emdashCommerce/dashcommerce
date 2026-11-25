@@ -16,7 +16,6 @@ afterEach(() => resetPaymentProviders());
 function vendor(id: string, overrides: Partial<Vendor> = {}): Vendor {
 	return {
 		id,
-		stripeAccountId: "",
 		name: `Vendor ${id}`,
 		email: `${id}@example.com`,
 		onboardingStatus: "active",

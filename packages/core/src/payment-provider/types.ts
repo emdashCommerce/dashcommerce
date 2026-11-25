@@ -61,7 +61,10 @@ export interface PaymentProviderShippingOption {
  */
 export interface PaymentProviderSplitAllocation {
 	vendorId: string;
-	/** The provider's payout account id, e.g. a Flutterwave subaccount (`RS_...`). */
+	/**
+	 * The provider's payout account id: a Flutterwave subaccount (`RS_…`) or a
+	 * Paystack subaccount (`ACCT_…`).
+	 */
 	accountReference: string;
 	/** Integer minor units owed to this vendor. */
 	amountMinor: number;
@@ -327,7 +330,8 @@ export interface PaymentProviderCapabilities {
 	subscriptions?: boolean;
 	/**
 	 * Split one payment across vendor payout accounts (Flutterwave
-	 * subaccounts). Core then sends `allocations` on `initCheckout`.
+	 * subaccounts, Paystack splits). Core then sends `allocations` on
+	 * `initCheckout`.
 	 */
 	splits?: boolean;
 }

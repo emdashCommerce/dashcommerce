@@ -59,6 +59,11 @@ function sumSubtotal(items: readonly CartLineItem[], currency: string): Money {
 /**
  * Build the allocations for a cart that has vendor-owned items.
  *
+ * Shares are computed on pre-discount line subtotals, matching the Stripe
+ * Connect plan. A cart-wide coupon comes out of the platform remainder, so a
+ * vendor still gets their advertised share; a coupon larger than that
+ * remainder is refused rather than silently reducing a vendor's payout.
+ *
  * Throws with a merchant-readable message when a vendor is missing, has no
  * active account for this provider, settles in another currency, or when the
  * shares do not fit inside the cart total. The caller turns that into a 409
@@ -139,7 +144,7 @@ export async function computeProviderSplit(
 
 	if (allocated > cart.total.amount) {
 		throw new Error(
-			`Vendor allocations (${allocated}) exceed the cart total (${cart.total.amount})`,
+			`Vendor allocations (${allocated}) exceed the discounted cart total (${cart.total.amount}). A cart-wide discount comes out of the platform's share; reduce the discount or the vendor shares.`,
 		);
 	}
 

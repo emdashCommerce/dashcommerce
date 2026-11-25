@@ -73,6 +73,7 @@ For provider authors, `PaymentProvider` can declare:
 - `capabilities.splits`: core computes `allocations` (`vendorId`, `accountReference`, `amountMinor`) and `platformRemainderMinor` when the cart has vendor-owned items. Vendors store their payout account under `paymentAccounts[providerId]`; the provider only routes the amounts core supplies.
 - `listPayoutBanks`, `resolvePayoutAccount`, `createPayoutAccount`: optional provider-managed payout onboarding. The Vendors page lists banks, verifies the account name and creates the account; core stores the masked result on the vendor.
 - `splitSettlement` on a `charge.succeeded` event: optional provider-reported per-account amounts, platform remainder and fee. Core stores it on `Order.providerSplits` for reconciliation; it never changes the shares core computed.
+- Keep your own transaction fee on the platform (Paystack's `bearer_type: account`, Flutterwave's default) so each vendor receives exactly the share core computed.
 
 `parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`. A failed refund stops counting against its order: the refunded total, payment status and order status are worked out again, and stock the refund put back is taken back off.
 
