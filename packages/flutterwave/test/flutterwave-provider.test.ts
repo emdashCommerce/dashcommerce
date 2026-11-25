@@ -74,6 +74,7 @@ describe("flutterwavePaymentProvider", () => {
 				connect: false,
 				subscriptions: false,
 				splits: true,
+				splitRefunds: false,
 			});
 		});
 

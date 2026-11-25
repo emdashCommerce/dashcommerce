@@ -328,6 +328,11 @@ function SplitSettlementCard({ order }: { order: Order }) {
 				provider says each account earned; it does not change the shares DashCommerce
 				computed.
 			</p>
+			<Alert type="warning" title="Refunds on split payments">
+				A refund comes out of the platform balance; vendor shares are not recovered
+				automatically. If the provider cannot refund a split payment from DashCommerce, use
+				its dashboard.
+			</Alert>
 			<Table<OrderProviderSplitAllocation>
 				data={split.allocations}
 				getRowKey={(a) => a.accountReference}

@@ -600,6 +600,9 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		connect: false,
 		subscriptions: false,
 		splits: true,
+		// A split refund returns 400 with no refund id in test mode; handle it
+		// in the Flutterwave dashboard instead.
+		splitRefunds: false,
 	},
 
 	brandColour: "#f5a623",
