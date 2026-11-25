@@ -925,7 +925,10 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			return {
 				type: "subscription.updated",
 				providerId: "flutterwave",
-				providerEventId: `subscription.cancelled:${String(planId)}`,
+				// The payload has no event id. A timestamp keeps a later
+				// cancel-after-reactivate from being deduped against the first;
+				// a retry re-applies the same cancelled state harmlessly.
+				providerEventId: `subscription.cancelled:${String(planId)}:${Date.now()}`,
 				providerSubscriptionId: String(planId),
 				status: "canceled",
 				canceledAt: new Date().toISOString(),
