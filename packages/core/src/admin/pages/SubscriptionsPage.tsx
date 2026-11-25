@@ -243,6 +243,16 @@ export function SubscriptionsPage() {
 						getRowKey={(s) => s.id}
 						columns={[
 							{
+								key: "provider",
+								header: "Provider",
+								render: (s) => {
+									const provider = s.providerId ?? "stripe";
+									if (provider === "stripe") return "Stripe";
+									if (provider === "flutterwave") return "Flutterwave";
+									return provider;
+								},
+							},
+							{
 								key: "status",
 								header: "Status",
 								render: (s) => (
