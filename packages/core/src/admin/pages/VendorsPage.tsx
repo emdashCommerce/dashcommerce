@@ -289,33 +289,35 @@ export function VendorsPage() {
 										>
 											Edit
 										</Button>
-										<Button
-											size="sm"
-											disabled={!!pending[`refresh:${v.id}`]}
-											onClick={async () => {
-												setPending((p) => ({ ...p, [`refresh:${v.id}`]: true }));
-												try {
-													await api.post<{ vendor: Vendor }>(
-														`admin/vendors/refresh?id=${encodeURIComponent(v.id)}`,
-													);
-													toast.success("Refreshed from Stripe");
-													await loadVendors();
-												} catch (err) {
-													toast.error(
-														"Refresh failed",
-														err instanceof Error ? err.message : undefined,
-													);
-												} finally {
-													setPending((p) => {
-														const n = { ...p };
-														delete n[`refresh:${v.id}`];
-														return n;
-													});
-												}
-											}}
-										>
-											{pending[`refresh:${v.id}`] ? "Refreshing…" : "Refresh"}
-										</Button>
+										{v.stripeAccountId && (
+											<Button
+												size="sm"
+												disabled={!!pending[`refresh:${v.id}`]}
+												onClick={async () => {
+													setPending((p) => ({ ...p, [`refresh:${v.id}`]: true }));
+													try {
+														await api.post<{ vendor: Vendor }>(
+															`admin/vendors/refresh?id=${encodeURIComponent(v.id)}`,
+														);
+														toast.success("Refreshed from Stripe");
+														await loadVendors();
+													} catch (err) {
+														toast.error(
+															"Refresh failed",
+															err instanceof Error ? err.message : undefined,
+														);
+													} finally {
+														setPending((p) => {
+															const n = { ...p };
+															delete n[`refresh:${v.id}`];
+															return n;
+														});
+													}
+												}}
+											>
+												{pending[`refresh:${v.id}`] ? "Refreshing…" : "Refresh"}
+											</Button>
+										)}
 										<Button
 											size="sm"
 											disabled={!v.payoutsEnabled || !!pending[`payouts:${v.id}`]}

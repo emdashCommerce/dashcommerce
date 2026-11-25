@@ -565,7 +565,13 @@ export interface VendorPaymentAccount {
 
 export interface Vendor {
 	id: string;
-	stripeAccountId: string; // acct_xxx, unique
+	/**
+	 * Stripe Connect account id (`acct_…`). Absent for vendors paid through a
+	 * different provider. The unique index treats a missing field as NULL, so
+	 * any number of non-Stripe vendors can exist; two vendors cannot share an
+	 * `acct_…`.
+	 */
+	stripeAccountId?: string;
 	name: string;
 	email: string;
 	onboardingStatus: "pending" | "active" | "restricted";

@@ -46,7 +46,6 @@ function onboardingProvider() {
 function vendor(overrides: Partial<Vendor> = {}): Vendor {
 	return {
 		id: "v1",
-		stripeAccountId: "",
 		name: "Vendor One",
 		email: "v1@example.com",
 		onboardingStatus: "pending",
