@@ -145,8 +145,9 @@ describe("provider-managed subscriptions", () => {
 		expect(order.subscriptionIds?.length).toBe(1);
 		const sub = Array.from(getCol("subscriptions").values())[0] as Subscription;
 		expect(sub).toMatchObject({
-			stripeSubscriptionId: "plan_1",
+			stripeSubscriptionId: "acme:plan_1",
 			providerId: "acme",
+			providerSubscriptionId: "plan_1",
 			customerId: order.customerId,
 			status: "active",
 			currency: "KES",

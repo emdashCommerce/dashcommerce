@@ -174,7 +174,7 @@ async function providerCancel(
 	return provider.cancelSubscription(
 		ctx,
 		{
-			providerSubscriptionId: local.stripeSubscriptionId,
+			providerSubscriptionId: local.providerSubscriptionId ?? local.stripeSubscriptionId,
 			atPeriodEnd: mode === "at_period_end",
 		},
 		creds,
@@ -193,7 +193,7 @@ async function providerResume(
 	if (!creds) throw new Error(`Payment provider "${provider.id}" is not configured`);
 	return provider.resumeSubscription(
 		ctx,
-		{ providerSubscriptionId: local.stripeSubscriptionId },
+		{ providerSubscriptionId: local.providerSubscriptionId ?? local.stripeSubscriptionId },
 		creds,
 	);
 }
