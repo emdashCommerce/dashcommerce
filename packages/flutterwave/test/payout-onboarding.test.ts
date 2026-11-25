@@ -20,6 +20,14 @@ function ok(data: unknown): Response {
 
 describe("Flutterwave payout onboarding", () => {
 	const credentials = { secretKey: "FLWSECK_TEST-1234567890abcdef-X" };
+	const baseInput = {
+		accountNumber: "0690000031",
+		bankCode: "044",
+		country: "NG",
+		businessName: "Vendor One",
+		businessEmail: "v1@example.com",
+		businessMobile: "09087930450",
+	};
 
 	it("lists the banks for a country, dropping malformed rows", async () => {
 		let requested = "";
@@ -108,12 +116,76 @@ describe("Flutterwave payout onboarding", () => {
 		expect(created).toEqual({
 			accountReference: "RS_TEST",
 			accountName: "Forrest Green",
+			verified: true,
 			bankName: "ACCESS BANK NIGERIA",
 			bankCode: "044",
 			country: "NG",
 			maskedAccountNumber: "••••0031",
 			metadata: { providerAccountId: "27708" },
 		});
+	});
+
+	it("returns the existing subaccount when Flutterwave says it already exists", async () => {
+		let listCalls = 0;
+		const ctx = makeCtx(async (url, init) => {
+			const { pathname, searchParams } = new URL(url);
+			if (pathname !== "/v3/subaccounts") {
+				return new Response("{}", { status: 404 });
+			}
+			if (init?.method === "POST") {
+				return new Response(
+					JSON.stringify({
+						status: "error",
+						message: "A subaccount with the account number and bank already exists",
+						data: null,
+					}),
+					{ status: 400, headers: { "Content-Type": "application/json" } },
+				);
+			}
+			listCalls += 1;
+			expect(searchParams.get("account_number")).toBe("0690000031");
+			expect(searchParams.get("account_bank")).toBe("044");
+			return ok([
+				{
+					id: 27708,
+					account_number: "0690000031",
+					account_bank: "044",
+					full_name: "Forrest Green",
+					subaccount_id: "RS_EXISTING",
+					bank_name: "ACCESS BANK NIGERIA",
+					country: "NG",
+				},
+			]);
+		});
+
+		const created = await flutterwavePaymentProvider.createPayoutAccount?.(
+			ctx,
+			baseInput,
+			credentials,
+		);
+		expect(listCalls).toBe(1);
+		expect(created?.accountReference).toBe("RS_EXISTING");
+		expect(created?.verified).toBe(true);
+	});
+
+	it("does not hide a non-duplicate Flutterwave error", async () => {
+		let listCalls = 0;
+		const ctx = makeCtx(async (url, init) => {
+			const { pathname } = new URL(url);
+			if (pathname === "/v3/subaccounts" && init?.method === "POST") {
+				return new Response(
+					JSON.stringify({ status: "error", message: "Application error", data: null }),
+					{ status: 500, headers: { "Content-Type": "application/json" } },
+				);
+			}
+			listCalls += 1;
+			return ok([]);
+		});
+
+		await expect(
+			flutterwavePaymentProvider.createPayoutAccount?.(ctx, baseInput, credentials),
+		).rejects.toThrow(/Application error/);
+		expect(listCalls).toBe(0);
 	});
 
 	it("validates the split and the required business fields", async () => {

@@ -216,6 +216,38 @@ function subaccountsFor(input: InitCheckoutInput): FlutterwaveSubaccount[] | und
 	return subaccounts;
 }
 
+interface FlutterwavePayoutSubaccount {
+	id?: number;
+	account_number?: string;
+	account_bank?: string;
+	full_name?: string;
+	subaccount_id?: string;
+	bank_name?: string;
+	country?: string;
+}
+
+function createdPayoutAccount(
+	data: FlutterwavePayoutSubaccount,
+	accountNumber: string,
+	bankCode: string,
+	country: string,
+): CreatedPayoutAccount {
+	const accountReference = data?.subaccount_id?.trim();
+	if (!accountReference) throw new Error("Flutterwave returned no subaccount id");
+	const accountName = data?.full_name?.trim();
+	if (!accountName) throw new Error("Flutterwave returned no account name for the subaccount");
+	return {
+		accountReference,
+		accountName,
+		verified: true,
+		...(data.bank_name ? { bankName: data.bank_name } : {}),
+		bankCode: data.account_bank?.trim() || bankCode,
+		country: data.country?.trim().toUpperCase() || country,
+		maskedAccountNumber: accountNumber.length > 4 ? `••••${accountNumber.slice(-4)}` : "••••",
+		...(typeof data.id === "number" ? { metadata: { providerAccountId: String(data.id) } } : {}),
+	};
+}
+
 function channelLabel(type: string | undefined): string | undefined {
 	if (!type) return undefined;
 	const value = type.toLowerCase();
@@ -954,62 +986,61 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			throw new Error("Flutterwave flat split value must be positive");
 		}
 
-		const data = await call<{
-			id?: number;
-			account_number?: string;
-			account_bank?: string;
-			full_name?: string;
-			subaccount_id?: string;
-			bank_name?: string;
-			split_type?: string;
-			split_value?: number;
-		}>(ctx, {
-			client: toFlutterwaveClient(credentials),
-			path: "/subaccounts",
-			body: {
-				account_bank: bankCode,
+		let data: FlutterwavePayoutSubaccount;
+		try {
+			data = await call<FlutterwavePayoutSubaccount>(ctx, {
+				client: toFlutterwaveClient(credentials),
+				path: "/subaccounts",
+				body: {
+					account_bank: bankCode,
+					account_number: accountNumber,
+					business_name: businessName,
+					business_email: businessEmail,
+					business_mobile: businessMobile,
+					country,
+					split_type: splitType,
+					split_value: splitValue,
+					...(input.businessContact ? { business_contact: input.businessContact } : {}),
+					...(input.businessContactMobile
+						? { business_contact_mobile: input.businessContactMobile }
+						: {}),
+					...(input.metadata
+						? {
+								meta: Object.entries(input.metadata).map(([meta_name, meta_value]) => ({
+									meta_name,
+									meta_value,
+								})),
+							}
+						: {}),
+				},
+			});
+		} catch (err) {
+			// Flutterwave rejects a second subaccount for the same bank account.
+			// Return the existing one so a retry or a re-add is idempotent.
+			if (!(err instanceof FlutterwaveApiError) || !/already exists/i.test(err.message)) {
+				throw err;
+			}
+			const query = new URLSearchParams({
 				account_number: accountNumber,
-				business_name: businessName,
-				business_email: businessEmail,
-				business_mobile: businessMobile,
-				country,
-				split_type: splitType,
-				split_value: splitValue,
-				...(input.businessContact ? { business_contact: input.businessContact } : {}),
-				...(input.businessContactMobile
-					? { business_contact_mobile: input.businessContactMobile }
-					: {}),
-				...(input.metadata
-					? {
-							meta: Object.entries(input.metadata).map(([meta_name, meta_value]) => ({
-								meta_name,
-								meta_value,
-							})),
-						}
-					: {}),
-			},
-		});
+				account_bank: bankCode,
+			});
+			const existing = await call<FlutterwavePayoutSubaccount[]>(ctx, {
+				client: toFlutterwaveClient(credentials),
+				method: "GET",
+				path: `/subaccounts?${query}`,
+			});
+			const match = Array.isArray(existing)
+				? (existing.find(
+						(subaccount) =>
+							subaccount.account_number === accountNumber &&
+							subaccount.account_bank === bankCode,
+					) ?? existing[0])
+				: undefined;
+			if (!match) throw err;
+			return createdPayoutAccount(match, accountNumber, bankCode, country);
+		}
 
-		const accountReference = data?.subaccount_id?.trim();
-		if (!accountReference) {
-			throw new Error("Flutterwave returned no subaccount id");
-		}
-		const accountName = data?.full_name?.trim();
-		if (!accountName) {
-			throw new Error("Flutterwave returned no account name for the subaccount");
-		}
-		return {
-			accountReference,
-			accountName,
-			...(data.bank_name ? { bankName: data.bank_name } : {}),
-			bankCode: data.account_bank?.trim() || bankCode,
-			country,
-			maskedAccountNumber:
-				accountNumber.length > 4 ? `••••${accountNumber.slice(-4)}` : "••••",
-			...(typeof data.id === "number"
-				? { metadata: { providerAccountId: String(data.id) } }
-				: {}),
-		};
+		return createdPayoutAccount(data, accountNumber, bankCode, country);
 	},
 
 	async getPaymentStatus(
