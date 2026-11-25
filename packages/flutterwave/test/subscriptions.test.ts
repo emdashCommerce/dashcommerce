@@ -252,6 +252,26 @@ describe("Flutterwave subscription state", () => {
 		expect(event.status).toBe("canceled");
 	});
 
+	it("accepts a charge with no draft and no plan so core can verify it", () => {
+		const event = flutterwavePaymentProvider.parseWebhookEvent(
+			JSON.stringify({
+				event: "charge.completed",
+				data: {
+					id: 10634467,
+					tx_ref: "renewal-10634467",
+					status: "successful",
+					amount: 2500,
+					currency: "KES",
+					customer: { email: "fan@example.com" },
+				},
+			}),
+		);
+		expect(event.type).toBe("charge.succeeded");
+		if (event.type !== "charge.succeeded") throw new Error("expected charge.succeeded");
+		expect(event.orderDraftId).toBe("");
+		expect(event.subscription).toBeUndefined();
+	});
+
 	it("reports the plan id from a live verify", async () => {
 		const runtime = ctx(async () =>
 			ok({

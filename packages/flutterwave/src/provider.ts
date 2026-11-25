@@ -985,9 +985,10 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				: draftIdFromReference(d?.tx_ref ?? "");
 		const planId = d?.plan === undefined || d?.plan === null ? undefined : String(d.plan).trim();
 
-		// A renewal may not carry the original order draft. It still has the
-		// plan id, which is enough for core to find the local subscription.
-		if (!transactionId || !d.tx_ref || (!orderDraftId && !planId)) {
+		// A renewal may carry neither the original order draft nor a plan
+		// field. Core asks the provider for the live status, which includes
+		// `plan`, and ignores a charge that is not ours.
+		if (!transactionId || !d.tx_ref) {
 			return {
 				type: "unhandled",
 				providerEventType: event.event,
