@@ -1,0 +1,95 @@
+name: Feature request
+description: Propose a change or addition to DashCommerce.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DashCommerce is pre-1.0 and the surface is still moving. Large features should start here so they can be aligned with the roadmap in `CHANGELOG.md` before code is written. Small fixes can go straight to a PR.
+
+        Please search existing issues and discussions first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user or merchant problem, not only the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should DashCommerce do? Include the flow and any settings.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other designs, or why the current behaviour is not enough.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Core checkout
+        - Core admin
+        - Core payments
+        - Core products, cart or orders
+        - Starter storefront
+        - DashCommerce Lite
+        - Payment provider package
+        - Docs or templates
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Payment provider impact
+      options:
+        - None
+        - Stripe
+        - Paystack
+        - Flutterwave
+        - Other
+        - Not sure
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Breaking change?
+      options:
+        - "No"
+        - Maybe
+        - "Yes"
+        - Not sure
+
+  - type: input
+    id: roadmap
+    attributes:
+      label: Roadmap or CHANGELOG reference
+      description: Link an issue, milestone or CHANGELOG entry if this is already tracked.
+      placeholder: "https://github.com/emdashCommerce/dashcommerce/blob/main/CHANGELOG.md"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, related issues, or a store setup that would use this.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I checked the roadmap in `CHANGELOG.md` and the current docs.
+        - label: I am willing to open a PR for this.

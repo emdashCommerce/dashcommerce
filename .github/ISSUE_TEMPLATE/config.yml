@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/emdashCommerce/dashcommerce/discussions
+    about: Ask usage questions, share a setup, or discuss an idea in Discussions.
+  - name: Read the docs
+    url: https://dashcommerce.dev/docs
+    about: Installation, payments, subscriptions, marketplaces and deployment.
+  - name: Report a security vulnerability
+    url: https://github.com/emdashCommerce/dashcommerce/security/advisories/new
+    about: Report vulnerabilities privately. Please do not open a public issue.

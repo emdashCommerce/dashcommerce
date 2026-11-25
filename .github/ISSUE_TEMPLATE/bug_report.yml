@@ -1,0 +1,120 @@
+name: Bug report
+description: Something in DashCommerce is broken or behaves unexpectedly.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please search existing issues and discussions first, and remove API keys, webhook secrets and customer data from anything you paste.
+
+        DashCommerce Lite and `@dashcommerce/core` are alternatives: each runs its own cart, checkout, orders and Stripe webhook. Do not install both.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+      description: A minimal sequence is more useful than a full store description.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected package
+      options:
+        - "@dashcommerce/core"
+        - "@dashcommerce/starter"
+        - "@dashcommerce/lite"
+        - "@dashcommerce/create"
+        - Payment provider package
+        - registry-setup
+        - Docs or templates
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation
+      options:
+        - "@dashcommerce/core only"
+        - DashCommerce Lite only
+        - Both core and Lite (unsupported)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: dashcommerce-version
+    attributes:
+      label: DashCommerce version
+      placeholder: "0.3.6, or the commit on main"
+    validations:
+      required: true
+
+  - type: input
+    id: emdash-version
+    attributes:
+      label: EmDash version
+      placeholder: "1.6.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Payment provider
+      options:
+        - Stripe
+        - Paystack
+        - Flutterwave
+        - Other
+        - None / not a payment issue
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Local dev (Node + SQLite)
+        - Node production (Postgres)
+        - Cloudflare Workers (D1 + R2)
+        - Other / not sure
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Paste the relevant lines. Remove secrets and personal data.
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings
+      description: Drag images here if they help explain the problem.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I am on the latest release or the current `main`.
+        - label: I removed API keys, webhook secrets and customer data.
+          required: true
