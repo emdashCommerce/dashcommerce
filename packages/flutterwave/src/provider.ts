@@ -821,7 +821,10 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const addressName = [address?.firstName, address?.lastName].filter(Boolean).join(" ");
 		const name = input.customer.name ?? (addressName || undefined);
 		const phone = input.customer.phone ?? address?.phone;
-		const paymentOptions = mapPaymentOptions(input.preferredChannels, currency);
+		// Payment Plans are card-only; a channel hint would conflict.
+		const paymentOptions = paymentPlan
+			? undefined
+			: mapPaymentOptions(input.preferredChannels, currency);
 
 		if (onPage) {
 			// Inline creates the transaction in the browser, so there is no

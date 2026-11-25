@@ -90,6 +90,7 @@ describe("Flutterwave subscription checkout", () => {
 			runtime,
 			subscriptionInput({
 				amount: 260_000,
+				preferredChannels: ["mobile_money"],
 				lineItems: [
 					...subscriptionInput().lineItems,
 					{ name: "Tax", amount: 10_000, currency: "KES", quantity: 1 },
@@ -109,6 +110,7 @@ describe("Flutterwave subscription checkout", () => {
 		expect(calls[1]?.path).toBe("/v3/payments");
 		expect(calls[1]?.body.amount).toBe(2600);
 		expect(calls[1]?.body.payment_plan).toBe(254811);
+		expect(calls[1]?.body.payment_options).toBeUndefined();
 		expect(calls[1]?.body.meta).toMatchObject({
 			orderDraftId: "0123456789abcdef0123456789abcdef",
 			dashcommerceProductId: "prod_1",
