@@ -595,6 +595,20 @@ export const checkoutRoutes = {
 			let transferDataPreview: { destination: string; amount?: number } | undefined;
 			let applicationFeePreview: number | undefined;
 			const hasVendorItems = recalculated.items.some((item) => item.vendorId);
+			// Recurring vendor splits are not implemented for any provider:
+			// Stripe's subscription path does not send transfer_data, and
+			// Flutterwave's Payment Plans do not guarantee subaccount payouts on
+			// renewal. Refuse rather than underpay the vendor.
+			if (isSubscriptionCart && hasVendorItems) {
+				return new Response(
+					JSON.stringify({
+						error:
+							"Subscription carts with vendor-owned items are not supported yet. Split the subscription from the vendor items.",
+						code: "subscription_vendor_items",
+					}),
+					{ status: 409, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			if (provider.id === "stripe" && (await connectEnabled(ctx))) {
 				try {
 					const plan = await computeSplit(ctx, recalculated);
