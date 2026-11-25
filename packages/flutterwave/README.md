@@ -132,7 +132,7 @@ Not supported: trials, pausing, in-place plan changes, and more than one subscri
 
 A plan is created when checkout starts. If the customer closes the page without paying, the unused plan remains in the Flutterwave dashboard; the hosted path cancels it when the payment call fails, but an abandoned Inline window cannot be cleaned up server-side.
 
-Test-mode evidence: plan `254811` (KES 100/month) and a real card payment `10634465`. `GET /v3/subscriptions` answered `400 "Service error"` on the test account, which is why the plan id is the key instead of the subscription id.
+Test-mode evidence: plan `254811` (KES 100/month) and a real card payment `10634465`; the package's `initCheckout` also created plan `254812` and opened Inline with `payment_plan`. Both plans were cancelled after the probe. `GET /v3/subscriptions` answered `400 "Service error"` on the test account, which is why the plan id is the key instead of the subscription id.
 
 ### Reconciliation
 
