@@ -1,7 +1,7 @@
 {
 	"name": "@dashcommerce/flutterwave",
 	"version": "0.0.0",
-	"description": "Flutterwave payment provider for @dashcommerce/core: card, M-Pesa and mobile money through Flutterwave's hosted checkout, verified webhooks, live status checks and refunds.",
+	"description": "Flutterwave payment provider for @dashcommerce/core: card, M-Pesa and mobile money through hosted checkout or Inline, verified webhooks, live status checks, refunds, vendor splits and Payment Plans subscriptions.",
 	"type": "module",
 	"main": "dist/index.mjs",
 	"module": "dist/index.mjs",
@@ -20,7 +20,16 @@
 	"engines": {
 		"node": ">=20"
 	},
-	"keywords": ["dashcommerce", "flutterwave", "payments", "mpesa", "mobile-money", "africa"],
+	"keywords": [
+		"dashcommerce",
+		"flutterwave",
+		"payments",
+		"mpesa",
+		"mobile-money",
+		"africa",
+		"subscriptions",
+		"payment-plans"
+	],
 	"author": "DashCommerce contributors",
 	"license": "MIT",
 	"repository": {
