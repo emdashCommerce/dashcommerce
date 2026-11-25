@@ -88,7 +88,13 @@ describe("Flutterwave subscription checkout", () => {
 
 		const result = await flutterwavePaymentProvider.initCheckout(
 			runtime,
-			subscriptionInput(),
+			subscriptionInput({
+				amount: 260_000,
+				lineItems: [
+					...subscriptionInput().lineItems,
+					{ name: "Tax", amount: 10_000, currency: "KES", quantity: 1 },
+				],
+			}),
 			credentials,
 		);
 
@@ -101,6 +107,7 @@ describe("Flutterwave subscription checkout", () => {
 			duration: 0,
 		});
 		expect(calls[1]?.path).toBe("/v3/payments");
+		expect(calls[1]?.body.amount).toBe(2600);
 		expect(calls[1]?.body.payment_plan).toBe("254811");
 		expect(calls[1]?.body.meta).toMatchObject({
 			orderDraftId: "0123456789abcdef0123456789abcdef",

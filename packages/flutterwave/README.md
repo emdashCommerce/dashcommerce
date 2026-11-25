@@ -122,7 +122,7 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 
 Flutterwave Payment Plans are card-only and tied to the customer's email.
 
-1. On a subscription checkout, the package creates one plan (`POST /v3/payment-plans`) with the cart amount and interval, then sends `payment_plan` on `/v3/payments` or Inline.
+1. On a subscription checkout, the package creates one plan (`POST /v3/payment-plans`) with the recurring line total and interval, then sends `payment_plan` on `/v3/payments` or Inline. The first charge can include tax or shipping; renewals charge the plan amount.
 2. The plan id is stored as the provider subscription id. Because there is one plan per checkout, it is unique to that customer.
 3. `verify` returns `plan`; the package reports it on `charge.succeeded` and `getPaymentStatus`. Core creates the order and the local subscription on the first charge, and records later charges as invoices.
 4. **Cancel** calls `PUT /v3/payment-plans/{id}/cancel`. Flutterwave cancels immediately; `at_period_end` has no API equivalent.

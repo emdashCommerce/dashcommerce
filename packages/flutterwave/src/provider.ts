@@ -324,23 +324,33 @@ async function createSubscriptionPlan(
 	client: ReturnType<typeof toFlutterwaveClient>,
 	input: InitCheckoutInput,
 ): Promise<string> {
-	const line = input.lineItems[0];
+	const recurringLines = input.lineItems.filter((item) => item.recurring);
+	if (recurringLines.length === 0) {
+		throw new Error("Flutterwave subscription checkout needs a recurring line item");
+	}
+	if (recurringLines.length > 1) {
+		throw new Error("Flutterwave Payment Plans support one subscription line per checkout");
+	}
+	const line = recurringLines[0];
 	const recurring = line?.recurring;
 	if (!line || !recurring) {
 		throw new Error("Flutterwave subscription checkout needs a recurring line item");
 	}
-	if (input.lineItems.length !== 1) {
-		throw new Error("Flutterwave Payment Plans support one subscription line per checkout");
-	}
 	if ((input.subscriptionTrialPeriodDays ?? 0) > 0) {
 		throw new Error("Flutterwave Payment Plans do not support trials");
+	}
+	// The plan is the renewal amount: the recurring line(s), without the
+	// one-time tax or shipping that the first checkout adds.
+	const recurringTotal = line.amount * line.quantity;
+	if (!Number.isSafeInteger(recurringTotal) || recurringTotal <= 0) {
+		throw new Error("Flutterwave subscription amount must be a positive integer");
 	}
 	const data = await call<FlutterwavePaymentPlan>(ctx, {
 		client,
 		path: "/payment-plans",
 		body: {
 			name: `DC ${input.orderDraftId}`,
-			amount: toMajorUnits(input.amount),
+			amount: toMajorUnits(recurringTotal),
 			currency: input.currency.toUpperCase(),
 			interval: planInterval(recurring.interval, recurring.intervalCount),
 			duration: 0,
