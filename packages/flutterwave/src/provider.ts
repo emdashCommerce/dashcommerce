@@ -349,7 +349,7 @@ async function createSubscriptionPlan(
 		client,
 		path: "/payment-plans",
 		body: {
-			name: `DC ${input.orderDraftId}`,
+			name: `DC ${line.name}`,
 			amount: toMajorUnits(recurringTotal),
 			currency: input.currency.toUpperCase(),
 			interval: planInterval(recurring.interval, recurring.intervalCount),
