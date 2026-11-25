@@ -157,8 +157,9 @@ export async function recordProviderSubscriptionInvoice(
 	ctx: PluginContext,
 	input: RecordProviderInvoiceInput,
 ): Promise<SubscriptionInvoice> {
+	const storageKey = `${input.providerId}:${input.providerInvoiceId}`;
 	const existingResult = await invoiceStore(ctx).query({
-		where: { stripeInvoiceId: input.providerInvoiceId },
+		where: { stripeInvoiceId: storageKey },
 		limit: 1,
 	});
 	const existing = existingResult.items[0];
@@ -174,8 +175,9 @@ export async function recordProviderSubscriptionInvoice(
 
 	const invoice: SubscriptionInvoice = {
 		id,
-		stripeInvoiceId: input.providerInvoiceId,
+		stripeInvoiceId: storageKey,
 		providerId: input.providerId,
+		providerInvoiceId: input.providerInvoiceId,
 		subscriptionId: input.subscription.id,
 		amount: money(input.currency, input.amount),
 		status,
