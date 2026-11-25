@@ -168,6 +168,23 @@ describe("Flutterwave payout onboarding", () => {
 		expect(created?.verified).toBe(true);
 	});
 
+	it("rethrows a 400 when no existing subaccount matches", async () => {
+		const ctx = makeCtx(async (url, init) => {
+			const { pathname } = new URL(url);
+			if (pathname === "/v3/subaccounts" && init?.method === "POST") {
+				return new Response(
+					JSON.stringify({ status: "error", message: "Invalid bank code", data: null }),
+					{ status: 400, headers: { "Content-Type": "application/json" } },
+				);
+			}
+			return ok([]);
+		});
+
+		await expect(
+			flutterwavePaymentProvider.createPayoutAccount?.(ctx, baseInput, credentials),
+		).rejects.toThrow(/Invalid bank code/);
+	});
+
 	it("does not hide a non-duplicate Flutterwave error", async () => {
 		let listCalls = 0;
 		const ctx = makeCtx(async (url, init) => {

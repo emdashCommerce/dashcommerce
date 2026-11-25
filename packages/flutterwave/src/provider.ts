@@ -1016,25 +1016,34 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			});
 		} catch (err) {
 			// Flutterwave rejects a second subaccount for the same bank account.
-			// Return the existing one so a retry or a re-add is idempotent.
-			if (!(err instanceof FlutterwaveApiError) || !/already exists/i.test(err.message)) {
+			// Return the existing one so a retry or a re-add is idempotent. Match
+			// on the account, not the error text, which Flutterwave may reword.
+			if (
+				!(err instanceof FlutterwaveApiError) ||
+				(err.status !== 400 && err.status !== 409)
+			) {
 				throw err;
 			}
 			const query = new URLSearchParams({
 				account_number: accountNumber,
 				account_bank: bankCode,
 			});
-			const existing = await call<FlutterwavePayoutSubaccount[]>(ctx, {
-				client: toFlutterwaveClient(credentials),
-				method: "GET",
-				path: `/subaccounts?${query}`,
-			});
+			let existing: FlutterwavePayoutSubaccount[];
+			try {
+				existing = await call<FlutterwavePayoutSubaccount[]>(ctx, {
+					client: toFlutterwaveClient(credentials),
+					method: "GET",
+					path: `/subaccounts?${query}`,
+				});
+			} catch {
+				throw err;
+			}
 			const match = Array.isArray(existing)
-				? (existing.find(
+				? existing.find(
 						(subaccount) =>
 							subaccount.account_number === accountNumber &&
 							subaccount.account_bank === bankCode,
-					) ?? existing[0])
+					)
 				: undefined;
 			if (!match) throw err;
 			return createdPayoutAccount(match, accountNumber, bankCode, country);
