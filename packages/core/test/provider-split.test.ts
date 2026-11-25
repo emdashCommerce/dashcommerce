@@ -65,7 +65,6 @@ function cart(
 function vendor(id: string, overrides: Partial<Vendor> = {}): Vendor {
 	return {
 		id,
-		stripeAccountId: "",
 		name: `Vendor ${id}`,
 		email: `${id}@example.com`,
 		onboardingStatus: "active",
@@ -210,11 +209,25 @@ describe("computeProviderSplit", () => {
 		).rejects.toThrow(/share must be positive/);
 	});
 
-	it("refuses allocations that do not fit inside the cart total", async () => {
-		const ctx = stubCtx({ vendors: { v1: vendor("v1") }, globalFee: 0 });
-		// A corrupt cart whose total is lower than its line subtotals.
+	it("lets the platform absorb a cart-wide discount", async () => {
+		const ctx = stubCtx({ vendors: { v1: vendor("v1") }, globalFee: 10 });
+		// 10,000 line, 10% fee, 500 discount: the vendor still gets 9,000 and
+		// the platform remainder falls from 1,000 to 500.
+		const plan = await computeProviderSplit(
+			ctx,
+			cart([line("a", 10_000, "v1")], { total: 9_500 }),
+			"flutterwave",
+		);
+		expect(plan.allocations[0]?.amountMinor).toBe(9_000);
+		expect(plan.platformRemainderMinor).toBe(500);
+	});
+
+	it("refuses a discount larger than the platform's share", async () => {
+		const ctx = stubCtx({ vendors: { v1: vendor("v1") }, globalFee: 10 });
+		// 10,000 line, 9,000 vendor share, but a 5,000 total: the discount is
+		// larger than the platform remainder, so checkout must not proceed.
 		await expect(
 			computeProviderSplit(ctx, cart([line("a", 10_000, "v1")], { total: 5_000 }), "flutterwave"),
-		).rejects.toThrow(/exceed the cart total/);
+		).rejects.toThrow(/discounted cart total/);
 	});
 });

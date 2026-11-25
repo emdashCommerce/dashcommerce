@@ -17,7 +17,6 @@ import type {
 	Customer,
 	Order,
 	OrderItem,
-	ProductFields,
 	Refund,
 	Review,
 	ShippingClass,
@@ -1470,7 +1469,6 @@ async function createVendor(ctx: PluginContext, routeCtx: RouteContext): Promise
 	const now = new Date().toISOString();
 	const vendor: Vendor = {
 		id,
-		stripeAccountId: "",
 		name,
 		email,
 		onboardingStatus: Object.values(accounts).some((a) => a.status === "active")
@@ -1497,6 +1495,9 @@ async function refreshVendorFromStripe(
 	const store = storeOf<Vendor>(ctx, "vendors");
 	const current = (await store.get(vendorId)) as Vendor | null;
 	if (!current) return json({ error: "Vendor not found" }, 404);
+	if (!current.stripeAccountId) {
+		return json({ error: "Vendor has no Stripe account" }, 400);
+	}
 	try {
 		const account = await stripeCall<{
 			id: string;
