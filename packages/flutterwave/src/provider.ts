@@ -814,6 +814,8 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const subaccounts = subaccountsFor(input);
 		const paymentPlan =
 			input.mode === "subscription" ? await createSubscriptionPlan(ctx, client, input) : undefined;
+		const paymentPlanValue =
+			paymentPlan && /^\d+$/.test(paymentPlan) ? Number(paymentPlan) : paymentPlan;
 		const checkoutRef = flutterwaveReferenceFor(input.orderDraftId);
 		const address = input.shippingAddress ?? input.billingAddress;
 		const addressName = [address?.firstName, address?.lastName].filter(Boolean).join(" ");
@@ -866,7 +868,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 					},
 					...(paymentOptions ? { payment_options: paymentOptions.join(",") } : {}),
 					...(subaccounts ? { subaccounts } : {}),
-					...(paymentPlan ? { payment_plan: paymentPlan } : {}),
+					...(paymentPlanValue ? { payment_plan: paymentPlanValue } : {}),
 				},
 			});
 		} catch (err) {
