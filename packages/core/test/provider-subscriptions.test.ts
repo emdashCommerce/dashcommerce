@@ -420,6 +420,40 @@ describe("provider-managed subscriptions", () => {
 	});
 });
 
+describe("subscription checkout guards", () => {
+	it("refuses a subscription cart with vendor-owned items", async () => {
+		const current = {
+			paymentReference: "pay_guard",
+			subscription: { providerSubscriptionId: "plan_guard", status: "active" as const },
+		};
+		registerPaymentProvider(provider(current));
+		const { ctx } = makeRouteContext({
+			"settings:paymentProvider": "acme",
+			"settings:checkoutMode": "hosted",
+			"settings:acmeSecretKey": "acme-key",
+			"settings:acmeWebhookSecret": "test-secret",
+		});
+		const sessionId = `sess_guard_${Math.random()}`;
+		const cart = subscriptionCart(sessionId);
+		cart.items = cart.items.map((item) => ({ ...item, vendorId: "v1" }));
+		await ctx.kv.set(`cart:${sessionId}`, cart);
+		const routeCtx = {
+			...ctx,
+			request: new Request("http://test/checkout/create-session", {
+				method: "POST",
+				headers: { Cookie: `dashcommerce_sid=${sessionId}` },
+			}),
+			input: {},
+		} as unknown as RouteContext;
+		const res = (await sandbox.routes["checkout/create-session"].handler(
+			routeCtx,
+			ctx,
+		)) as Response;
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({ code: "subscription_vendor_items" });
+	});
+});
+
 describe("provider-managed lifecycle", () => {
 	it("cancels and resumes through the provider, not Stripe", async () => {
 		const calls: Array<{ action: string; id: string }> = [];
