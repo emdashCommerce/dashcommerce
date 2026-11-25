@@ -37,22 +37,26 @@ const storedSub: Subscription = {
 	updatedAt: "2026-11-14T00:00:00.000Z",
 };
 
-function ctxWithSub(opts: { stripeConfigured?: boolean } = {}): PluginContext {
+function ctxWithSub(opts: { stripeConfigured?: boolean; providerId?: string } = {}): PluginContext {
 	const stripeConfigured = opts.stripeConfigured ?? true;
+	const sub = {
+		...storedSub,
+		...(opts.providerId ? { providerId: opts.providerId } : {}),
+	};
 	return {
 		storage: {
 			subscriptions: {
 				query: async (q: { where?: { stripeSubscriptionId?: string } }) => {
 					if (q.where?.stripeSubscriptionId === STRIPE_SUB) {
 						return {
-							items: [{ id: storedSub.id, data: storedSub }],
+							items: [{ id: sub.id, data: sub }],
 							cursor: null,
 							hasMore: false,
 						};
 					}
 					return { items: [], cursor: null, hasMore: false };
 				},
-				get: async (id: string) => (id === storedSub.id ? storedSub : null),
+				get: async (id: string) => (id === sub.id ? sub : null),
 			},
 		},
 		kv: {
@@ -161,6 +165,24 @@ describe("subscription mutation routes", () => {
 			expect(raw).not.toContain(STRIPE_SUB);
 			expect(raw).not.toContain(CUSTOMER);
 		}
+	});
+
+	it("refuses the Stripe portal for a provider-managed subscription", async () => {
+		const ctx = ctxWithSub({ providerId: "flutterwave" });
+		const token = await tokenFor(ctx);
+		const res = await subscriptionsPublicRoutes["subscriptions/portal"].handler(
+			{
+				request: new Request(
+					"http://localhost/_emdash/api/plugins/dashcommerce/subscriptions/portal",
+					{ method: "POST" },
+				),
+				input: { token },
+			} as RouteContext,
+			ctx,
+		);
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { error?: string };
+		expect(body.error).toMatch(/managed by its payment provider/i);
 	});
 
 	it("cancel without a token is 400", async () => {
