@@ -65,9 +65,26 @@ export interface RefundOrderInput {
 	idempotencyKey: string;
 }
 
+async function findRefundByRequestId(
+	ctx: PluginContext,
+	refundRequestId: string,
+): Promise<Refund | null> {
+	const result = await refundsStore(ctx).query({
+		where: { refundRequestId },
+		limit: 1,
+	});
+	const row = result.items[0];
+	return row ? { ...(row.data as Refund), id: row.id } : null;
+}
+
 export async function refundOrder(ctx: PluginContext, input: RefundOrderInput): Promise<Refund> {
 	const order = await loadOrder(ctx, input.orderId);
 	if (!order) throw new Error(`Order ${input.orderId} not found`);
+
+	const refundRequestId = input.idempotencyKey.trim();
+	if (!refundRequestId) {
+		throw new Error("Refund requires an explicit refundRequestId / idempotencyKey");
+	}
 
 	if (order.currency !== input.amount.currency) {
 		throw new CurrencyMismatchError(order.currency, input.amount.currency);
@@ -78,6 +95,19 @@ export async function refundOrder(ctx: PluginContext, input: RefundOrderInput): 
 	const remaining = order.paidTotal.amount - order.refundedTotal.amount;
 	if (input.amount.amount > remaining) {
 		throw new Error(`Refund ${input.amount.amount} exceeds remaining refundable ${remaining}`);
+	}
+
+	// A retry with the same request id must not call the provider again.
+	// Stripe caches its idempotency key; this covers providers whose key is
+	// a comment tag and whose refund list may be unavailable.
+	const existing = await findRefundByRequestId(ctx, refundRequestId);
+	if (existing) {
+		ctx.log.info("Refund already recorded for this request id; returning it", {
+			refundId: existing.id,
+			orderId: order.id,
+			refundRequestId,
+		});
+		return existing;
 	}
 
 	// Provider call first — if this fails, we don't write anything.
@@ -97,7 +127,7 @@ export async function refundOrder(ctx: PluginContext, input: RefundOrderInput): 
 					? "failed"
 					: "pending",
 		stripeRefundId: stripeRefund.id,
-		refundRequestId: input.idempotencyKey,
+		refundRequestId,
 		...(input.lineItemRefunds ? { lineItemRefunds: input.lineItemRefunds } : {}),
 		restocked: Boolean(input.restock) && stripeRefund.status !== "failed",
 		orderStatusBefore: order.status,

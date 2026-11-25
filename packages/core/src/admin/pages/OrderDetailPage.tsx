@@ -28,6 +28,14 @@ import { EmptyState } from "../ui/EmptyState";
 import type { Order, OrderItem, OrderStatus, Refund } from "../../types";
 import { T } from "../theme";
 
+/** Stable id for one refund attempt, so a retry after a timeout is idempotent. */
+function newRefundRequestId(): string {
+	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+		return `refund:${crypto.randomUUID()}`;
+	}
+	return `refund:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+}
+
 // Allowed forward transitions mirrored from `../../orders/status.ts` so the
 // UI can hide impossible targets without round-tripping to the server.
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -328,6 +336,10 @@ function RefundCard({
 	const [reason, setReason] = useState("");
 	const [restock, setRestock] = useState(false);
 	const [pending, setPending] = useState(false);
+	// Reused if the request fails before the provider answers, so a retry
+	// cannot create a second refund. Editing the amount or reason starts a
+	// new attempt.
+	const [refundRequestId, setRefundRequestId] = useState(newRefundRequestId);
 
 	const fullRefund = useMemo(() => {
 		return typeof amountMajor === "number" && amountMajor >= remainingMajor;
@@ -350,8 +362,8 @@ function RefundCard({
 		const ok = await confirm({
 			title: fullRefund ? "Refund the remaining balance?" : "Issue partial refund?",
 			description: fullRefund
-				? "Stripe will return the remaining balance to the customer immediately. This cannot be undone."
-				: "Stripe will return the specified amount to the customer. This cannot be undone.",
+				? "The payment provider will return the remaining balance to the customer immediately. This cannot be undone."
+				: "The payment provider will return the specified amount to the customer. This cannot be undone.",
 			confirmLabel: "Issue refund",
 			destructive: true,
 		});
@@ -359,21 +371,35 @@ function RefundCard({
 
 		setPending(true);
 		try {
-			await api.post(`admin/orders/refund?id=${encodeURIComponent(order.id)}`, {
-				amount: amt,
-				currency: order.currency,
-				reason: reason || undefined,
-				restock: restock || undefined,
-			});
-			toast.success(
-				fullRefund ? "Full refund issued" : "Refund issued",
-				`${(amt / 100).toFixed(2)} ${order.currency} returned to customer.`,
+			const result = await api.post<{ refund: Refund }>(
+				`admin/orders/refund?id=${encodeURIComponent(order.id)}`,
+				{
+					amount: amt,
+					currency: order.currency,
+					reason: reason || undefined,
+					restock: restock || undefined,
+					refundRequestId,
+				},
 			);
+			if (result.refund?.status === "failed") {
+				toast.error(
+					"Refund failed at the provider",
+					"The order was not changed. Start a new attempt when you are ready.",
+				);
+			} else {
+				toast.success(
+					fullRefund ? "Full refund issued" : "Refund issued",
+					`${(amt / 100).toFixed(2)} ${order.currency} returned to customer.`,
+				);
+			}
 			setAmountMajor(undefined);
 			setReason("");
 			setRestock(false);
+			setRefundRequestId(newRefundRequestId());
 			await onRefunded();
 		} catch (err) {
+			// Keep the same request id: the provider may have accepted the
+			// refund before the response was lost.
 			toast.error(
 				"Refund failed",
 				err instanceof Error ? err.message : String(err),
@@ -406,7 +432,10 @@ function RefundCard({
 						<FormField label={`Amount (${order.currency})`} required>
 							<NumberInput
 								value={amountMajor}
-								onChange={setAmountMajor}
+								onChange={(value) => {
+									setAmountMajor(value);
+									setRefundRequestId(newRefundRequestId());
+								}}
 								min={0}
 								max={remainingMajor}
 								step={0.01}
@@ -417,7 +446,10 @@ function RefundCard({
 						<FormField label="Reason" description="Optional, shown in refund history.">
 							<Input
 								value={reason}
-								onChange={(e) => setReason(e.currentTarget.value)}
+								onChange={(e) => {
+									setReason(e.currentTarget.value);
+									setRefundRequestId(newRefundRequestId());
+								}}
 								placeholder="e.g. Damaged on arrival"
 								disabled={pending}
 							/>
