@@ -785,7 +785,16 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		if (!SUPPORTED_CURRENCIES.has(currency)) {
 			throw new Error(`Flutterwave does not support currency ${input.currency}`);
 		}
+		const onPage = input.checkoutStyle === "on_page";
+		const publicKey = onPage ? credentials.publicKey?.trim() : undefined;
+		if (onPage && !publicKey) {
+			throw new Error(
+				"Flutterwave on-page checkout needs the public key; add it in Settings → Payment provider",
+			);
+		}
+
 		const client = toFlutterwaveClient(credentials);
+		const subaccounts = subaccountsFor(input);
 		const paymentPlan =
 			input.mode === "subscription" ? await createSubscriptionPlan(ctx, client, input) : undefined;
 		const checkoutRef = flutterwaveReferenceFor(input.orderDraftId);
@@ -794,15 +803,8 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const name = input.customer.name ?? (addressName || undefined);
 		const phone = input.customer.phone ?? address?.phone;
 		const paymentOptions = mapPaymentOptions(input.preferredChannels, currency);
-		const subaccounts = subaccountsFor(input);
 
-		if (input.checkoutStyle === "on_page") {
-			const publicKey = credentials.publicKey?.trim();
-			if (!publicKey) {
-				throw new Error(
-					"Flutterwave on-page checkout needs the public key; add it in Settings → Payment provider",
-				);
-			}
+		if (onPage) {
 			// Inline creates the transaction in the browser, so there is no
 			// server-side /payments call. The order still comes only from the
 			// signed webhook and the live verify.
@@ -810,7 +812,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				kind: "on_page",
 				checkoutReference: checkoutRef,
 				client: {
-					publicKey,
+					publicKey: publicKey ?? "",
 					txRef: checkoutRef,
 					amount: String(toMajorUnits(input.amount)),
 					currency,
