@@ -15,7 +15,6 @@ const DRAFT_ID = "0123456789abcdef0123456789abcdef";
 function vendor(id: string, reference: string): Vendor {
 	return {
 		id,
-		stripeAccountId: "",
 		name: `Vendor ${id}`,
 		email: `${id}@example.com`,
 		onboardingStatus: "active",
