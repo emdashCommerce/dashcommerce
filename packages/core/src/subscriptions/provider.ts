@@ -157,8 +157,14 @@ export async function recordProviderSubscriptionInvoice(
 		limit: 1,
 	});
 	const existing = existingResult.items[0];
-	const id = existing?.id ?? randomId();
+	const existingInvoice = existing?.data as SubscriptionInvoice | undefined;
 	const status = input.status ?? "paid";
+	// A paid invoice is final. Returning it avoids extending the period a
+	// second time if the same charge is delivered with a different event id.
+	if (existingInvoice?.status === "paid" && status === "paid") {
+		return { ...existingInvoice, id: existing?.id ?? existingInvoice.id };
+	}
+	const id = existing?.id ?? randomId();
 	const now = new Date().toISOString();
 
 	const invoice: SubscriptionInvoice = {
