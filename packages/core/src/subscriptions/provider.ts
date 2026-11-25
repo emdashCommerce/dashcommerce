@@ -55,13 +55,17 @@ export function addSubscriptionInterval(
 	return date.toISOString();
 }
 
+function providerStorageKey(providerId: string, providerSubscriptionId: string): string {
+	return `${providerId}:${providerSubscriptionId}`;
+}
+
 export async function findProviderSubscription(
 	ctx: PluginContext,
 	providerId: string,
 	providerSubscriptionId: string,
 ): Promise<Subscription | null> {
 	const result = await providerSubsStore(ctx).query({
-		where: { stripeSubscriptionId: providerSubscriptionId },
+		where: { stripeSubscriptionId: providerStorageKey(providerId, providerSubscriptionId) },
 		limit: 1,
 	});
 	const row = result.items[0];
@@ -110,8 +114,9 @@ export async function upsertProviderSubscription(
 
 	const record: Subscription = {
 		id: existing?.id ?? randomId(),
-		stripeSubscriptionId: input.providerSubscriptionId,
+		stripeSubscriptionId: providerStorageKey(input.providerId, input.providerSubscriptionId),
 		providerId: input.providerId,
+		providerSubscriptionId: input.providerSubscriptionId,
 		customerId: input.customerId,
 		productId: input.productId,
 		...(input.variantId ? { variantId: input.variantId } : {}),

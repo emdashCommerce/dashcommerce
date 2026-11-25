@@ -481,6 +481,12 @@ export interface Subscription {
 	stripeSubscriptionId: string;
 	/** Gateway that owns this subscription. Unset means Stripe. */
 	providerId?: string;
+	/**
+	 * The provider's raw subscription/plan id, without the storage prefix.
+	 * Provider-managed rows store `${providerId}:${id}` in
+	 * `stripeSubscriptionId` so two providers cannot collide on a numeric id.
+	 */
+	providerSubscriptionId?: string;
 	customerId: string;
 	productId: string;
 	variantId?: string;

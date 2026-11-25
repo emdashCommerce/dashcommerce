@@ -41,7 +41,8 @@ export async function cancel(
 		const info = await providerCancel(ctx, local, input.mode);
 		await saveProviderState(ctx, local, info, {
 			cancelAtPeriodEnd: info.cancelAtPeriodEnd ?? input.mode === "at_period_end",
-			canceledAt: info.status === "canceled" ? (info.canceledAt ?? new Date().toISOString()) : undefined,
+			canceledAt:
+				info.status === "canceled" ? (info.canceledAt ?? new Date().toISOString()) : undefined,
 		});
 		return info;
 	}
@@ -67,10 +68,7 @@ export interface PauseInput {
 	client?: StripeClientOptions;
 }
 
-export async function pause(
-	ctx: PluginContext,
-	input: PauseInput,
-): Promise<StripeSubscription> {
+export async function pause(ctx: PluginContext, input: PauseInput): Promise<StripeSubscription> {
 	const local = await loadLocal(ctx, input.subscriptionId);
 	if (isProviderManaged(local)) {
 		throw new Error(`${local.providerId} does not support pausing subscriptions`);
@@ -112,13 +110,7 @@ export async function resume(
 
 	const client = requireStripeClient(input.client);
 	const idemKey = `sub-resume:${local.stripeSubscriptionId}`;
-	return stripeUpdate(
-		ctx,
-		local.stripeSubscriptionId,
-		{ pauseCollection: null },
-		client,
-		idemKey,
-	);
+	return stripeUpdate(ctx, local.stripeSubscriptionId, { pauseCollection: null }, client, idemKey);
 }
 
 export interface ChangePlanInput {
@@ -182,7 +174,7 @@ async function providerCancel(
 	return provider.cancelSubscription(
 		ctx,
 		{
-			providerSubscriptionId: local.stripeSubscriptionId,
+			providerSubscriptionId: local.providerSubscriptionId ?? local.stripeSubscriptionId,
 			atPeriodEnd: mode === "at_period_end",
 		},
 		creds,
@@ -201,7 +193,7 @@ async function providerResume(
 	if (!creds) throw new Error(`Payment provider "${provider.id}" is not configured`);
 	return provider.resumeSubscription(
 		ctx,
-		{ providerSubscriptionId: local.stripeSubscriptionId },
+		{ providerSubscriptionId: local.providerSubscriptionId ?? local.stripeSubscriptionId },
 		creds,
 	);
 }
@@ -226,9 +218,11 @@ async function saveProviderState(
 
 async function loadLocal(ctx: PluginContext, id: string): Promise<Subscription> {
 	// Accept either our uuid or the provider id for convenience.
-	const directRes = await (ctx.storage as unknown as {
-		subscriptions: { get(id: string): Promise<Subscription | null> };
-	}).subscriptions.get(id);
+	const directRes = await (
+		ctx.storage as unknown as {
+			subscriptions: { get(id: string): Promise<Subscription | null> };
+		}
+	).subscriptions.get(id);
 	if (directRes) return { ...(directRes as Subscription), id };
 	const byProvider = await findSubscription(ctx, id);
 	if (byProvider) return byProvider;
