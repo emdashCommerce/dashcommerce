@@ -223,6 +223,16 @@ async function handlePortal(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
+	if (loaded.subscription.providerId && loaded.subscription.providerId !== "stripe") {
+		return jsonResponse(
+			{
+				error:
+					"This subscription is managed by its payment provider. Use Cancel or Resume here instead.",
+			},
+			400,
+		);
+	}
+
 	// Portal requires a Stripe customer id. Resolve via the local
 	// customer row the subscription is linked to.
 	const customerId = loaded.subscription.customerId;
