@@ -27,8 +27,7 @@ export function providerSubsStore(ctx: PluginContext): SubsStore {
 }
 
 function invoiceStore(ctx: PluginContext): InvoiceStore {
-	return (ctx.storage as unknown as { subscription_invoices: InvoiceStore })
-		.subscription_invoices;
+	return (ctx.storage as unknown as { subscription_invoices: InvoiceStore }).subscription_invoices;
 }
 
 /** Add a billing interval to an ISO date, clamping month-end. */
@@ -51,9 +50,7 @@ export function addSubscriptionInterval(
 	const day = date.getUTCDate();
 	date.setUTCDate(1);
 	date.setUTCMonth(date.getUTCMonth() + months);
-	const lastDay = new Date(
-		Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
-	).getUTCDate();
+	const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
 	date.setUTCDate(Math.min(day, lastDay));
 	return date.toISOString();
 }
@@ -160,8 +157,14 @@ export async function recordProviderSubscriptionInvoice(
 		limit: 1,
 	});
 	const existing = existingResult.items[0];
-	const id = existing?.id ?? randomId();
+	const existingInvoice = existing?.data as SubscriptionInvoice | undefined;
 	const status = input.status ?? "paid";
+	// A paid invoice is final. Returning it avoids extending the period a
+	// second time if the same charge is delivered with a different event id.
+	if (existingInvoice?.status === "paid" && status === "paid") {
+		return { ...existingInvoice, id: existing?.id ?? existingInvoice.id };
+	}
+	const id = existing?.id ?? randomId();
 	const now = new Date().toISOString();
 
 	const invoice: SubscriptionInvoice = {

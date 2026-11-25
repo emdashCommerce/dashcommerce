@@ -19,6 +19,7 @@ import { cancel, pause, resume } from "../src/subscriptions/lifecycle";
 import {
 	addSubscriptionInterval,
 	findProviderSubscription,
+	recordProviderSubscriptionInvoice,
 	upsertProviderSubscription,
 } from "../src/subscriptions/provider";
 import type { CartState, Order, Subscription, SubscriptionInvoice } from "../src/types";
@@ -203,6 +204,46 @@ describe("provider-managed subscriptions", () => {
 			status: "paid",
 		});
 		expect(invoice.amount).toEqual({ amount: 150_000, currency: "KES" });
+	});
+
+	it("does not extend the period twice for the same paid invoice", async () => {
+		const { ctx } = makeRouteContext({});
+		const sub = await upsertProviderSubscription(ctx, {
+			providerId: "acme",
+			providerSubscriptionId: "plan_dup",
+			customerId: "cus_1",
+			productId: "prod_1",
+			status: "active",
+			currency: "KES",
+			unitAmount: 150_000,
+			quantity: 1,
+			interval: "month",
+			intervalCount: 1,
+			currentPeriodStart: "2026-01-01T00:00:00.000Z",
+			currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+		});
+		const first = await recordProviderSubscriptionInvoice(ctx, {
+			subscription: sub,
+			providerId: "acme",
+			providerInvoiceId: "pay_dup",
+			amount: 150_000,
+			currency: "KES",
+			status: "paid",
+			periodStart: "2026-02-01T00:00:00.000Z",
+		});
+		const afterFirst = await findProviderSubscription(ctx, "acme", "plan_dup");
+		expect(afterFirst?.currentPeriodEnd).toBe("2026-03-01T00:00:00.000Z");
+		const second = await recordProviderSubscriptionInvoice(ctx, {
+			subscription: afterFirst ?? sub,
+			providerId: "acme",
+			providerInvoiceId: "pay_dup",
+			amount: 150_000,
+			currency: "KES",
+			status: "paid",
+		});
+		expect(second.id).toBe(first.id);
+		const afterSecond = await findProviderSubscription(ctx, "acme", "plan_dup");
+		expect(afterSecond?.currentPeriodEnd).toBe("2026-03-01T00:00:00.000Z");
 	});
 
 	it("applies a subscription.updated webhook to the local row", async () => {
