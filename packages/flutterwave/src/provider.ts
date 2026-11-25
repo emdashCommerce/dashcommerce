@@ -23,6 +23,7 @@ import type {
 	PaymentProviderBank,
 	PaymentProviderCredentials,
 	PaymentProviderRuntimeContext,
+	ProviderSubscriptionInfo,
 	RefundResult,
 	ResolvePayoutAccountInput,
 	VerifyWebhookInput,
@@ -172,6 +173,71 @@ function mapPaymentOptions(
 	return mapped.size > 0 ? Array.from(mapped) : undefined;
 }
 
+interface FlutterwavePaymentPlan {
+	id: number | string;
+	name: string;
+	amount?: number | string;
+	currency?: string;
+	interval?: string;
+	duration?: number;
+	status?: string;
+	plan_token?: string;
+	created_at?: string;
+}
+
+/** Core's interval/count → Flutterwave's `daily`/`every 3 months` syntax. */
+export function planInterval(interval: "day" | "week" | "month" | "year", count: number): string {
+	const n = Math.max(1, Math.trunc(count));
+	if (n === 1) {
+		if (interval === "day") return "daily";
+		if (interval === "week") return "weekly";
+		if (interval === "month") return "monthly";
+		return "yearly";
+	}
+	const unit =
+		interval === "day"
+			? "days"
+			: interval === "week"
+				? "weeks"
+				: interval === "month"
+					? "months"
+					: "years";
+	return `every ${n} ${unit}`;
+}
+
+/** Flutterwave's plan interval → core's interval/count. */
+export function parsePlanInterval(raw: string | undefined): {
+	interval: "day" | "week" | "month" | "year";
+	intervalCount: number;
+} {
+	const value = (raw ?? "monthly").trim().toLowerCase();
+	if (value === "daily" || value === "hourly") return { interval: "day", intervalCount: 1 };
+	if (value === "weekly") return { interval: "week", intervalCount: 1 };
+	if (value === "monthly") return { interval: "month", intervalCount: 1 };
+	if (value === "quarterly") return { interval: "month", intervalCount: 3 };
+	if (value === "bi-annually" || value === "biannually") {
+		return { interval: "month", intervalCount: 6 };
+	}
+	if (value === "yearly" || value === "annually") return { interval: "year", intervalCount: 1 };
+	const every = /^every\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)$/.exec(value);
+	if (every) {
+		const count = Math.max(1, Number(every[1]));
+		const unit = every[2] ?? "";
+		if (unit.startsWith("day")) return { interval: "day", intervalCount: count };
+		if (unit.startsWith("week")) return { interval: "week", intervalCount: count };
+		if (unit.startsWith("month")) return { interval: "month", intervalCount: count };
+		return { interval: "year", intervalCount: count };
+	}
+	return { interval: "month", intervalCount: 1 };
+}
+
+function planStatus(raw: string | undefined): "active" | "canceled" | "incomplete" {
+	const value = (raw ?? "").toLowerCase();
+	if (value === "active") return "active";
+	if (value === "cancel" || value === "cancelled" || value === "canceled") return "canceled";
+	return "incomplete";
+}
+
 interface FlutterwaveSubaccount {
 	id: string;
 	transaction_charge_type: "flat_subaccount";
@@ -248,6 +314,44 @@ function createdPayoutAccount(
 	};
 }
 
+/**
+ * Flutterwave Payment Plans bill a fixed amount on a fixed interval. Core's
+ * subscription cart has one recurring line; create one plan per checkout so
+ * the plan id is also the per-customer subscription key.
+ */
+async function createSubscriptionPlan(
+	ctx: PaymentProviderRuntimeContext,
+	client: ReturnType<typeof toFlutterwaveClient>,
+	input: InitCheckoutInput,
+): Promise<string> {
+	const line = input.lineItems[0];
+	const recurring = line?.recurring;
+	if (!line || !recurring) {
+		throw new Error("Flutterwave subscription checkout needs a recurring line item");
+	}
+	if (input.lineItems.length !== 1) {
+		throw new Error("Flutterwave Payment Plans support one subscription line per checkout");
+	}
+	if ((input.subscriptionTrialPeriodDays ?? 0) > 0) {
+		throw new Error("Flutterwave Payment Plans do not support trials");
+	}
+	const data = await call<FlutterwavePaymentPlan>(ctx, {
+		client,
+		path: "/payment-plans",
+		body: {
+			name: `DC ${input.orderDraftId}`,
+			amount: toMajorUnits(input.amount),
+			currency: input.currency.toUpperCase(),
+			interval: planInterval(recurring.interval, recurring.intervalCount),
+			duration: 0,
+		},
+	});
+	if (data?.id === undefined || data.id === null) {
+		throw new Error("Flutterwave returned no payment plan id");
+	}
+	return String(data.id);
+}
+
 function channelLabel(type: string | undefined): string | undefined {
 	if (!type) return undefined;
 	const value = type.toLowerCase();
@@ -279,6 +383,8 @@ interface FlutterwaveChargeData {
 	payment_type?: string;
 	processor_response?: string;
 	customer?: FlutterwaveCustomer;
+	/** Payment plan id on a subscription charge. */
+	plan?: number | string;
 	meta?: unknown;
 }
 
@@ -379,6 +485,22 @@ function safeJsonObject(value: string): Record<string, unknown> | undefined {
  * fee. Core records this on the order for reconciliation and never reprices
  * the vendor shares with it.
  */
+function subscriptionFromCharge(
+	data: FlutterwaveChargeData,
+	amount: number,
+	currency: string,
+): ProviderSubscriptionInfo | undefined {
+	if (data.plan === undefined || data.plan === null) return undefined;
+	const providerSubscriptionId = String(data.plan).trim();
+	if (!providerSubscriptionId) return undefined;
+	return {
+		providerSubscriptionId,
+		status: "active",
+		amount,
+		currency,
+	};
+}
+
 function splitSettlementFrom(
 	meta: unknown,
 	currency: string,
@@ -598,7 +720,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		// provider-side coupon object is needed.
 		coupons: true,
 		connect: false,
-		subscriptions: false,
+		subscriptions: true,
 		splits: true,
 		// A split refund returns 400 with no refund id in test mode; handle it
 		// in the Flutterwave dashboard instead.
@@ -653,11 +775,9 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		if (!SUPPORTED_CURRENCIES.has(currency)) {
 			throw new Error(`Flutterwave does not support currency ${input.currency}`);
 		}
-		if (input.mode === "subscription") {
-			throw new Error("Flutterwave provider does not support subscription checkout");
-		}
-
 		const client = toFlutterwaveClient(credentials);
+		const paymentPlan =
+			input.mode === "subscription" ? await createSubscriptionPlan(ctx, client, input) : undefined;
 		const checkoutRef = flutterwaveReferenceFor(input.orderDraftId);
 		const address = input.shippingAddress ?? input.billingAddress;
 		const addressName = [address?.firstName, address?.lastName].filter(Boolean).join(" ");
@@ -689,6 +809,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 					...(phone ? { customerPhone: phone } : {}),
 					...(paymentOptions ? { paymentOptions: paymentOptions.join(",") } : {}),
 					...(subaccounts ? { subaccounts: JSON.stringify(subaccounts) } : {}),
+					...(paymentPlan ? { paymentPlan } : {}),
 					orderDraftId: input.orderDraftId,
 				},
 			};
@@ -709,10 +830,12 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				},
 				meta: {
 					...input.metadata,
+					...input.subscriptionMetadata,
 					orderDraftId: input.orderDraftId,
 				},
 				...(paymentOptions ? { payment_options: paymentOptions.join(",") } : {}),
 				...(subaccounts ? { subaccounts } : {}),
+				...(paymentPlan ? { payment_plan: paymentPlan } : {}),
 			},
 		});
 
@@ -773,6 +896,31 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			return refundEvent((event.data ?? {}) as unknown as Record<string, unknown>);
 		}
 
+		// Flutterwave sends `subscription.cancelled` when the customer or the
+		// dashboard cancels a plan. The plan is an object here, unlike the
+		// numeric `plan` on a charge.
+		if (event.event === "subscription.cancelled") {
+			const data = event.data as unknown as Record<string, unknown>;
+			const plan = data.plan;
+			const planId = plan && typeof plan === "object" ? (plan as { id?: unknown }).id : plan;
+			if (planId === undefined || planId === null || String(planId).trim() === "") {
+				return {
+					type: "unhandled",
+					providerEventType: event.event,
+					raw: payload,
+				};
+			}
+			return {
+				type: "subscription.updated",
+				providerId: "flutterwave",
+				providerEventId: `subscription.cancelled:${String(planId)}`,
+				providerSubscriptionId: String(planId),
+				status: "canceled",
+				canceledAt: new Date().toISOString(),
+				raw: payload,
+			};
+		}
+
 		// Flutterwave sends `charge.completed` for both outcomes; `data.status`
 		// decides which. There is no separate refund event name.
 		if (event.event !== "charge.completed") {
@@ -791,8 +939,11 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			typeof metaDraftId === "string" && metaDraftId
 				? metaDraftId
 				: draftIdFromReference(d?.tx_ref ?? "");
+		const planId = d?.plan === undefined || d?.plan === null ? undefined : String(d.plan).trim();
 
-		if (!transactionId || !orderDraftId || !d.tx_ref) {
+		// A renewal may not carry the original order draft. It still has the
+		// plan id, which is enough for core to find the local subscription.
+		if (!transactionId || !d.tx_ref || (!orderDraftId && !planId)) {
 			return {
 				type: "unhandled",
 				providerEventType: event.event,
@@ -803,7 +954,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		if (status === "failed" || status === "cancelled" || status === "canceled") {
 			return {
 				type: "charge.failed",
-				orderDraftId,
+				orderDraftId: orderDraftId ?? "",
 				providerId: "flutterwave",
 				providerEventId: `charge.completed:${transactionId}:failed`,
 				checkoutReference: d.tx_ref,
@@ -833,9 +984,10 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 
 		const channel = channelLabel(d.payment_type);
 		const splitSettlement = splitSettlementFrom(d.meta, currency, d.app_fee);
+		const subscription = subscriptionFromCharge(d, amount, currency);
 		return {
 			type: "charge.succeeded",
-			orderDraftId,
+			orderDraftId: orderDraftId ?? "",
 			providerId: "flutterwave",
 			// The numeric transaction id, not the reference: refunds are made
 			// against /transactions/:id/refund.
@@ -856,6 +1008,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			},
 			...(channel ? { channel } : {}),
 			...(splitSettlement ? { splitSettlement } : {}),
+			...(subscription ? { subscription } : {}),
 			raw: payload,
 		};
 	},
@@ -1021,10 +1174,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			// Flutterwave rejects a second subaccount for the same bank account.
 			// Return the existing one so a retry or a re-add is idempotent. Match
 			// on the account, not the error text, which Flutterwave may reword.
-			if (
-				!(err instanceof FlutterwaveApiError) ||
-				(err.status !== 400 && err.status !== 409)
-			) {
+			if (!(err instanceof FlutterwaveApiError) || (err.status !== 400 && err.status !== 409)) {
 				throw err;
 			}
 			const query = new URLSearchParams({
@@ -1044,8 +1194,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			const match = Array.isArray(existing)
 				? existing.find(
 						(subaccount) =>
-							subaccount.account_number === accountNumber &&
-							subaccount.account_bank === bankCode,
+							subaccount.account_number === accountNumber && subaccount.account_bank === bankCode,
 					)
 				: undefined;
 			if (!match) throw err;
@@ -1065,6 +1214,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		amount?: number;
 		currency?: string;
 		reason?: string;
+		subscription?: ProviderSubscriptionInfo;
 	}> {
 		const client = toFlutterwaveClient(credentials);
 		const reference = paymentOrCheckoutReference?.trim();
@@ -1083,15 +1233,99 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 		const rawStatus = data.status?.toLowerCase() ?? "";
 		const status = TRANSACTION_STATUS[rawStatus];
 		const amount = toMinorUnits(data.amount);
+		const currency = data.currency?.toUpperCase();
 		const id = data.id === undefined ? undefined : String(data.id);
+		const subscription =
+			amount !== undefined && currency ? subscriptionFromCharge(data, amount, currency) : undefined;
 		return {
 			status: status ?? "pending",
 			...(id ? { paymentReference: id } : {}),
 			...(amount !== undefined ? { amount } : {}),
-			...(data.currency ? { currency: data.currency.toUpperCase() } : {}),
+			...(currency ? { currency } : {}),
+			...(subscription ? { subscription } : {}),
 			reason: status
 				? data.processor_response
 				: `Unrecognised Flutterwave status: ${data.status ?? "(missing)"}`,
+		};
+	},
+
+	async getSubscription(
+		ctx: PaymentProviderRuntimeContext,
+		providerSubscriptionId: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo> {
+		const id = providerSubscriptionId?.trim();
+		if (!id) throw new Error("Flutterwave subscription id is required");
+		const data = await call<FlutterwavePaymentPlan>(ctx, {
+			client: toFlutterwaveClient(credentials),
+			method: "GET",
+			path: `/payment-plans/${encodeURIComponent(id)}`,
+		});
+		const interval = parsePlanInterval(data.interval);
+		const amount = toMinorUnits(data.amount);
+		return {
+			providerSubscriptionId: String(data.id ?? id),
+			status: planStatus(data.status),
+			...(amount !== undefined ? { amount } : {}),
+			...(data.currency ? { currency: data.currency.toUpperCase() } : {}),
+			interval: interval.interval,
+			intervalCount: interval.intervalCount,
+		};
+	},
+
+	async cancelSubscription(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string; atPeriodEnd?: boolean },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo> {
+		const id = input.providerSubscriptionId?.trim();
+		if (!id) throw new Error("Flutterwave subscription id is required");
+		// Flutterwave cancels the plan (and its subscription) immediately.
+		// `atPeriodEnd` has no API equivalent; document the difference.
+		await call(ctx, {
+			client: toFlutterwaveClient(credentials),
+			method: "PUT",
+			path: `/payment-plans/${encodeURIComponent(id)}/cancel`,
+		});
+		return {
+			providerSubscriptionId: id,
+			status: "canceled",
+			canceledAt: new Date().toISOString(),
+			cancelAtPeriodEnd: false,
+		};
+	},
+
+	async resumeSubscription(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo> {
+		const id = input.providerSubscriptionId?.trim();
+		if (!id) throw new Error("Flutterwave subscription id is required");
+		const client = toFlutterwaveClient(credentials);
+		const plan = await call<FlutterwavePaymentPlan>(ctx, {
+			client,
+			method: "GET",
+			path: `/payment-plans/${encodeURIComponent(id)}`,
+		});
+		await call(ctx, {
+			client,
+			method: "PUT",
+			path: `/payment-plans/${encodeURIComponent(id)}`,
+			body: {
+				name: plan.name || `DC ${id}`,
+				status: "active",
+			},
+		});
+		const interval = parsePlanInterval(plan.interval);
+		const amount = toMinorUnits(plan.amount);
+		return {
+			providerSubscriptionId: id,
+			status: "active",
+			...(amount !== undefined ? { amount } : {}),
+			...(plan.currency ? { currency: plan.currency.toUpperCase() } : {}),
+			interval: interval.interval,
+			intervalCount: interval.intervalCount,
 		};
 	},
 

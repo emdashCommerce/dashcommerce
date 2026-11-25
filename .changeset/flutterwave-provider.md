@@ -11,6 +11,7 @@ New package: a Flutterwave payment provider for DashCommerce, built on core's Pa
 - Split payments: core's exact per-vendor allocations map to `subaccounts` with `flat_subaccount`, for hosted and Inline. The subaccount default may be percentage or flat; the transaction override keeps the shares exact.
 - In-admin vendor onboarding: list banks or mobile-money channels, verify the account name, create the collection subaccount, and store the masked result. Re-adding the same bank account returns the existing subaccount instead of failing.
 - Cart discounts: `capabilities.coupons` is true; the discount is applied to the amount Flutterwave charges.
+- Subscriptions through Flutterwave Payment Plans: one plan per checkout (the plan id is the subscription key), `payment_plan` on hosted and Inline, renewal invoices from the `plan` field on verify/webhook, and cancel/resume through the plan. Card-only; no trials, pause or in-place upgrades.
 - Split reconciliation: parses `meta.split_settlement_info` and `app_fee` into core's `splitSettlement`, so the order records what each subaccount earned.
 - "Test Flutterwave connection" checks the saved key in test or live mode with a read-only balances call.
 

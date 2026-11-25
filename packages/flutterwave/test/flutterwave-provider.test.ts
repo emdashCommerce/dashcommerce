@@ -72,7 +72,7 @@ describe("flutterwavePaymentProvider", () => {
 			expect(flutterwavePaymentProvider.capabilities).toEqual({
 				coupons: true,
 				connect: false,
-				subscriptions: false,
+				subscriptions: true,
 				splits: true,
 				splitRefunds: false,
 			});
@@ -275,7 +275,7 @@ describe("flutterwavePaymentProvider", () => {
 			expect(calls).toBe(0);
 		});
 
-		it("throws before calling Flutterwave for subscription mode", async () => {
+		it("requires a recurring line item for subscription mode", async () => {
 			let calls = 0;
 			const ctx = makeMockRuntimeContext(async () => {
 				calls++;
@@ -287,7 +287,7 @@ describe("flutterwavePaymentProvider", () => {
 					checkoutInput({ mode: "subscription" }),
 					credentials,
 				),
-			).rejects.toThrow(/does not support subscription checkout/);
+			).rejects.toThrow(/needs a recurring line item/i);
 			expect(calls).toBe(0);
 		});
 

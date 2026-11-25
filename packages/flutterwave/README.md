@@ -21,7 +21,7 @@ A Flutterwave `PaymentProvider` for DashCommerce. Customers pay on Flutterwave's
 | Currencies | NGN, USD, GBP, EUR, KES, GHS, ZAR, UGX, TZS, RWF, XOF, XAF, ZMW, MWK and EGP. Your Flutterwave account must be enabled for the currency you sell in |
 | Payment options | With no channel hint, Flutterwave shows every method enabled on the account. A hint is mapped to Flutterwave's option names, and generic `mobile_money` is resolved by currency (`KES` → `mpesa`, `GHS` → `mobilemoneyghana`, …) |
 | Customer details | Flutterwave's hosted page collects neither a shipping address nor a name for the store, so the provider leaves `collectsCustomerDetails` unset and DashCommerce's checkout asks for email and address before payment. The email is also required by `POST /v3/payments` |
-| Not supported | Subscriptions. `capabilities` declares `subscriptions: false` |
+| Subscriptions | Flutterwave Payment Plans, card-only. DashCommerce creates one plan per checkout, so the plan id is the subscription key; hosted and Inline pass `payment_plan`. The first charge creates the order and the local subscription; later charges are invoices. Cancel cancels the plan immediately; pause, trials and in-place upgrades are not supported |
 | Discounts | Cart discounts are applied to the amount Flutterwave charges, so `capabilities.coupons` is `true`. No provider-side coupon object is created; the customer sees the net total on Flutterwave's page |
 | Vendor onboarding | In Vendors, choose the country and bank or mobile-money channel, enter the account or mobile number, **verify the account name**, then create the collection subaccount. The full account number is never stored; the `RS_…` id, resolved name, bank and last four are. Re-adding the same bank account returns Flutterwave's existing subaccount instead of failing with "already exists", so a retry is safe. A manually created `RS_…` id can still be pasted in |
 | On-page checkout | With checkout set to "On your page", Flutterwave Inline opens over the store's checkout using the public key and `tx_ref` from create-session. `checkout.flutterwave.com/v3.js` loads only when the customer presses Pay. The modal's `callback`/`onclose` only move the customer; the order still comes from the signed webhook and a live verify. `redirect_url` is deliberately not passed, because Inline gives it precedence over `callback` |
@@ -117,6 +117,20 @@ Verified against Flutterwave's real test API with a Nigerian test account (KES w
 5. If you already created the subaccount in Flutterwave, paste its `RS_…` id instead and set the status to **Active**.
 6. Checkout computes each vendor's line subtotal minus the platform fee. Tax, shipping and platform-owned items stay with the platform. A vendor with no active account, a non-positive share, or a settlement currency that differs from the cart's blocks checkout with a readable 409.
 7. Flutterwave's `flat_subaccount` pays each vendor that exact amount. Flutterwave's transaction fee and the NGN 50 stamp duty (over NGN 10,000) come out of the platform remainder, not the vendor shares. If the settlement is less than the sum of the vendor amounts, Flutterwave does not split that payment and sends the whole settlement to your main account — check the dashboard for those.
+
+### Subscriptions
+
+Flutterwave Payment Plans are card-only and tied to the customer's email.
+
+1. On a subscription checkout, the package creates one plan (`POST /v3/payment-plans`) with the cart amount and interval, then sends `payment_plan` on `/v3/payments` or Inline.
+2. The plan id is stored as the provider subscription id. Because there is one plan per checkout, it is unique to that customer.
+3. `verify` returns `plan`; the package reports it on `charge.succeeded` and `getPaymentStatus`. Core creates the order and the local subscription on the first charge, and records later charges as invoices.
+4. **Cancel** calls `PUT /v3/payment-plans/{id}/cancel`. Flutterwave cancels immediately; `at_period_end` has no API equivalent.
+5. **Resume** updates the plan to `status: active`. If Flutterwave does not resume the existing subscription, the customer checks out again.
+
+Not supported: trials, pausing, in-place plan changes, and more than one subscription line per checkout. All fail with a readable error rather than charging the wrong amount.
+
+Test-mode evidence: plan `254811` (KES 100/month) and a real card payment `10634465`. `GET /v3/subscriptions` answered `400 "Service error"` on the test account, which is why the plan id is the key instead of the subscription id.
 
 ### Reconciliation
 

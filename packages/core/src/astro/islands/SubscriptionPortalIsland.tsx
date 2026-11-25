@@ -8,11 +8,11 @@ import { useEffect, useState } from "react";
  * proves ownership; no login is required (DashCommerce uses
  * email-gated accounts).
  *
- * In addition to the local Cancel / Pause / Resume actions (which
- * forward to Stripe), we expose a "Manage billing" button that
- * redirects to the Stripe-hosted Billing Portal — customers can
- * update their card, download invoices, and manage billing there
- * without us having to implement those screens ourselves.
+ * Cancel / Pause / Resume forward to the subscription's provider. For
+ * Stripe we also expose a "Manage billing" button that redirects to the
+ * Stripe-hosted Billing Portal, where customers can update their card and
+ * download invoices. Provider-managed subscriptions (Flutterwave) use the
+ * local actions only.
  */
 
 interface Money {
@@ -28,6 +28,7 @@ interface Subscription {
 	intervalCount: number;
 	currentPeriodEnd: string;
 	cancelAtPeriodEnd: boolean;
+	providerId?: string;
 }
 
 export interface SubscriptionPortalIslandProps {
@@ -47,19 +48,16 @@ function formatMoney(m: Money, locale = "en-US") {
 
 const API = "/_emdash/api/plugins/dashcommerce";
 
-export default function SubscriptionPortalIsland({
-	token,
-}: SubscriptionPortalIslandProps) {
+export default function SubscriptionPortalIsland({ token }: SubscriptionPortalIslandProps) {
 	const [sub, setSub] = useState<Subscription | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	async function reload() {
 		try {
-			const res = await fetch(
-				`${API}/subscriptions/state?token=${encodeURIComponent(token)}`,
-				{ credentials: "include" },
-			);
+			const res = await fetch(`${API}/subscriptions/state?token=${encodeURIComponent(token)}`, {
+				credentials: "include",
+			});
 			const body = (await res.json()) as {
 				subscription?: Subscription;
 				error?: string;
@@ -78,6 +76,8 @@ export default function SubscriptionPortalIsland({
 		reload();
 	}, []);
 
+	const providerManaged = Boolean(sub?.providerId && sub.providerId !== "stripe");
+
 	async function act(action: "cancel" | "pause" | "resume") {
 		setPending(true);
 		setError(null);
@@ -88,7 +88,7 @@ export default function SubscriptionPortalIsland({
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					token,
-					...(action === "cancel" ? { mode: "at_period_end" } : {}),
+					...(action === "cancel" ? { mode: providerManaged ? "immediate" : "at_period_end" } : {}),
 				}),
 			});
 			const body = (await res.json()) as { error?: string };
@@ -142,38 +142,37 @@ export default function SubscriptionPortalIsland({
 				{sub.interval}
 			</p>
 			<p>
-				<strong>Next billed:</strong>{" "}
-				{new Date(sub.currentPeriodEnd).toLocaleDateString()}
+				<strong>Next billed:</strong> {new Date(sub.currentPeriodEnd).toLocaleDateString()}
 			</p>
 			{sub.cancelAtPeriodEnd && (
-				<p className="dc-notice">
-					This subscription is set to cancel at the end of the period.
-				</p>
+				<p className="dc-notice">This subscription is set to cancel at the end of the period.</p>
 			)}
 			<div className="dc-actions">
 				{!sub.cancelAtPeriodEnd && sub.status !== "canceled" && (
 					<button type="button" onClick={() => act("cancel")} disabled={pending}>
-						Cancel at period end
+						{providerManaged ? "Cancel subscription" : "Cancel at period end"}
 					</button>
 				)}
-				{sub.status !== "canceled" && sub.status !== "paused" && (
+				{!providerManaged && sub.status !== "canceled" && sub.status !== "paused" && (
 					<button type="button" onClick={() => act("pause")} disabled={pending}>
 						Pause
 					</button>
 				)}
-				{sub.status === "paused" && (
+				{(sub.status === "paused" || (providerManaged && sub.status === "canceled")) && (
 					<button type="button" onClick={() => act("resume")} disabled={pending}>
 						Resume
 					</button>
 				)}
-				<button
-					type="button"
-					onClick={openPortal}
-					disabled={pending}
-					className="dc-actions-secondary"
-				>
-					Manage billing on Stripe →
-				</button>
+				{!providerManaged && (
+					<button
+						type="button"
+						onClick={openPortal}
+						disabled={pending}
+						className="dc-actions-secondary"
+					>
+						Manage billing on Stripe →
+					</button>
+				)}
 			</div>
 		</section>
 	);

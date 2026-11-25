@@ -146,7 +146,9 @@ function vendorRoutesOffResponse(): Response {
 }
 
 function storeOf<T>(ctx: PluginContext, name: string): StorageCollection<T> {
-	return (ctx.storage as unknown as Record<string, StorageCollection<T>>)[name] as StorageCollection<T>;
+	return (ctx.storage as unknown as Record<string, StorageCollection<T>>)[
+		name
+	] as StorageCollection<T>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -224,10 +226,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 // Handlers
 // ────────────────────────────────────────────────────────────────────────────
 
-async function queryOrders(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function queryOrders(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const status = url.searchParams.get("status");
 	const paymentStatus = url.searchParams.get("paymentStatus");
@@ -301,19 +300,14 @@ async function queryOrders(
 			{
 				error: "query_failed",
 				message:
-					err instanceof Error
-						? err.message
-						: "Could not query orders — please contact support",
+					err instanceof Error ? err.message : "Could not query orders — please contact support",
 			},
 			500,
 		);
 	}
 }
 
-async function getOrderDetail(
-	ctx: PluginContext,
-	orderId: string,
-): Promise<Response> {
+async function getOrderDetail(ctx: PluginContext, orderId: string): Promise<Response> {
 	const order = await storeOf<Order>(ctx, "orders").get(orderId);
 	if (!order) return json({ error: "Order not found" }, 404);
 	const items = (
@@ -341,7 +335,12 @@ async function postOrderRefund(
 		currency?: string;
 		reason?: string;
 		restock?: boolean;
-		lineItemRefunds?: Array<{ orderItemId: string; quantity: number; amount: number; currency: string }>;
+		lineItemRefunds?: Array<{
+			orderItemId: string;
+			quantity: number;
+			amount: number;
+			currency: string;
+		}>;
 	};
 	if (typeof input.amount !== "number" || !input.currency) {
 		return json({ error: "amount (minor units) and currency required" }, 400);
@@ -365,10 +364,7 @@ async function postOrderRefund(
 		});
 		return json({ refund });
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Refund failed" },
-			400,
-		);
+		return json({ error: err instanceof Error ? err.message : "Refund failed" }, 400);
 	}
 }
 
@@ -384,10 +380,7 @@ async function postOrderStatus(
 	try {
 		assertTransition(order.status, body.status);
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Invalid transition" },
-			400,
-		);
+		return json({ error: err instanceof Error ? err.message : "Invalid transition" }, 400);
 	}
 	const updated: Order = {
 		...order,
@@ -422,10 +415,7 @@ async function postOrderStatus(
 	return json({ order: updated });
 }
 
-async function loadOrderItems(
-	ctx: PluginContext,
-	orderId: string,
-): Promise<OrderItem[]> {
+async function loadOrderItems(ctx: PluginContext, orderId: string): Promise<OrderItem[]> {
 	const res = await storeOf<OrderItem>(ctx, "order_items").query({
 		where: { orderId },
 		limit: 200,
@@ -433,10 +423,7 @@ async function loadOrderItems(
 	return res.items.map((r) => orderItemFromStorage(r.id, r.data as OrderItem));
 }
 
-async function queryCustomers(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function queryCustomers(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const search = url.searchParams.get("search")?.trim().toLowerCase();
 	const guestFilter = url.searchParams.get("guest"); // "true" | "false" | null
@@ -490,19 +477,14 @@ async function queryCustomers(
 			{
 				error: "query_failed",
 				message:
-					err instanceof Error
-						? err.message
-						: "Could not query customers — please contact support",
+					err instanceof Error ? err.message : "Could not query customers — please contact support",
 			},
 			500,
 		);
 	}
 }
 
-async function getCustomerDetail(
-	ctx: PluginContext,
-	customerId: string,
-): Promise<Response> {
+async function getCustomerDetail(ctx: PluginContext, customerId: string): Promise<Response> {
 	const customer = await storeOf<Customer>(ctx, "customers").get(customerId);
 	if (!customer) return json({ error: "Customer not found" }, 404);
 	const [orders, subs] = await Promise.all([
@@ -550,9 +532,7 @@ async function upsertCoupon(
 ): Promise<Coupon> {
 	const now = new Date().toISOString();
 	const id = couponId ?? randomId();
-	const existing = couponId
-		? await storeOf<Coupon>(ctx, "coupons").get(couponId)
-		: null;
+	const existing = couponId ? await storeOf<Coupon>(ctx, "coupons").get(couponId) : null;
 	const record: Coupon = {
 		id,
 		code: input.code.toUpperCase(),
@@ -565,12 +545,8 @@ async function upsertCoupon(
 		...(input.endsAt ? { endsAt: input.endsAt } : {}),
 		...(input.minAmount ? { minAmount: input.minAmount } : {}),
 		...(input.maxAmount ? { maxAmount: input.maxAmount } : {}),
-		...(input.includedProductIds
-			? { includedProductIds: input.includedProductIds }
-			: {}),
-		...(input.excludedProductIds
-			? { excludedProductIds: input.excludedProductIds }
-			: {}),
+		...(input.includedProductIds ? { includedProductIds: input.includedProductIds } : {}),
+		...(input.excludedProductIds ? { excludedProductIds: input.excludedProductIds } : {}),
 		excludeSaleItems: input.excludeSaleItems ?? false,
 		...(input.usageLimit !== undefined ? { usageLimit: input.usageLimit } : {}),
 		...(input.usageLimitPerCustomer !== undefined
@@ -690,10 +666,7 @@ function validateTaxRateInput(
 	return { ok: true, value: out };
 }
 
-async function postTaxRate(
-	ctx: PluginContext,
-	routeCtx: RouteContext,
-): Promise<Response> {
+async function postTaxRate(ctx: PluginContext, routeCtx: RouteContext): Promise<Response> {
 	const input = (routeCtx.input ?? {}) as Record<string, unknown>;
 	const validated = validateTaxRateInput(input);
 	if (!validated.ok) return json({ error: validated.error }, 400);
@@ -774,10 +747,7 @@ function validateShippingZone(
 				};
 			}
 			if (l.regions !== undefined) {
-				if (
-					!Array.isArray(l.regions) ||
-					l.regions.some((r) => typeof r !== "string")
-				) {
+				if (!Array.isArray(l.regions) || l.regions.some((r) => typeof r !== "string")) {
 					return { ok: false, error: "regions must be an array of strings" };
 				}
 				locations.push({ country: l.country, regions: l.regions as string[] });
@@ -800,10 +770,7 @@ function validateShippingZone(
 	return { ok: true, value: out };
 }
 
-async function postShippingZone(
-	ctx: PluginContext,
-	routeCtx: RouteContext,
-): Promise<Response> {
+async function postShippingZone(ctx: PluginContext, routeCtx: RouteContext): Promise<Response> {
 	const input = (routeCtx.input ?? {}) as Record<string, unknown>;
 	const v = validateShippingZone(input);
 	if (!v.ok) return json({ error: v.error }, 400);
@@ -842,10 +809,7 @@ async function patchShippingZone(
 	return json({ zone: next });
 }
 
-async function deleteShippingZone(
-	ctx: PluginContext,
-	id: string,
-): Promise<Response> {
+async function deleteShippingZone(ctx: PluginContext, id: string): Promise<Response> {
 	const store = storeOf<ShippingZone>(ctx, "shipping_zones");
 	const current = await store.get(id);
 	if (!current) return json({ error: "Zone not found" }, 404);
@@ -860,8 +824,7 @@ async function deleteShippingZone(
 	if (zoneHasMethods) {
 		return json(
 			{
-				error:
-					"Zone still has methods — delete the methods first or move them to another zone.",
+				error: "Zone still has methods — delete the methods first or move them to another zone.",
 			},
 			409,
 		);
@@ -896,8 +859,7 @@ function validateShippingMethod(
 		) {
 			return {
 				ok: false,
-				error:
-					"type must be one of flat_rate | free_shipping | local_pickup | weight_based",
+				error: "type must be one of flat_rate | free_shipping | local_pickup | weight_based",
 			};
 		}
 		out.type = input.type;
@@ -927,10 +889,7 @@ function validateShippingMethod(
 	return { ok: true, value: out };
 }
 
-async function postShippingMethod(
-	ctx: PluginContext,
-	routeCtx: RouteContext,
-): Promise<Response> {
+async function postShippingMethod(ctx: PluginContext, routeCtx: RouteContext): Promise<Response> {
 	const input = (routeCtx.input ?? {}) as Record<string, unknown>;
 	const v = validateShippingMethod(input);
 	if (!v.ok) return json({ error: v.error }, 400);
@@ -964,10 +923,7 @@ async function patchShippingMethod(
 	return json({ method: next });
 }
 
-async function deleteShippingMethod(
-	ctx: PluginContext,
-	id: string,
-): Promise<Response> {
+async function deleteShippingMethod(ctx: PluginContext, id: string): Promise<Response> {
 	const store = storeOf<ShippingMethod>(ctx, "shipping_methods");
 	const current = await store.get(id);
 	if (!current) return json({ error: "Method not found" }, 404);
@@ -1007,10 +963,7 @@ function validateShippingClass(
 	return { ok: true, value: out };
 }
 
-async function postShippingClass(
-	ctx: PluginContext,
-	routeCtx: RouteContext,
-): Promise<Response> {
+async function postShippingClass(ctx: PluginContext, routeCtx: RouteContext): Promise<Response> {
 	const input = (routeCtx.input ?? {}) as Record<string, unknown>;
 	const v = validateShippingClass(input);
 	if (!v.ok) return json({ error: v.error }, 400);
@@ -1019,9 +972,7 @@ async function postShippingClass(
 		id,
 		slug: v.value.slug as string,
 		name: v.value.name as string,
-		...(v.value.description !== undefined
-			? { description: v.value.description }
-			: {}),
+		...(v.value.description !== undefined ? { description: v.value.description } : {}),
 	};
 	try {
 		await storeOf<ShippingClass>(ctx, "shipping_classes").put(id, row);
@@ -1062,10 +1013,7 @@ async function patchShippingClass(
 	return json({ class: next });
 }
 
-async function deleteShippingClass(
-	ctx: PluginContext,
-	id: string,
-): Promise<Response> {
+async function deleteShippingClass(ctx: PluginContext, id: string): Promise<Response> {
 	const store = storeOf<ShippingClass>(ctx, "shipping_classes");
 	const current = await store.get(id);
 	if (!current) return json({ error: "Class not found" }, 404);
@@ -1073,10 +1021,7 @@ async function deleteShippingClass(
 	return json({ ok: true });
 }
 
-async function listSubscriptions(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function listSubscriptions(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const status = url.searchParams.get("status");
 	const email = url.searchParams.get("email")?.trim().toLowerCase();
@@ -1128,9 +1073,7 @@ async function listSubscriptions(
 				}),
 			);
 			const emailById = new Map(customers);
-			items = items.filter((s) =>
-				(emailById.get(s.customerId) ?? "").includes(email),
-			);
+			items = items.filter((s) => (emailById.get(s.customerId) ?? "").includes(email));
 		}
 		return json({ items, cursor: result.cursor, hasMore: result.hasMore });
 	} catch (err) {
@@ -1156,8 +1099,7 @@ async function postSubscriptionAction(
 	action: string,
 	routeCtx: RouteContext,
 ): Promise<Response> {
-	const client = await loadStripeClient(ctx);
-	if (!client) return json({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 	const body = (routeCtx.input ?? {}) as {
 		mode?: "immediate" | "at_period_end";
 		resumesAt?: number;
@@ -1185,10 +1127,7 @@ async function postSubscriptionAction(
 		}
 		return json({ error: `Unknown action ${action}` }, 400);
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Action failed" },
-			500,
-		);
+		return json({ error: err instanceof Error ? err.message : "Action failed" }, 500);
 	}
 }
 
@@ -1250,9 +1189,7 @@ async function listReviews(ctx: PluginContext, req: Request): Promise<Response> 
 			{
 				error: "query_failed",
 				message:
-					err instanceof Error
-						? err.message
-						: "Could not query reviews — please contact support",
+					err instanceof Error ? err.message : "Could not query reviews — please contact support",
 			},
 			500,
 		);
@@ -1270,21 +1207,13 @@ async function postReviewModerate(
 	};
 	if (!body.status) return json({ error: "status required" }, 400);
 	try {
-		const updated = await moderateReview(
-			ctx,
-			reviewId,
-			body.status,
-			body.moderatedByUserId,
-		);
+		const updated = await moderateReview(ctx, reviewId, body.status, body.moderatedByUserId);
 		if (body.status === "approved" || updated.status === "approved") {
 			await recomputeSummary(ctx, updated.productId);
 		}
 		return json({ review: updated });
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Moderation failed" },
-			500,
-		);
+		return json({ error: err instanceof Error ? err.message : "Moderation failed" }, 500);
 	}
 }
 
@@ -1507,10 +1436,7 @@ async function listProviderPayoutBanks(ctx: PluginContext, req: Request): Promis
 	}
 	const provider = getPaymentProvider(providerId);
 	if (!provider?.listPayoutBanks) {
-		return json(
-			{ error: `Payment provider "${providerId}" does not support payout banks` },
-			400,
-		);
+		return json({ error: `Payment provider "${providerId}" does not support payout banks` }, 400);
 	}
 	const credentials = await loadPaymentProviderCredentials(ctx.kv, providerId);
 	if (!credentials) {
@@ -1520,10 +1446,7 @@ async function listProviderPayoutBanks(ctx: PluginContext, req: Request): Promis
 		const banks = await provider.listPayoutBanks(ctx, country, credentials);
 		return json({ banks });
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Could not load banks" },
-			502,
-		);
+		return json({ error: err instanceof Error ? err.message : "Could not load banks" }, 502);
 	}
 }
 
@@ -1537,8 +1460,7 @@ async function resolveProviderPayoutAccount(
 		bankCode?: string;
 	};
 	const providerId = typeof input.providerId === "string" ? input.providerId.trim() : "";
-	const accountNumber =
-		typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
+	const accountNumber = typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
 	const bankCode = typeof input.bankCode === "string" ? input.bankCode.trim() : "";
 	if (!providerId) return json({ error: "providerId is required" }, 400);
 	if (!/^\S{4,34}$/u.test(accountNumber)) {
@@ -1598,14 +1520,11 @@ async function createProviderPayoutAccount(
 	};
 	const providerId = typeof input.providerId === "string" ? input.providerId.trim() : "";
 	const vendorId = typeof input.vendorId === "string" ? input.vendorId.trim() : "";
-	const accountNumber =
-		typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
+	const accountNumber = typeof input.accountNumber === "string" ? input.accountNumber.trim() : "";
 	const bankCode = typeof input.bankCode === "string" ? input.bankCode.trim() : "";
 	const country = (typeof input.country === "string" ? input.country : "").trim().toUpperCase();
-	const businessName =
-		typeof input.businessName === "string" ? input.businessName.trim() : "";
-	const businessEmail =
-		typeof input.businessEmail === "string" ? input.businessEmail.trim() : "";
+	const businessName = typeof input.businessName === "string" ? input.businessName.trim() : "";
+	const businessEmail = typeof input.businessEmail === "string" ? input.businessEmail.trim() : "";
 	const businessMobile =
 		typeof input.businessMobile === "string" ? input.businessMobile.trim() : "";
 
@@ -1678,8 +1597,7 @@ async function createProviderPayoutAccount(
 				...(typeof input.businessContact === "string" && input.businessContact.trim()
 					? { businessContact: input.businessContact.trim() }
 					: {}),
-				...(typeof input.businessContactMobile === "string" &&
-				input.businessContactMobile.trim()
+				...(typeof input.businessContactMobile === "string" && input.businessContactMobile.trim()
 					? { businessContactMobile: input.businessContactMobile.trim() }
 					: {}),
 				splitType,
@@ -1721,18 +1639,14 @@ async function createProviderPayoutAccount(
 	} catch (err) {
 		return json(
 			{
-				error:
-					err instanceof Error ? err.message : "Could not create the payout account",
+				error: err instanceof Error ? err.message : "Could not create the payout account",
 			},
 			502,
 		);
 	}
 }
 
-async function refreshVendorFromStripe(
-	ctx: PluginContext,
-	vendorId: string,
-): Promise<Response> {
+async function refreshVendorFromStripe(ctx: PluginContext, vendorId: string): Promise<Response> {
 	const client = await loadStripeClient(ctx);
 	if (!client) return json({ error: "Stripe not configured" }, 500);
 	const store = storeOf<Vendor>(ctx, "vendors");
@@ -1768,10 +1682,7 @@ async function refreshVendorFromStripe(
 		await store.put(vendorId, next);
 		return json({ vendor: { ...next, id: vendorId } });
 	} catch (err) {
-		return json(
-			{ error: err instanceof Error ? err.message : "Stripe refresh failed" },
-			502,
-		);
+		return json({ error: err instanceof Error ? err.message : "Stripe refresh failed" }, 502);
 	}
 }
 
@@ -1791,10 +1702,7 @@ async function postVendorOnboardLink(
 		returnUrl?: string;
 	};
 	if (!body.email || !body.name || !body.refreshUrl || !body.returnUrl) {
-		return json(
-			{ error: "email, name, refreshUrl, returnUrl are required" },
-			400,
-		);
+		return json({ error: "email, name, refreshUrl, returnUrl are required" }, 400);
 	}
 	const result = await startOnboarding(ctx, {
 		...(body.vendorId ? { vendorId: body.vendorId } : {}),
@@ -1847,10 +1755,7 @@ function parseToMs(value: string | null): number {
 		: Date.parse(value);
 }
 
-async function reportRevenue(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function reportRevenue(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const fromMs = Date.parse(url.searchParams.get("from") ?? "1970-01-01T00:00:00Z");
 	const toMs = parseToMs(url.searchParams.get("to"));
@@ -1887,18 +1792,13 @@ function bucketFor(iso: string, groupBy: string): string {
 		const day = d.getUTCDay() || 7;
 		d.setUTCDate(d.getUTCDate() + 4 - day);
 		const year = d.getUTCFullYear();
-		const weekNum = Math.ceil(
-			((d.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7,
-		);
+		const weekNum = Math.ceil(((d.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7);
 		return `${year}-W${String(weekNum).padStart(2, "0")}`;
 	}
 	return iso.slice(0, 10);
 }
 
-async function reportTopProducts(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function reportTopProducts(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const limit = Math.min(50, Number.parseInt(url.searchParams.get("limit") ?? "10", 10));
 	const fromMs = Date.parse(url.searchParams.get("from") ?? "1970-01-01T00:00:00Z");
@@ -1934,16 +1834,11 @@ async function reportTopProducts(
 		prev.revenue += it.total.amount;
 		counts.set(key, prev);
 	}
-	const items = [...counts.values()]
-		.sort((a, b) => b.revenue - a.revenue)
-		.slice(0, limit);
+	const items = [...counts.values()].sort((a, b) => b.revenue - a.revenue).slice(0, limit);
 	return json({ items });
 }
 
-async function reportTopCustomers(
-	ctx: PluginContext,
-	req: Request,
-): Promise<Response> {
+async function reportTopCustomers(ctx: PluginContext, req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const limit = Math.min(50, Number.parseInt(url.searchParams.get("limit") ?? "10", 10));
 	const result = await storeOf<Customer>(ctx, "customers").query({ limit: 1000 });
@@ -2013,9 +1908,7 @@ async function widgetLowStock(ctx: PluginContext): Promise<Response> {
 	const result = await ctx.content.list("products", { limit: 200 });
 	const items = result.items
 		.map((it) => {
-			const data = normalizeProductFields(
-				it.data as Record<string, unknown>,
-			);
+			const data = normalizeProductFields(it.data as Record<string, unknown>);
 			return {
 				productId: it.id,
 				title: data.title,
@@ -2061,9 +1954,7 @@ async function widgetFailedSubscriptions(ctx: PluginContext): Promise<Response> 
 	});
 	return json({
 		count: result.items.length,
-		items: result.items
-			.slice(0, 5)
-			.map((r) => ({ ...(r.data as Subscription), id: r.id })),
+		items: result.items.slice(0, 5).map((r) => ({ ...(r.data as Subscription), id: r.id })),
 	});
 }
 
@@ -2155,8 +2046,7 @@ export const adminApiRoutes = {
 	"admin/shipping/zones": {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
-			if (routeCtx.request.method === "POST")
-				return postShippingZone(ctx, routeCtx);
+			if (routeCtx.request.method === "POST") return postShippingZone(ctx, routeCtx);
 			return listShippingZones(ctx);
 		},
 	},
@@ -2165,18 +2055,15 @@ export const adminApiRoutes = {
 			const ctx = getCtx(routeCtx, _c);
 			const id = queryOrPath(routeCtx.request, "id", "zones");
 			if (!id) return json({ error: "Missing zone id" }, 400);
-			if (routeCtx.request.method === "PATCH")
-				return patchShippingZone(ctx, id, routeCtx);
-			if (routeCtx.request.method === "DELETE")
-				return deleteShippingZone(ctx, id);
+			if (routeCtx.request.method === "PATCH") return patchShippingZone(ctx, id, routeCtx);
+			if (routeCtx.request.method === "DELETE") return deleteShippingZone(ctx, id);
 			return json({ error: "Method not allowed" }, 405);
 		},
 	},
 	"admin/shipping/methods": {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
-			if (routeCtx.request.method === "POST")
-				return postShippingMethod(ctx, routeCtx);
+			if (routeCtx.request.method === "POST") return postShippingMethod(ctx, routeCtx);
 			return json({ error: "Method not allowed" }, 405);
 		},
 	},
@@ -2185,18 +2072,15 @@ export const adminApiRoutes = {
 			const ctx = getCtx(routeCtx, _c);
 			const id = queryOrPath(routeCtx.request, "id", "methods");
 			if (!id) return json({ error: "Missing method id" }, 400);
-			if (routeCtx.request.method === "PATCH")
-				return patchShippingMethod(ctx, id, routeCtx);
-			if (routeCtx.request.method === "DELETE")
-				return deleteShippingMethod(ctx, id);
+			if (routeCtx.request.method === "PATCH") return patchShippingMethod(ctx, id, routeCtx);
+			if (routeCtx.request.method === "DELETE") return deleteShippingMethod(ctx, id);
 			return json({ error: "Method not allowed" }, 405);
 		},
 	},
 	"admin/shipping/classes": {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
-			if (routeCtx.request.method === "POST")
-				return postShippingClass(ctx, routeCtx);
+			if (routeCtx.request.method === "POST") return postShippingClass(ctx, routeCtx);
 			return json({ error: "Method not allowed" }, 405);
 		},
 	},
@@ -2205,10 +2089,8 @@ export const adminApiRoutes = {
 			const ctx = getCtx(routeCtx, _c);
 			const id = queryOrPath(routeCtx.request, "id", "classes");
 			if (!id) return json({ error: "Missing class id" }, 400);
-			if (routeCtx.request.method === "PATCH")
-				return patchShippingClass(ctx, id, routeCtx);
-			if (routeCtx.request.method === "DELETE")
-				return deleteShippingClass(ctx, id);
+			if (routeCtx.request.method === "PATCH") return patchShippingClass(ctx, id, routeCtx);
+			if (routeCtx.request.method === "DELETE") return deleteShippingClass(ctx, id);
 			return json({ error: "Method not allowed" }, 405);
 		},
 	},
@@ -2249,9 +2131,7 @@ export const adminApiRoutes = {
 			const parts = pathParts(routeCtx.request);
 			const subIdx = parts.lastIndexOf("subscriptions");
 			const id =
-				url.searchParams.get("id") ??
-				input.id ??
-				(subIdx !== -1 ? parts[subIdx + 1] : undefined);
+				url.searchParams.get("id") ?? input.id ?? (subIdx !== -1 ? parts[subIdx + 1] : undefined);
 			const action =
 				url.searchParams.get("action") ??
 				input.action ??
@@ -2366,8 +2246,7 @@ export const adminApiRoutes = {
 			reportTopCustomers(getCtx(routeCtx, _c), routeCtx.request),
 	},
 	"admin/reports/mrr": {
-		handler: async (routeCtx: RouteContext, _c?: PluginContext) =>
-			reportMrr(getCtx(routeCtx, _c)),
+		handler: async (routeCtx: RouteContext, _c?: PluginContext) => reportMrr(getCtx(routeCtx, _c)),
 	},
 
 	// Widgets
@@ -2409,9 +2288,7 @@ export const adminApiRoutes = {
 						delete body[k];
 					}
 				}
-				const currentEnabled = await ctx.kv.get<string[]>(
-					"settings:enabledCurrencies",
-				);
+				const currentEnabled = await ctx.kv.get<string[]>("settings:enabledCurrencies");
 				const report = validateSettings(body, {
 					currentEnabledCurrencies: currentEnabled ?? undefined,
 					extraSecret: providerCredentialSpec,
@@ -2468,10 +2345,7 @@ export const adminApiRoutes = {
 					payoutsEnabled: !!account.payouts_enabled,
 				});
 			} catch (err) {
-				return json(
-					{ ok: false, error: err instanceof Error ? err.message : "Ping failed" },
-					502,
-				);
+				return json({ ok: false, error: err instanceof Error ? err.message : "Ping failed" }, 502);
 			}
 		},
 	},
@@ -2484,8 +2358,7 @@ export const adminApiRoutes = {
 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
 			const ctx = getCtx(routeCtx, _c);
 			const { providerId } = (routeCtx.input ?? {}) as { providerId?: unknown };
-			const provider =
-				typeof providerId === "string" ? getPaymentProvider(providerId) : undefined;
+			const provider = typeof providerId === "string" ? getPaymentProvider(providerId) : undefined;
 			if (!provider?.checkConnection) {
 				return json(
 					{

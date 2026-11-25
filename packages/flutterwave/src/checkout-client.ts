@@ -26,6 +26,7 @@ interface FlutterwaveCheckoutOptions {
 	customer: { email: string; name?: string; phone_number?: string };
 	meta?: Record<string, string>;
 	payment_options?: string;
+	payment_plan?: number;
 	subaccounts?: Array<{
 		id: string;
 		transaction_charge_type?: string;
@@ -84,6 +85,16 @@ export function createFlutterwaveCheckoutClient(win: Window, doc: Document): OnP
 			// The server sends the split as JSON so the client payload stays a
 			// flat map of strings. A malformed value must not open a payment
 			// that would settle entirely to the platform.
+			let paymentPlan: number | undefined;
+			if (client.paymentPlan) {
+				const parsed = Number(client.paymentPlan);
+				if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+					callbacks.onError("Flutterwave subscription details are invalid");
+					return;
+				}
+				paymentPlan = parsed;
+			}
+
 			let subaccounts: FlutterwaveCheckoutOptions["subaccounts"];
 			if (client.subaccounts) {
 				try {
@@ -128,6 +139,7 @@ export function createFlutterwaveCheckoutClient(win: Window, doc: Document): OnP
 							},
 							...(client.orderDraftId ? { meta: { orderDraftId: client.orderDraftId } } : {}),
 							...(client.paymentOptions ? { payment_options: client.paymentOptions } : {}),
+							...(paymentPlan ? { payment_plan: paymentPlan } : {}),
 							...(subaccounts && subaccounts.length > 0 ? { subaccounts } : {}),
 							callback: () => finish(),
 							onclose: () => close(),

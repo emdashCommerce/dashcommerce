@@ -51,6 +51,7 @@ export type {
 	CreatePayoutAccountInput,
 	ResolvePayoutAccountInput,
 	PaymentStatusResult,
+	ProviderSubscriptionInfo,
 	RefundResult,
 	VerifyWebhookInput,
 	VerifyWebhookResult,

@@ -32,7 +32,7 @@ export interface FlutterwaveClientOptions {
 }
 
 export interface FlutterwaveCallOptions {
-	method?: "GET" | "POST";
+	method?: "GET" | "POST" | "PUT";
 	path: string; // leading slash, e.g. /payments
 	body?: Record<string, unknown>;
 	client: FlutterwaveClientOptions;
@@ -99,8 +99,7 @@ export async function callEnvelope<T = Record<string, unknown>>(
 			parsed.data && typeof parsed.data === "object"
 				? (parsed.data as Record<string, unknown>)
 				: undefined;
-		const nestedMessage =
-			typeof dataRecord?.message === "string" ? dataRecord.message : undefined;
+		const nestedMessage = typeof dataRecord?.message === "string" ? dataRecord.message : undefined;
 		const msg =
 			nestedMessage ||
 			parsed.message ||
