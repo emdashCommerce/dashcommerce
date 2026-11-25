@@ -207,6 +207,7 @@ async function providerSettingsRows(ctx: PluginContext) {
 			checkoutStyles: providerCheckoutStyles(provider),
 			canCheckConnection: typeof provider.checkConnection === "function",
 			payoutOnboarding: typeof provider.createPayoutAccount === "function",
+			payoutVerification: typeof provider.resolvePayoutAccount === "function",
 			secrets: {
 				secretKey: await secretStatus(ctx, `${provider.id}SecretKey`),
 				webhookSecret: await secretStatus(ctx, `${provider.id}WebhookSecret`),
@@ -1643,6 +1644,7 @@ async function createProviderPayoutAccount(
 			400,
 		);
 	}
+	const canVerify = typeof provider.resolvePayoutAccount === "function";
 	const credentials = await loadPaymentProviderCredentials(ctx.kv, providerId);
 	if (!credentials) {
 		return json({ error: `Payment provider "${providerId}" is not configured` }, 400);
@@ -1686,14 +1688,15 @@ async function createProviderPayoutAccount(
 		if (!created.accountReference?.trim()) {
 			return json({ error: "Provider returned no account reference" }, 502);
 		}
-		if (!created.accountName?.trim()) {
+		if (canVerify && !created.accountName?.trim()) {
 			return json({ error: "Provider returned no account name" }, 502);
 		}
 		const now = new Date().toISOString();
 		const account: VendorPaymentAccount = {
 			accountReference: created.accountReference.trim(),
 			status: "active",
-			accountName: created.accountName.trim(),
+			...(created.accountName ? { accountName: created.accountName.trim() } : {}),
+			verified: created.verified ?? canVerify,
 			...(created.bankName ? { bankName: created.bankName } : {}),
 			bankCode: created.bankCode ?? bankCode,
 			country: created.country ?? country,

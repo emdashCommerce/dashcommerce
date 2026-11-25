@@ -121,6 +121,7 @@ describe("provider payout onboarding", () => {
 		expect(saved.paymentAccounts?.flw).toMatchObject({
 			accountReference: "RS_TEST",
 			status: "active",
+			verified: true,
 			accountName: "Name for 0690000031",
 			bankName: "Access Bank",
 			bankCode: "044",
@@ -193,6 +194,63 @@ describe("provider payout onboarding", () => {
 		expect(badFlat.status).toBe(400);
 	});
 
+	it("creates an unverified account when the provider cannot resolve names", async () => {
+		registerPaymentProvider({
+			...createMockPaymentProvider({ id: "flw" }),
+			label: "Flutterwave",
+			capabilities: { splits: true },
+			async createPayoutAccount() {
+				return {
+					accountReference: "RS_UNVERIFIED",
+					bankName: "Access Bank",
+					bankCode: "044",
+					country: "NG",
+					maskedAccountNumber: "••••0031",
+				};
+			},
+		});
+		const { ctx, getCol } = makeRouteContext({ "settings:flwSecretKey": "test-key" });
+		getCol("vendors").set("v1", vendor());
+
+		const res = await call(ctx, "admin/vendors/payout-account", "POST", createInput);
+		expect(res.status).toBe(201);
+		const account = (res.body.vendor as Vendor).paymentAccounts?.flw;
+		expect(account?.accountReference).toBe("RS_UNVERIFIED");
+		expect(account?.accountName).toBeUndefined();
+		expect(account?.verified).toBe(false);
+	});
+
+	it("stores an active-but-unverified account the provider reports", async () => {
+		registerPaymentProvider({
+			...createMockPaymentProvider({ id: "flw" }),
+			label: "Flutterwave",
+			capabilities: { splits: true },
+			async resolvePayoutAccount() {
+				return { accountName: "Bale Gary" };
+			},
+			async createPayoutAccount() {
+				return {
+					accountReference: "RS_ACTIVE_UNVERIFIED",
+					accountName: "Bale Gary",
+					verified: false,
+					bankName: "Access Bank",
+					bankCode: "044",
+					country: "NG",
+					maskedAccountNumber: "••••0031",
+				};
+			},
+		});
+		const { ctx, getCol } = makeRouteContext({ "settings:flwSecretKey": "test-key" });
+		getCol("vendors").set("v1", vendor());
+
+		const res = await call(ctx, "admin/vendors/payout-account", "POST", createInput);
+		expect(res.status).toBe(201);
+		const account = (res.body.vendor as Vendor).paymentAccounts?.flw;
+		expect(account?.status).toBe("active");
+		expect(account?.verified).toBe(false);
+		expect(account?.accountName).toBe("Bale Gary");
+	});
+
 	it("is gated like the other vendor routes", async () => {
 		const { ctx } = makeRouteContext({});
 		const res = await call(ctx, "admin/vendors/payout-banks", "GET");
@@ -206,5 +264,6 @@ describe("provider payout onboarding", () => {
 		const providers = res.body._providers as Array<Record<string, unknown>>;
 		const row = providers.find((provider) => provider.id === "flw");
 		expect(row?.payoutOnboarding).toBe(true);
+		expect(row?.payoutVerification).toBe(true);
 	});
 });
