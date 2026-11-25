@@ -205,6 +205,48 @@ describe("provider-managed subscriptions", () => {
 		expect(invoice.amount).toEqual({ amount: 150_000, currency: "KES" });
 	});
 
+	it("applies a subscription.updated webhook to the local row", async () => {
+		const base = createMockPaymentProvider({ id: "acme" });
+		registerPaymentProvider({
+			...base,
+			webhookHeaders: ["x-acme-signature"],
+			parseWebhookEvent(): NormalizedPaymentEvent {
+				return {
+					type: "subscription.updated",
+					providerId: "acme",
+					providerEventId: "sub-cancel-1",
+					providerSubscriptionId: "plan_1",
+					status: "canceled",
+					canceledAt: "2026-02-01T00:00:00.000Z",
+					raw: {},
+				};
+			},
+		});
+		const { ctx, getCol } = makeRouteContext({
+			"settings:paymentProvider": "acme",
+			"settings:acmeSecretKey": "acme-key",
+			"settings:acmeWebhookSecret": "test-secret",
+		});
+		const sub = await upsertProviderSubscription(ctx, {
+			providerId: "acme",
+			providerSubscriptionId: "plan_1",
+			customerId: "cus_1",
+			productId: "prod_1",
+			status: "active",
+			currency: "KES",
+			unitAmount: 150_000,
+			quantity: 1,
+			interval: "month",
+			intervalCount: 1,
+		});
+
+		const res = await deliver(ctx, JSON.stringify({ cancel: true }));
+		expect(res.status).toBe(200);
+		const stored = getCol("subscriptions").get(sub.id) as Subscription;
+		expect(stored.status).toBe("canceled");
+		expect(stored.canceledAt).toBe("2026-02-01T00:00:00.000Z");
+	});
+
 	it("does not hand a provider's plan id to another provider", async () => {
 		const current = {
 			paymentReference: "pay_sub_1",
@@ -227,7 +269,6 @@ describe("provider-managed subscriptions", () => {
 		expect(getCol("subscriptions").size).toBe(1);
 	});
 });
-
 
 describe("provider-managed lifecycle", () => {
 	it("cancels and resumes through the provider, not Stripe", async () => {

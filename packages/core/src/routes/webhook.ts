@@ -60,6 +60,7 @@ import { handleInvoicePaymentFailed } from "../subscriptions/dunning";
 import {
 	addSubscriptionInterval,
 	findProviderSubscription,
+	providerSubsStore,
 	recordProviderSubscriptionInvoice,
 	upsertProviderSubscription,
 } from "../subscriptions/provider";
@@ -862,9 +863,7 @@ async function handleNormalizedChargeSucceeded(
 					cancelAtPeriodEnd: subscription.cancelAtPeriodEnd ?? false,
 					...(subscription.canceledAt ? { canceledAt: subscription.canceledAt } : {}),
 				});
-				const subscriptionIds = [
-					...new Set([...(order.subscriptionIds ?? []), local.id]),
-				];
+				const subscriptionIds = [...new Set([...(order.subscriptionIds ?? []), local.id])];
 				await ordersStore(ctx).put(order.id, {
 					...order,
 					subscriptionIds,
@@ -1009,6 +1008,44 @@ export const webhookRoutes = {
 					}
 					if (normalized.type === "charge.failed") {
 						return await handleNormalizedChargeFailed(ctx, normalized);
+					}
+					if (normalized.type === "subscription.updated") {
+						if (normalized.providerId !== provider.id) {
+							return new Response(
+								JSON.stringify({ error: "Subscription event from another provider" }),
+								{ status: 400, headers: { "Content-Type": "application/json" } },
+							);
+						}
+						const sub = await findProviderSubscription(
+							ctx,
+							provider.id,
+							normalized.providerSubscriptionId,
+						);
+						if (!sub) {
+							return new Response(JSON.stringify({ received: true, orphan: true }), {
+								status: 200,
+								headers: { "Content-Type": "application/json" },
+							});
+						}
+						await providerSubsStore(ctx).put(sub.id, {
+							...sub,
+							status: normalized.status,
+							...(normalized.currentPeriodStart
+								? { currentPeriodStart: normalized.currentPeriodStart }
+								: {}),
+							...(normalized.currentPeriodEnd
+								? { currentPeriodEnd: normalized.currentPeriodEnd }
+								: {}),
+							...(normalized.cancelAtPeriodEnd !== undefined
+								? { cancelAtPeriodEnd: normalized.cancelAtPeriodEnd }
+								: {}),
+							...(normalized.canceledAt ? { canceledAt: normalized.canceledAt } : {}),
+							updatedAt: new Date().toISOString(),
+						});
+						return new Response(JSON.stringify({ received: true, subscriptionId: sub.id }), {
+							status: 200,
+							headers: { "Content-Type": "application/json" },
+						});
 					}
 					if (normalized.type === "refund.updated") {
 						if (normalized.providerId !== provider.id) {

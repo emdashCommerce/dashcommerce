@@ -221,6 +221,23 @@ export type NormalizedPaymentEvent =
 	  }
 	| {
 			/**
+			 * A provider-managed subscription changed state outside a charge
+			 * (e.g. Flutterwave's `subscription.cancelled`). Core updates the
+			 * local row; it does not create an order or an invoice.
+			 */
+			type: "subscription.updated";
+			providerId: string;
+			providerEventId: string;
+			providerSubscriptionId: string;
+			status: ProviderSubscriptionInfo["status"];
+			currentPeriodStart?: string;
+			currentPeriodEnd?: string;
+			cancelAtPeriodEnd?: boolean;
+			canceledAt?: string;
+			raw: unknown;
+	  }
+	| {
+			/**
 			 * A refund this store created moved on at the provider (e.g.
 			 * Paystack's `refund.processed`). `providerRefundId` is the id
 			 * `refund()` returned. Settled refunds never move back to pending.

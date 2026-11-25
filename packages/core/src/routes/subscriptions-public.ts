@@ -60,6 +60,8 @@ export interface PublicSubscription {
 	intervalCount: number;
 	currentPeriodEnd: Subscription["currentPeriodEnd"];
 	cancelAtPeriodEnd: boolean;
+	/** Gateway that owns the subscription. Unset means Stripe. */
+	providerId?: string;
 }
 
 export function toPublicSubscription(sub: Subscription): PublicSubscription {
@@ -72,6 +74,7 @@ export function toPublicSubscription(sub: Subscription): PublicSubscription {
 		intervalCount: sub.intervalCount,
 		currentPeriodEnd: sub.currentPeriodEnd,
 		cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+		...(sub.providerId ? { providerId: sub.providerId } : {}),
 	};
 }
 
