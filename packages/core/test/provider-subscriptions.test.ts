@@ -290,6 +290,113 @@ describe("provider-managed subscriptions", () => {
 		expect(stored.canceledAt).toBe("2026-02-01T00:00:00.000Z");
 	});
 
+	it("records a renewal when the webhook has no draft or plan field", async () => {
+		const base = createMockPaymentProvider({ id: "acme" });
+		registerPaymentProvider({
+			...base,
+			webhookHeaders: ["x-acme-signature"],
+			parseWebhookEvent(raw): NormalizedPaymentEvent {
+				const body = JSON.parse(raw) as { id: string; paymentReference: string };
+				return {
+					type: "charge.succeeded",
+					orderDraftId: "",
+					providerId: "acme",
+					providerEventId: body.id,
+					paymentReference: body.paymentReference,
+					amount: 150_000,
+					currency: "KES",
+					customer: { email: "supporter@example.com" },
+					raw: body,
+				};
+			},
+			async getPaymentStatus() {
+				return {
+					status: "succeeded",
+					paymentReference: "pay_renewal_no_draft",
+					amount: 150_000,
+					currency: "KES",
+					subscription: {
+						providerSubscriptionId: "plan_1",
+						status: "active" as const,
+					},
+				};
+			},
+		});
+		const { ctx, getCol } = makeRouteContext({
+			"settings:paymentProvider": "acme",
+			"settings:acmeSecretKey": "acme-key",
+			"settings:acmeWebhookSecret": "test-secret",
+		});
+		await upsertProviderSubscription(ctx, {
+			providerId: "acme",
+			providerSubscriptionId: "plan_1",
+			customerId: "cus_1",
+			productId: "prod_1",
+			status: "active",
+			currency: "KES",
+			unitAmount: 150_000,
+			quantity: 1,
+			interval: "month",
+			intervalCount: 1,
+			currentPeriodStart: "2026-01-01T00:00:00.000Z",
+			currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+		});
+
+		const res = await deliver(
+			ctx,
+			JSON.stringify({ id: "evt_no_draft", paymentReference: "pay_renewal_no_draft" }),
+		);
+		expect(res.status).toBe(200);
+		expect(getCol("orders").size).toBe(0);
+		expect(getCol("subscription_invoices").size).toBe(1);
+		const sub = Array.from(getCol("subscriptions").values())[0] as Subscription;
+		expect(sub.currentPeriodEnd).toBe("2026-03-01T00:00:00.000Z");
+	});
+
+	it("ignores a charge with no draft and no subscription", async () => {
+		const base = createMockPaymentProvider({ id: "acme" });
+		registerPaymentProvider({
+			...base,
+			webhookHeaders: ["x-acme-signature"],
+			parseWebhookEvent(raw): NormalizedPaymentEvent {
+				const body = JSON.parse(raw) as { id: string; paymentReference: string };
+				return {
+					type: "charge.succeeded",
+					orderDraftId: "",
+					providerId: "acme",
+					providerEventId: body.id,
+					paymentReference: body.paymentReference,
+					amount: 150_000,
+					currency: "KES",
+					customer: { email: "someone@example.com" },
+					raw: body,
+				};
+			},
+			async getPaymentStatus() {
+				return {
+					status: "succeeded",
+					paymentReference: "pay_other",
+					amount: 150_000,
+					currency: "KES",
+				};
+			},
+		});
+		const { ctx, getCol } = makeRouteContext({
+			"settings:paymentProvider": "acme",
+			"settings:acmeSecretKey": "acme-key",
+			"settings:acmeWebhookSecret": "test-secret",
+		});
+
+		const res = await deliver(
+			ctx,
+			JSON.stringify({ id: "evt_other", paymentReference: "pay_other" }),
+		);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({ received: true, ignored: "no_draft" });
+		expect(getCol("orders").size).toBe(0);
+		expect(getCol("subscriptions").size).toBe(0);
+	});
+
 	it("does not hand a provider's plan id to another provider", async () => {
 		const current = {
 			paymentReference: "pay_sub_1",

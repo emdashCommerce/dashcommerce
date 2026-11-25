@@ -759,6 +759,20 @@ async function handleNormalizedChargeSucceeded(
 		}
 	}
 
+	// A charge with no draft and no local subscription is not ours (for
+	// example another payment on the same Flutterwave account). Acknowledge
+	// it instead of returning 500 and making the provider retry.
+	if (!event.orderDraftId) {
+		ctx.log.info("Ignoring a charge with no checkout draft and no subscription", {
+			providerId: provider.id,
+			paymentReference: event.paymentReference,
+		});
+		return new Response(JSON.stringify({ received: true, ignored: "no_draft" }), {
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+		});
+	}
+
 	const snapshot = await ctx.kv.get<CheckoutDraftSnapshot>(draftKey(event.orderDraftId));
 	if (!snapshot) {
 		ctx.log.error("No cart snapshot for orderDraftId", {
