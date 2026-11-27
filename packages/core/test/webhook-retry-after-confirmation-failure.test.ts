@@ -89,7 +89,7 @@ describe("webhook retry after a failed confirmation", () => {
 
 	it("still skips an exact repeat once the event was processed", async () => {
 		registerPaymentProvider(scriptedProvider([paid]), { override: true });
-		const { ctx, getCol } = makeRouteContext(mockSettings);
+		const { ctx, getCol, logs } = makeRouteContext(mockSettings);
 		const draftId = await startCheckout(ctx, "sess_repeat");
 		const payload = chargeSucceeded(draftId);
 
@@ -97,6 +97,14 @@ describe("webhook retry after a failed confirmation", () => {
 		const repeat = await deliverWebhook(ctx, payload, headers);
 		expect(((await repeat.json()) as { duplicate?: boolean }).duplicate).toBe(true);
 		expect(getCol("orders").size).toBe(1);
+		// The log names the provider that sent the event, not Stripe.
+		expect(logs).toContainEqual(
+			expect.objectContaining({
+				level: "info",
+				msg: "Webhook deduped",
+				meta: expect.objectContaining({ providerId: "mock", type: "charge.succeeded" }),
+			}),
+		);
 	});
 
 	it("keeps the record for failures other than confirmation, as before", async () => {

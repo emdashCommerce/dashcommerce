@@ -89,6 +89,7 @@ async function recordStripeEvent(
 	ctx: PluginContext,
 	stripeEventId: string,
 	type: string,
+	providerId: string,
 ): Promise<string | null> {
 	try {
 		const id = randomId();
@@ -101,7 +102,7 @@ async function recordStripeEvent(
 		return id;
 	} catch (err) {
 		if (isUniqueViolation(err)) {
-			ctx.log.info("Stripe webhook deduped", { stripeEventId, type });
+			ctx.log.info("Webhook deduped", { providerId, eventId: stripeEventId, type });
 			return null;
 		}
 		throw err;
@@ -879,7 +880,12 @@ export const webhookRoutes = {
 			// the same resource. `providerEventId` is Stripe `event.id`.
 			let dedupRowId: string | null = null;
 			if (providerEventId) {
-				dedupRowId = await recordStripeEvent(ctx, providerEventId, eventTypeForDedup);
+				dedupRowId = await recordStripeEvent(
+					ctx,
+					providerEventId,
+					eventTypeForDedup,
+					provider.id,
+				);
 				if (!dedupRowId) {
 					return new Response(JSON.stringify({ received: true, duplicate: true }), {
 						status: 200,
