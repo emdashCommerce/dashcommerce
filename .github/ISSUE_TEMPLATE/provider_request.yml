@@ -1,0 +1,138 @@
+name: Payment provider request
+description: Propose a new payment provider package for DashCommerce.
+title: "[Provider]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DashCommerce's `PaymentProvider` seam is documented in the README under "For provider authors". A provider package lives in `packages/<provider>`, registers itself on import, and runs its tests against core's real checkout and webhook routes.
+
+        This form captures what a provider PR is reviewed against. Please link the provider's API docs and describe what you have actually run in test mode.
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider name
+      placeholder: "Paystack, Flutterwave, …"
+    validations:
+      required: true
+
+  - type: input
+    id: docs
+    attributes:
+      label: API documentation
+      description: Link the checkout, webhook and refund docs you will build against.
+      placeholder: "https://…"
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package name
+      description: The name you plan to publish, if known.
+      placeholder: "@dashcommerce/<provider>"
+
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Regions and currencies
+      description: Which countries and ISO currencies should this provider charge in?
+      placeholder: "Kenya (KES), Nigeria (NGN), …"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: checkout
+    attributes:
+      label: Checkout styles
+      options:
+        - Hosted page only
+        - On-page only
+        - Hosted and on-page
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: webhooks
+    attributes:
+      label: Webhook signature scheme and headers
+      description: Which header(s) identify the provider, and how are they verified?
+      placeholder: "verif-hash (shared secret), stripe-signature (HMAC), …"
+
+  - type: dropdown
+    id: refunds
+    attributes:
+      label: Refunds
+      options:
+        - Full and partial
+        - Full only
+        - None
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: splits
+    attributes:
+      label: Split payments / multi-vendor
+      description: Can one payment be split across vendor accounts?
+      options:
+        - "Yes"
+        - Planned
+        - "No"
+        - Not sure
+
+  - type: dropdown
+    id: subscriptions
+    attributes:
+      label: Subscriptions
+      options:
+        - "Yes"
+        - Planned
+        - "No"
+        - Not sure
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test-mode evidence
+      description: What have you run? Include real checkout, webhook, refund and (if applicable) split results, with transaction ids or links. Unit tests alone are not enough for a provider PR.
+      placeholder: |
+        - Hosted checkout: …
+        - Real webhook delivery: …
+        - Partial refund: …
+        - Split settlement: …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: maintain
+    attributes:
+      label: Will you maintain the package?
+      options:
+        - "Yes"
+        - "Yes, with review help"
+        - "No, proposing only"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to an existing implementation, API quirks, or open questions.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing provider issues and discussions.
+          required: true
+        - label: I read the README's "For provider authors" section.
+          required: true
+        - label: I have not included API keys, webhook secrets or customer data.
+          required: true
