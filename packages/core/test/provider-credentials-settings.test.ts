@@ -75,6 +75,40 @@ describe("provider credentials in the settings API", () => {
 		expect((await call(ctx, "POST", { plainSecretKey: "  " })).status).toBe(400);
 	});
 
+	it("refuses to make an unregistered provider active, naming the registered ones", async () => {
+		registerPaymentProvider(acme());
+		const { ctx } = makeRouteContext({});
+		const res = await call(ctx, "POST", { paymentProvider: "paystak" });
+		expect(res.status).toBe(400);
+		const errors = res.body.errors as Record<string, string>;
+		expect(errors.paymentProvider).toContain('"paystak" is not a registered payment provider');
+		expect(errors.paymentProvider).toContain("Registered: stripe, acme");
+		expect(await ctx.kv.get("settings:paymentProvider")).toBeNull();
+
+		// A registered provider still saves.
+		expect((await call(ctx, "POST", { paymentProvider: "acme" })).status).toBe(200);
+		expect(await ctx.kv.get("settings:paymentProvider")).toBe("acme");
+	});
+
+	it("flags an unregistered provider in the single-field validator too", async () => {
+		const { ctx } = makeRouteContext({});
+		const validate = async (value: string) => {
+			const routeCtx = {
+				request: new Request("http://test/admin/settings/validate", { method: "POST" }),
+				input: { key: "paymentProvider", value },
+			} as unknown as RouteContext;
+			const res = (await adminApiRoutes["admin/settings/validate"].handler(
+				routeCtx,
+				ctx,
+			)) as Response;
+			return (await res.json()) as { ok: boolean; error?: string };
+		};
+		expect(await validate("stripe")).toEqual({ ok: true, value: "stripe" });
+		const bad = await validate("acme");
+		expect(bad.ok).toBe(false);
+		expect(bad.error).toContain('"acme" is not a registered payment provider');
+	});
+
 	it("refuses credentials for a provider that is not registered", async () => {
 		const { ctx } = makeRouteContext({});
 		const res = await call(ctx, "POST", { ghostSecretKey: "x_123" });
