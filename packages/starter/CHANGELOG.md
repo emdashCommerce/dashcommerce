@@ -1,5 +1,34 @@
 # @dashcommerce/starter
 
+## 0.3.12
+
+### Patch Changes
+
+- [#78](https://github.com/emdashCommerce/dashcommerce/pull/78) [`d3ea912`](https://github.com/emdashCommerce/dashcommerce/commit/d3ea912fe876832a9f71a217851e7718500a3576) Thanks [@moset15](https://github.com/moset15)! - Keep the cart drawer closed when the customer continues to payment on `/checkout`. Saving their details now sends a silent cart update, like the rest of checkout does, so the drawer no longer slides open over the payment form.
+
+- [#83](https://github.com/emdashCommerce/dashcommerce/pull/83) [`b183450`](https://github.com/emdashCommerce/dashcommerce/commit/b183450d963a4daafc0377034772942321135b54) Thanks [@moset15](https://github.com/moset15)! - Checkout follows the active payment provider instead of assuming Stripe.
+
+  - New provider flag `collectsCustomerDetails` (Stripe sets it). For providers whose page collects neither email nor address, `create-session` answers 409 `customer_details_required` until the cart has them, and `HostedCheckoutForm` asks for email, name, phone and address (country only for digital carts), saved through `cart/contact`.
+  - `HostedCheckoutForm` names the provider on its button and shows readable errors when a route crashes (EmDash wraps those as `{ error: { code, message } }`), which used to show `[object Object]` for Stripe too.
+  - `config-check` reports `paymentProvider`.
+  - Starter: checks the active provider's keys, and the cart and announcement copy no longer name Stripe.
+
+  Stripe stores see no change.
+
+- [#90](https://github.com/emdashCommerce/dashcommerce/pull/90) [`014afff`](https://github.com/emdashCommerce/dashcommerce/commit/014afff43cb36c3fa7eadeb77e14008b2030326d) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 1.6.0. Ship `patches/emdash@1.6.0.patch` (same raw Response passthrough and request body clone fix as 1.5.0, retargeted at 1.6.0's hashed dist files `routes-BScyES_G.mjs` and `http-route-dispatch-Y8bwyixm.mjs`). Widen the EmDash peer range to `>=0.37.0 <0.38.0 || >=1.1.0 <1.7.0` so create-emdash 1.6 installs pass peer checks. Cap below 1.7 so the next untested EmDash minor is still rejected. Point the starter at `emdash` / `@emdash-cms/cloudflare` ^1.6.0 and refresh its migrations snapshot through `098_user_last_login`.
+
+- [#84](https://github.com/emdashCommerce/dashcommerce/pull/84) [`3e6be0e`](https://github.com/emdashCommerce/dashcommerce/commit/3e6be0e239aba720879ff036bd58501ee6762b5a) Thanks [@moset15](https://github.com/moset15)! - On-page ("embedded") checkout for any provider that offers it, not only Stripe.
+
+  - Providers declare `checkoutStyles` (`hosted`, `on_page`); `initCheckout` receives `checkoutStyle` and may return an `on_page` result with `client` data for the provider's browser client. Stripe declares both, and its Elements flow is unchanged.
+  - With `checkoutMode` embedded, `create-session` returns `{ kind: "on_page", client, returnUrl }` for a provider that supports it, and a 409 naming the provider for one that doesn't. Redirect results gain `kind: "redirect"`.
+  - `HostedCheckoutForm` opens the provider's client from `window.DashCommerceCheckoutClients` (`OnPageCheckoutClient`). Its callbacks only move the customer; the order is still created only from the signed webhook.
+  - Settings offers "How customers pay" (hosted or on your page) for a provider that supports both.
+
+- [#79](https://github.com/emdashCommerce/dashcommerce/pull/79) [`c268d2a`](https://github.com/emdashCommerce/dashcommerce/commit/c268d2a8ac4090a89a079a38ff0f521d230841d5) Thanks [@moset15](https://github.com/moset15)! - Pre-bundle the Stripe packages in dev, so the first visit to `/checkout` no longer makes Vite re-optimise and reload. That reload left open admin tabs with two copies of React and an "Invalid hook call" crash.
+
+- Updated dependencies [[`37ab841`](https://github.com/emdashCommerce/dashcommerce/commit/37ab841b29160be5a08a61e3d25e5a109e87603b), [`b183450`](https://github.com/emdashCommerce/dashcommerce/commit/b183450d963a4daafc0377034772942321135b54), [`014afff`](https://github.com/emdashCommerce/dashcommerce/commit/014afff43cb36c3fa7eadeb77e14008b2030326d), [`35d1319`](https://github.com/emdashCommerce/dashcommerce/commit/35d13194351b1c62dba751e120f2991669c6dfe5), [`3e6be0e`](https://github.com/emdashCommerce/dashcommerce/commit/3e6be0e239aba720879ff036bd58501ee6762b5a), [`1ab91de`](https://github.com/emdashCommerce/dashcommerce/commit/1ab91def69feb2709d6a0933bffeffe635ef2496), [`d134af0`](https://github.com/emdashCommerce/dashcommerce/commit/d134af02478a3b56ecdab7cfcabae8254bbff548)]:
+  - @dashcommerce/core@0.4.0
+
 ## 0.3.11
 
 ### Patch Changes

@@ -1,5 +1,49 @@
 # Changelog — @dashcommerce/core
 
+## 0.4.0
+
+### Minor Changes
+
+- [#83](https://github.com/emdashCommerce/dashcommerce/pull/83) [`b183450`](https://github.com/emdashCommerce/dashcommerce/commit/b183450d963a4daafc0377034772942321135b54) Thanks [@moset15](https://github.com/moset15)! - Checkout follows the active payment provider instead of assuming Stripe.
+
+  - New provider flag `collectsCustomerDetails` (Stripe sets it). For providers whose page collects neither email nor address, `create-session` answers 409 `customer_details_required` until the cart has them, and `HostedCheckoutForm` asks for email, name, phone and address (country only for digital carts), saved through `cart/contact`.
+  - `HostedCheckoutForm` names the provider on its button and shows readable errors when a route crashes (EmDash wraps those as `{ error: { code, message } }`), which used to show `[object Object]` for Stripe too.
+  - `config-check` reports `paymentProvider`.
+  - Starter: checks the active provider's keys, and the cart and announcement copy no longer name Stripe.
+
+  Stripe stores see no change.
+
+- [#82](https://github.com/emdashCommerce/dashcommerce/pull/82) [`35d1319`](https://github.com/emdashCommerce/dashcommerce/commit/35d13194351b1c62dba751e120f2991669c6dfe5) Thanks [@moset15](https://github.com/moset15)! - A refund that fails at the payment provider no longer counts against its order.
+
+  - When a provider reports a pending refund as failed (`refund.updated`), core takes its amount back off the order's refunded total, works out the payment and order status again, and takes back any stock the refund put back. With no refund left counting, the order returns to the status it had before its first refund (refunds now record it as `orderStatusBefore`). Stock that has been sold again is not taken back; that is logged.
+  - A refund the provider fails straight away is recorded as failed and changes nothing on the order: no totals, no restock, no refund email.
+  - The failed refund stays on the order, marked failed, and is logged as an error.
+  - New inventory ledger reason `refund_failed`.
+
+- [#84](https://github.com/emdashCommerce/dashcommerce/pull/84) [`3e6be0e`](https://github.com/emdashCommerce/dashcommerce/commit/3e6be0e239aba720879ff036bd58501ee6762b5a) Thanks [@moset15](https://github.com/moset15)! - On-page ("embedded") checkout for any provider that offers it, not only Stripe.
+
+  - Providers declare `checkoutStyles` (`hosted`, `on_page`); `initCheckout` receives `checkoutStyle` and may return an `on_page` result with `client` data for the provider's browser client. Stripe declares both, and its Elements flow is unchanged.
+  - With `checkoutMode` embedded, `create-session` returns `{ kind: "on_page", client, returnUrl }` for a provider that supports it, and a 409 naming the provider for one that doesn't. Redirect results gain `kind: "redirect"`.
+  - `HostedCheckoutForm` opens the provider's client from `window.DashCommerceCheckoutClients` (`OnPageCheckoutClient`). Its callbacks only move the customer; the order is still created only from the signed webhook.
+  - Settings offers "How customers pay" (hosted or on your page) for a provider that supports both.
+
+- [#81](https://github.com/emdashCommerce/dashcommerce/pull/81) [`1ab91de`](https://github.com/emdashCommerce/dashcommerce/commit/1ab91def69feb2709d6a0933bffeffe635ef2496) Thanks [@moset15](https://github.com/moset15)! - Make non-Stripe payment providers usable on a live site.
+
+  - `dashcommerce({ allowedHosts })` adds a provider's API hosts to Stripe's. Without it the hosts are unchanged.
+  - The settings API saves `<id>SecretKey` and `<id>WebhookSecret` for registered providers, validated against the prefixes a provider declares in `credentialFields` and masked like Stripe's. `GET admin/settings` lists registered providers under `_providers`. Settings shows a Payment provider card with a picker when a provider other than Stripe is registered.
+  - A provider can declare `checkConnection`, a read-only check of its saved keys. Settings then shows a "Test connection" button for it, like Stripe's.
+  - `verifyWebhook` receives every request header and the provider's saved credentials (for headers signed with the API key rather than the webhook secret), and a provider can declare `webhookHeaders` for routing. `stripe-signature` stays reserved for Stripe.
+  - A new normalised event, `refund.updated`, moves a provider's pending refund to `succeeded` or `failed`.
+  - A webhook retry is now processed when the first delivery failed only because the payment could not be confirmed with the provider (`getPaymentStatus`, or Stripe's PaymentIntent retrieve on `checkout.session.completed`). Before, it was answered as a duplicate and the order was never created. Other handler failures still keep the retry deduplicated.
+
+### Patch Changes
+
+- [#80](https://github.com/emdashCommerce/dashcommerce/pull/80) [`37ab841`](https://github.com/emdashCommerce/dashcommerce/commit/37ab841b29160be5a08a61e3d25e5a109e87603b) Thanks [@moset15](https://github.com/moset15)! - Make the admin readable in EmDash's dark mode ([#44](https://github.com/emdashCommerce/dashcommerce/issues/44)). Admin pages, fields and widgets now take their colours from EmDash's theme tokens, so they follow the host's light or dark mode. Light fallbacks cover hosts without those tokens, and the existing `--dc-*` variables still override. Status badge colours are unchanged.
+
+- [#90](https://github.com/emdashCommerce/dashcommerce/pull/90) [`014afff`](https://github.com/emdashCommerce/dashcommerce/commit/014afff43cb36c3fa7eadeb77e14008b2030326d) Thanks [@cavewebs](https://github.com/cavewebs)! - Support EmDash 1.6.0. Ship `patches/emdash@1.6.0.patch` (same raw Response passthrough and request body clone fix as 1.5.0, retargeted at 1.6.0's hashed dist files `routes-BScyES_G.mjs` and `http-route-dispatch-Y8bwyixm.mjs`). Widen the EmDash peer range to `>=0.37.0 <0.38.0 || >=1.1.0 <1.7.0` so create-emdash 1.6 installs pass peer checks. Cap below 1.7 so the next untested EmDash minor is still rejected. Point the starter at `emdash` / `@emdash-cms/cloudflare` ^1.6.0 and refresh its migrations snapshot through `098_user_last_login`.
+
+- [#77](https://github.com/emdashCommerce/dashcommerce/pull/77) [`d134af0`](https://github.com/emdashCommerce/dashcommerce/commit/d134af02478a3b56ecdab7cfcabae8254bbff548) Thanks [@moset15](https://github.com/moset15)! - Only offer shipping methods priced in the cart's currency. A flat-rate or local-pickup method in another currency (or a free-shipping threshold set in another currency) used to be offered, and choosing it failed with a 500 (`CurrencyMismatchError`). It is now left out, like weight-based methods already were.
+
 ## 0.3.6
 
 ### Patch Changes
