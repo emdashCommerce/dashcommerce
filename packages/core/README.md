@@ -71,6 +71,8 @@ For provider authors, `PaymentProvider` can declare:
 - `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
 - `checkoutStyles`: `["hosted", "on_page"]` to offer checkout over the store's page. `initCheckout` then returns `{ kind: "on_page", client }`, and the storefront hands `client` to the provider's browser client. `client` is public: `create-session` sends it to the browser as JSON, so put only what the browser needs in it (Paystack sends `{ accessCode }`), never a secret key or webhook secret.
 - `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
+- `capabilities.splits`: core computes `allocations` (`vendorId`, `accountReference`, `amountMinor`) and `platformRemainderMinor` when the cart has vendor-owned items. Vendors store their payout account under `paymentAccounts[providerId]`; the provider only routes the amounts core supplies.
+- Keep your own transaction fee on the platform (Paystack's `bearer_type: account`, Flutterwave's default) so each vendor receives exactly the share core computed.
 
 `parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`. A failed refund stops counting against its order: the refunded total, payment status and order status are worked out again, and stock the refund put back is taken back off.
 

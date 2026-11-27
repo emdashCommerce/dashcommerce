@@ -45,6 +45,7 @@ export type {
 	PaymentProviderLineItem,
 	PaymentProviderRuntimeContext,
 	PaymentProviderShippingOption,
+	PaymentProviderSplitAllocation,
 	PaymentStatusResult,
 	RefundResult,
 	VerifyWebhookInput,

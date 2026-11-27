@@ -87,6 +87,9 @@ export async function computeSplit(
 		if (!vendor) {
 			throw new Error(`Vendor ${vendorId} referenced by cart not found`);
 		}
+		if (!vendor.stripeAccountId) {
+			throw new Error(`Vendor ${vendor.name} has no Stripe account`);
+		}
 		if (!vendor.chargesEnabled) {
 			throw new Error(
 				`Vendor ${vendor.name} (${vendor.stripeAccountId}) cannot accept charges yet`,

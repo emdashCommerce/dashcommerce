@@ -15,6 +15,7 @@
  */
 
 import type { ContentHookEvent, PluginContext, StorageCollection } from "emdash";
+import { listPaymentProviders } from "../payment-provider";
 import type { CurrencyCode, ProductFields, Vendor } from "../types";
 import {
 	productTypeRequiresChildren,
@@ -43,9 +44,7 @@ export function validateProductFields(data: Partial<ProductFields>): void {
 	for (const cc of currencyCodes) {
 		const entry = prices[cc];
 		if (!entry || typeof entry.amount !== "number" || !Number.isInteger(entry.amount)) {
-			throw new ProductValidationError(
-				`prices.${cc}.amount must be an integer minor-unit value.`,
-			);
+			throw new ProductValidationError(`prices.${cc}.amount must be an integer minor-unit value.`);
 		}
 		if (entry.amount < 0) {
 			throw new ProductValidationError(`prices.${cc}.amount cannot be negative.`);
@@ -147,8 +146,7 @@ async function validateCurrencyCoverage(
 	data: Partial<ProductFields>,
 ): Promise<void> {
 	if (!data.prices) return; // validateProductFields already errored if missing
-	const defaultCurrency =
-		(await ctx.kv.get<CurrencyCode>("settings:defaultCurrency")) ?? "USD";
+	const defaultCurrency = (await ctx.kv.get<CurrencyCode>("settings:defaultCurrency")) ?? "USD";
 	const cc = defaultCurrency.toUpperCase();
 	if (!data.prices[cc]) {
 		throw new ProductValidationError(
@@ -159,39 +157,40 @@ async function validateCurrencyCoverage(
 
 /**
  * Ensure `vendorId` is only set when multi-vendor marketplace is enabled,
- * and that the referenced vendor exists and can charge. When marketplace
- * is off we treat an incoming `vendorId` as operator error (they likely
- * pasted from a marketplace-enabled store, or the UI misbehaved) and
- * reject the save.
+ * and that the referenced vendor exists and has an active payout account.
+ * Marketplace mode is Stripe Connect **or** a registered provider that can
+ * split payments (Flutterwave subaccounts). When neither is on we treat an
+ * incoming `vendorId` as operator error (they likely pasted from a
+ * marketplace-enabled store, or the UI misbehaved) and reject the save.
  */
 async function validateVendorAssignment(
 	ctx: PluginContext,
 	data: Partial<ProductFields>,
 ): Promise<void> {
 	const vendorId = data.vendorId;
-	const connectEnabled =
-		(await ctx.kv.get<boolean>("settings:connectEnabled")) === true;
+	const connectEnabled = (await ctx.kv.get<boolean>("settings:connectEnabled")) === true;
+	const splitsProviders = listPaymentProviders().filter(
+		(provider) => provider.capabilities?.splits === true,
+	);
+	const marketplaceEnabled = connectEnabled || splitsProviders.length > 0;
 
 	if (!vendorId || vendorId === "") {
-		if (connectEnabled) {
+		if (marketplaceEnabled) {
 			// Marketplace mode doesn't require a vendor on every product (drafts,
 			// platform-sold items) — leave the product unassigned.
 		}
 		return;
 	}
 
-	if (!connectEnabled) {
+	if (!marketplaceEnabled) {
 		throw new ProductValidationError(
-			"Cannot assign a vendor while multi-vendor marketplace is disabled. Turn it on in Settings or clear the vendor.",
+			"Cannot assign a vendor while multi-vendor marketplace is disabled. Enable it in Settings, install a payment provider that supports split payments, or clear the vendor.",
 		);
 	}
 
-	const store = (ctx.storage as unknown as { vendors?: StorageCollection<Vendor> })
-		.vendors;
+	const store = (ctx.storage as unknown as { vendors?: StorageCollection<Vendor> }).vendors;
 	if (!store) {
-		throw new ProductValidationError(
-			"Vendor storage is unavailable — cannot validate vendorId.",
-		);
+		throw new ProductValidationError("Vendor storage is unavailable — cannot validate vendorId.");
 	}
 	const vendor = (await store.get(vendorId)) as Vendor | null;
 	if (!vendor) {
@@ -199,9 +198,14 @@ async function validateVendorAssignment(
 			`Vendor ${vendorId} does not exist. Pick an onboarded vendor.`,
 		);
 	}
-	if (!vendor.chargesEnabled) {
+
+	const stripeReady = connectEnabled && vendor.chargesEnabled;
+	const providerReady = splitsProviders.some(
+		(provider) => vendor.paymentAccounts?.[provider.id]?.status === "active",
+	);
+	if (!stripeReady && !providerReady) {
 		throw new ProductValidationError(
-			`Vendor "${vendor.name}" cannot yet receive charges (status: ${vendor.onboardingStatus}). Finish onboarding before assigning products.`,
+			`Vendor "${vendor.name}" has no active payout account yet. Finish onboarding or add a split-payment account before assigning products.`,
 		);
 	}
 }
