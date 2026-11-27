@@ -1128,8 +1128,7 @@ async function postSubscriptionAction(
 	action: string,
 	routeCtx: RouteContext,
 ): Promise<Response> {
-	const client = await loadStripeClient(ctx);
-	if (!client) return json({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 	const body = (routeCtx.input ?? {}) as {
 		mode?: "immediate" | "at_period_end";
 		resumesAt?: number;

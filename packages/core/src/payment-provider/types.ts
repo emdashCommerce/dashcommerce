@@ -201,6 +201,12 @@ export type NormalizedPaymentEvent =
 			shippingAddress?: PaymentProviderAddress;
 			billingAddress?: PaymentProviderAddress;
 			channel?: string;
+			/**
+			 * Present when this charge belongs to a provider-managed
+			 * subscription. Core records the first payment as an order and
+			 * later charges as subscription invoices.
+			 */
+			subscription?: ProviderSubscriptionInfo;
 			raw: unknown;
 	  }
 	| {
@@ -211,6 +217,23 @@ export type NormalizedPaymentEvent =
 			checkoutReference?: string;
 			paymentReference?: string;
 			reason?: string;
+			raw: unknown;
+	  }
+	| {
+			/**
+			 * A provider-managed subscription changed state outside a charge
+			 * (e.g. Flutterwave's `subscription.cancelled`). Core updates the
+			 * local row; it does not create an order or an invoice.
+			 */
+			type: "subscription.updated";
+			providerId: string;
+			providerEventId: string;
+			providerSubscriptionId: string;
+			status: ProviderSubscriptionInfo["status"];
+			currentPeriodStart?: string;
+			currentPeriodEnd?: string;
+			cancelAtPeriodEnd?: boolean;
+			canceledAt?: string;
 			raw: unknown;
 	  }
 	| {
@@ -304,12 +327,42 @@ export interface ConnectionCheckResult {
 	mode?: "test" | "live";
 }
 
+/**
+ * Provider-reported subscription state. `providerSubscriptionId` is the id
+ * the provider uses for cancel/resume; for Flutterwave it is the payment
+ * plan id, because DashCommerce creates one plan per subscription.
+ */
+export interface ProviderSubscriptionInfo {
+	providerSubscriptionId: string;
+	status:
+		| "active"
+		| "trialing"
+		| "past_due"
+		| "canceled"
+		| "paused"
+		| "unpaid"
+		| "incomplete"
+		| "incomplete_expired";
+	currentPeriodStart?: string;
+	currentPeriodEnd?: string;
+	cancelAtPeriodEnd?: boolean;
+	canceledAt?: string;
+	trialEndsAt?: string;
+	/** Integer minor units, when the provider reports it. */
+	amount?: number;
+	currency?: string;
+	interval?: "day" | "week" | "month" | "year";
+	intervalCount?: number;
+}
+
 export interface PaymentStatusResult {
 	status: "pending" | "succeeded" | "failed";
 	paymentReference?: string;
 	amount?: number;
 	currency?: string;
 	reason?: string;
+	/** Present when the payment is a subscription charge. */
+	subscription?: ProviderSubscriptionInfo;
 }
 
 export interface PaymentProvider {
@@ -395,6 +448,29 @@ export interface PaymentProvider {
 		paymentReference: string,
 		credentials: PaymentProviderCredentials,
 	): Promise<PaymentStatusResult>;
+
+	/**
+	 * Provider-managed subscription lifecycle. Optional and independent;
+	 * core falls back to its Stripe Billing path for Stripe subscriptions.
+	 * The provider id is the one core stored on the local subscription.
+	 */
+	getSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		providerSubscriptionId: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
+
+	cancelSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string; atPeriodEnd?: boolean },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
+
+	resumeSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
 
 	/**
 	 * Optional check behind the "Test connection" button in Settings: one

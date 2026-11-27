@@ -70,6 +70,8 @@ For provider authors, `PaymentProvider` can declare:
 - `credentialFields`: the label, accepted prefixes and help text for the settings form.
 - `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
 - `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
+- `capabilities.subscriptions` plus optional `getSubscription`, `cancelSubscription` and `resumeSubscription`: core stores the provider's subscription/plan id from the first `charge.succeeded` that carries `subscription`, records later charges as invoices, and dispatches cancel/resume. Return `ProviderSubscriptionInfo`. A provider that cannot pause or change plans in place can omit those methods; core refuses the action with a readable error.
+- `parseWebhookEvent` may return `subscription.updated` for a cancellation or status change outside a charge. Core updates the local row and does not create an order.
 
 `parseWebhookEvent` may return `refund.updated` to move a pending refund to `succeeded` or `failed`. A failed refund stops counting against its order: the refunded total, payment status and order status are worked out again, and stock the refund put back is taken back off.
 

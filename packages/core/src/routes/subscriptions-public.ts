@@ -60,6 +60,8 @@ export interface PublicSubscription {
 	intervalCount: number;
 	currentPeriodEnd: Subscription["currentPeriodEnd"];
 	cancelAtPeriodEnd: boolean;
+	/** Gateway that owns the subscription. Unset means Stripe. */
+	providerId?: string;
 }
 
 export function toPublicSubscription(sub: Subscription): PublicSubscription {
@@ -72,6 +74,7 @@ export function toPublicSubscription(sub: Subscription): PublicSubscription {
 		intervalCount: sub.intervalCount,
 		currentPeriodEnd: sub.currentPeriodEnd,
 		cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+		...(sub.providerId ? { providerId: sub.providerId } : {}),
 	};
 }
 
@@ -127,8 +130,7 @@ async function handleCancel(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await cancel(ctx, {
@@ -158,8 +160,7 @@ async function handlePause(routeCtx: RouteContext, _ctx?: PluginContext): Promis
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await pause(ctx, {
@@ -186,8 +187,7 @@ async function handleResume(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
 
-	const client = await loadStripeClient(ctx);
-	if (!client) return jsonResponse({ error: "Stripe not configured" }, 500);
+	const client = (await loadStripeClient(ctx)) ?? undefined;
 
 	try {
 		const updated = await resume(ctx, {
@@ -222,6 +222,16 @@ async function handlePortal(routeCtx: RouteContext, _ctx?: PluginContext): Promi
 	const input = (routeCtx.input ?? {}) as { token?: string; returnUrl?: string };
 	const loaded = await loadAuthorisedSub(ctx, extractToken(routeCtx.request, input));
 	if (!loaded.ok) return loaded.response;
+
+	if (loaded.subscription.providerId && loaded.subscription.providerId !== "stripe") {
+		return jsonResponse(
+			{
+				error:
+					"This subscription is managed by its payment provider. Use Cancel or Resume here instead.",
+			},
+			400,
+		);
+	}
 
 	// Portal requires a Stripe customer id. Resolve via the local
 	// customer row the subscription is linked to.

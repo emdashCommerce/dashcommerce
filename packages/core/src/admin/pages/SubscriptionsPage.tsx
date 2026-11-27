@@ -3,9 +3,9 @@
  * `useListControls`, plus cancel/pause/resume with confirm dialogs,
  * per-row pending states, and toast feedback.
  *
- * Stripe is the source of truth for subscription state, so we deliberately
- * avoid optimistic updates: after every action we reload the list so the
- * row reflects whatever webhook response came back.
+ * The payment provider is the source of truth for subscription state, so we
+ * deliberately avoid optimistic updates: after every action we reload the
+ * list so the row reflects whatever webhook response came back.
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -64,19 +64,21 @@ function isCancellable(sub: Subscription): boolean {
 	return !cancelled.includes(sub.status) && !sub.cancelAtPeriodEnd;
 }
 
+function isProviderManaged(sub: Subscription): boolean {
+	return Boolean(sub.providerId && sub.providerId !== "stripe");
+}
+
 function isPausable(sub: Subscription): boolean {
-	return sub.status === "active" || sub.status === "trialing";
+	return (sub.status === "active" || sub.status === "trialing") && !isProviderManaged(sub);
 }
 
 function isResumable(sub: Subscription): boolean {
-	return sub.status === "paused";
+	return sub.status === "paused" || (isProviderManaged(sub) && sub.status === "canceled");
 }
 
 export function SubscriptionsPage() {
 	const api = usePluginAPI();
-	const [pending, setPending] = useState<{ id: string; action: Action } | null>(
-		null,
-	);
+	const [pending, setPending] = useState<{ id: string; action: Action } | null>(null);
 
 	const buildQuery = useMemo(
 		() => (f: SubscriptionsFilters) => ({
@@ -89,23 +91,14 @@ export function SubscriptionsPage() {
 		[],
 	);
 
-	const {
-		filters,
-		setFilter,
-		resetFilters,
-		items,
-		loading,
-		error,
-		hasMore,
-		loadMore,
-		reload,
-	} = useListControls<SubscriptionsFilters, Subscription>({
-		api,
-		endpoint: "admin/subscriptions",
-		initialFilters: INITIAL,
-		buildQuery,
-		limit: 50,
-	});
+	const { filters, setFilter, resetFilters, items, loading, error, hasMore, loadMore, reload } =
+		useListControls<SubscriptionsFilters, Subscription>({
+			api,
+			endpoint: "admin/subscriptions",
+			initialFilters: INITIAL,
+			buildQuery,
+			limit: 50,
+		});
 
 	const act = useCallback(
 		async (sub: Subscription, action: Action): Promise<void> => {
@@ -116,7 +109,7 @@ export function SubscriptionsPage() {
 					title: immediate ? "Cancel subscription now?" : "Cancel at period end?",
 					description: immediate
 						? "The customer loses access immediately. Any remaining time in the current period is not refunded automatically."
-						: `Access continues until ${new Date(sub.currentPeriodEnd).toLocaleDateString()}, then Stripe will cancel the subscription.`,
+						: `Access continues until ${new Date(sub.currentPeriodEnd).toLocaleDateString()}, then the payment provider will cancel the subscription.`,
 					confirmLabel: immediate ? "Cancel now" : "Cancel at period end",
 					destructive: true,
 				});
@@ -126,7 +119,7 @@ export function SubscriptionsPage() {
 				const ok = await confirm({
 					title: "Pause subscription?",
 					description:
-						"Stripe stops generating invoices until the subscription is resumed. The customer keeps their record but won't be billed.",
+						"The payment provider stops generating invoices until the subscription is resumed. The customer keeps their record but won't be billed.",
 					confirmLabel: "Pause",
 				});
 				if (!ok) return;
@@ -153,10 +146,7 @@ export function SubscriptionsPage() {
 				}
 				await reload();
 			} catch (err) {
-				toast.error(
-					"Action failed",
-					err instanceof Error ? err.message : String(err),
-				);
+				toast.error("Action failed", err instanceof Error ? err.message : String(err));
 			} finally {
 				setPending(null);
 			}
@@ -186,12 +176,7 @@ export function SubscriptionsPage() {
 					label="Status"
 					value={filters.status}
 					options={STATUS_FILTERS}
-					onChange={(e) =>
-						setFilter(
-							"status",
-							e.currentTarget.value as SubscriptionStatus | "",
-						)
-					}
+					onChange={(e) => setFilter("status", e.currentTarget.value as SubscriptionStatus | "")}
 				/>
 				<Input
 					label="Customer email"
@@ -244,9 +229,7 @@ export function SubscriptionsPage() {
 
 			{items.length === 0 && !loading ? (
 				<EmptyState
-					title={
-						activeFilters > 0 ? "No subscriptions match" : "No subscriptions yet"
-					}
+					title={activeFilters > 0 ? "No subscriptions match" : "No subscriptions yet"}
 					description={
 						activeFilters > 0
 							? "Try widening your filters."
@@ -260,6 +243,16 @@ export function SubscriptionsPage() {
 						getRowKey={(s) => s.id}
 						columns={[
 							{
+								key: "provider",
+								header: "Provider",
+								render: (s) => {
+									const provider = s.providerId ?? "stripe";
+									if (provider === "stripe") return "Stripe";
+									if (provider === "flutterwave") return "Flutterwave";
+									return provider;
+								},
+							},
+							{
 								key: "status",
 								header: "Status",
 								render: (s) => (
@@ -272,9 +265,7 @@ export function SubscriptionsPage() {
 									>
 										<StatusBadge status={s.status} />
 										{s.cancelAtPeriodEnd && (
-											<span style={{ fontSize: 12, color: T.warning }}>
-												Cancels at period end
-											</span>
+											<span style={{ fontSize: 12, color: T.warning }}>Cancels at period end</span>
 										)}
 									</div>
 								),
@@ -306,11 +297,7 @@ export function SubscriptionsPage() {
 								key: "act",
 								header: "",
 								render: (s) => (
-									<SubscriptionActions
-										sub={s}
-										pending={pending}
-										onAct={(a) => act(s, a)}
-									/>
+									<SubscriptionActions sub={s} pending={pending} onAct={(a) => act(s, a)} />
 								),
 							},
 						]}
@@ -379,14 +366,16 @@ function SubscriptionActions({
 			)}
 			{isCancellable(sub) && (
 				<>
-					<Button
-						size="sm"
-						variant="secondary"
-						disabled={isPendingHere}
-						onClick={() => onAct("cancel-eop")}
-					>
-						{label("cancel-eop", "Cancel at period end")}
-					</Button>
+					{!isProviderManaged(sub) && (
+						<Button
+							size="sm"
+							variant="secondary"
+							disabled={isPendingHere}
+							onClick={() => onAct("cancel-eop")}
+						>
+							{label("cancel-eop", "Cancel at period end")}
+						</Button>
+					)}
 					<Button
 						size="sm"
 						variant="danger"
