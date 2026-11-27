@@ -266,6 +266,12 @@ export interface RefundResult {
 export interface PaymentProviderCredentials {
 	secretKey: string;
 	webhookSecret?: string;
+	/**
+	 * The provider's browser-side public key, when it has one. Used by
+	 * providers whose on-page checkout needs it in the browser (Flutterwave
+	 * Inline). Never a secret, but saved with the same settings plumbing.
+	 */
+	publicKey?: string;
 }
 
 /** Subset of PluginContext a provider may use. */
@@ -355,11 +361,17 @@ export interface PaymentProvider {
 
 	/**
 	 * Credentials the merchant enters in admin settings, saved as
-	 * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
+	 * `settings:<id>SecretKey`, `settings:<id>WebhookSecret` and
+	 * `settings:<id>PublicKey`.
 	 */
 	readonly credentialFields?: {
 		secretKey?: PaymentProviderCredentialField;
 		webhookSecret?: PaymentProviderCredentialField;
+		/**
+		 * The browser-side public key, for on-page checkout that needs one
+		 * (Flutterwave Inline). Settings shows the field only when declared.
+		 */
+		publicKey?: PaymentProviderCredentialField;
 	};
 
 	/** True if this provider can charge `currency` (ISO-4217). */

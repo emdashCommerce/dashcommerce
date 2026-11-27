@@ -132,16 +132,25 @@ interface ProviderRow {
 	description?: string | null;
 	logo?: string | null;
 	brandColour?: string | null;
-	credentialFields?: { secretKey?: CredentialField; webhookSecret?: CredentialField };
+	credentialFields?: {
+		secretKey?: CredentialField;
+		webhookSecret?: CredentialField;
+		publicKey?: CredentialField;
+	};
 	canCheckConnection?: boolean;
-	secrets?: { secretKey: SecretMeta; webhookSecret: SecretMeta };
+	secrets?: {
+		secretKey: SecretMeta;
+		webhookSecret: SecretMeta;
+		/** Present only when the provider declares a public key. */
+		publicKey?: SecretMeta;
+	};
 	/** Absent from servers before on-page checkout: treat as hosted only. */
 	checkoutStyles?: Array<"hosted" | "on_page">;
 }
 
 /**
- * Fixed settings, plus `<providerId>SecretKey` / `<providerId>WebhookSecret`
- * for registered non-Stripe providers.
+ * Fixed settings, plus `<providerId>SecretKey` / `<providerId>WebhookSecret` /
+ * `<providerId>PublicKey` for registered non-Stripe providers.
  */
 type Draft = Partial<Omit<SettingsShape, "_secrets" | "_providers">> & {
 	[providerCredential: string]: unknown;
@@ -580,6 +589,21 @@ function GroupBody({
 							setField={setField}
 							disabled={disabled}
 						/>
+						{selected.credentialFields?.publicKey && (
+							<SecretField
+								keyName={`${selected.id}PublicKey`}
+								label={
+									selected.credentialFields.publicKey.label ?? `${selected.label} public key`
+								}
+								description={credentialDescription(selected.credentialFields.publicKey)}
+								meta={selected.secrets?.publicKey}
+								saved={saved}
+								draft={draft}
+								errors={errors}
+								setField={setField}
+								disabled={disabled}
+							/>
+						)}
 						{selected.canCheckConnection && (
 							<ProviderConnectionCheck providerId={selected.id} label={selected.label} />
 						)}
@@ -831,7 +855,7 @@ function SecretField({
 	setField,
 	disabled,
 }: {
-	/** `stripeSecretKey`, `stripeWebhookSecret`, or a provider's `<id>SecretKey` / `<id>WebhookSecret`. */
+	/** `stripeSecretKey`, `stripeWebhookSecret`, or a provider's `<id>SecretKey` / `<id>WebhookSecret` / `<id>PublicKey`. */
 	keyName: string;
 	label: string;
 	description?: string;

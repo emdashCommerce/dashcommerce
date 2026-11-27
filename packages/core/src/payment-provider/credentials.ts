@@ -3,7 +3,8 @@
  *
  * Stripe keeps the existing key names (`settings:stripeSecretKey` /
  * `settings:stripeWebhookSecret`). Other providers use
- * `settings:<id>SecretKey` and `settings:<id>WebhookSecret`.
+ * `settings:<id>SecretKey`, `settings:<id>WebhookSecret` and, when they
+ * declare one, `settings:<id>PublicKey`.
  */
 
 import { getPaymentProvider } from "./registry";
@@ -26,7 +27,12 @@ export async function loadPaymentProviderCredentials(
 	const secretKey = await kv.get<string>(`settings:${providerId}SecretKey`);
 	if (!secretKey) return null;
 	const webhookSecret = (await kv.get<string>(`settings:${providerId}WebhookSecret`)) ?? undefined;
-	return { secretKey, webhookSecret };
+	const publicKey = (await kv.get<string>(`settings:${providerId}PublicKey`)) ?? undefined;
+	return {
+		secretKey,
+		...(webhookSecret ? { webhookSecret } : {}),
+		...(publicKey ? { publicKey } : {}),
+	};
 }
 
 export function webhookSignatureHeader(headers: Headers, providerId: string): string | null {
@@ -40,7 +46,7 @@ export function webhookSignatureHeader(headers: Headers, providerId: string): st
 	);
 }
 
-export type ProviderCredentialName = "secretKey" | "webhookSecret";
+export type ProviderCredentialName = "secretKey" | "webhookSecret" | "publicKey";
 
 export interface ProviderCredentialSetting {
 	providerId: string;
@@ -48,7 +54,13 @@ export interface ProviderCredentialSetting {
 	spec: PaymentProviderCredentialField;
 }
 
-const PROVIDER_CREDENTIAL_KEY = /^([a-z][a-z0-9_-]{0,63})(SecretKey|WebhookSecret)$/;
+const PROVIDER_CREDENTIAL_KEY = /^([a-z][a-z0-9_-]{0,63})(SecretKey|WebhookSecret|PublicKey)$/;
+
+const CREDENTIAL_FIELD: Record<string, ProviderCredentialName> = {
+	SecretKey: "secretKey",
+	WebhookSecret: "webhookSecret",
+	PublicKey: "publicKey",
+};
 
 /**
  * If `key` (without the `settings:` prefix) is a credential setting of a
@@ -58,9 +70,15 @@ const PROVIDER_CREDENTIAL_KEY = /^([a-z][a-z0-9_-]{0,63})(SecretKey|WebhookSecre
 export function providerCredentialSetting(key: string): ProviderCredentialSetting | undefined {
 	const match = PROVIDER_CREDENTIAL_KEY.exec(key);
 	const providerId = match?.[1];
-	if (!match || !providerId || providerId === "stripe") return undefined;
+	const suffix = match?.[2];
+	if (!match || !providerId || !suffix || providerId === "stripe") return undefined;
 	const provider = getPaymentProvider(providerId);
 	if (!provider) return undefined;
-	const field: ProviderCredentialName = match[2] === "SecretKey" ? "secretKey" : "webhookSecret";
+	const field = CREDENTIAL_FIELD[suffix];
+	if (!field) return undefined;
+	// Secret key and webhook secret are offered for every provider (Settings
+	// falls back to a generic label). A public key is only meaningful when the
+	// provider declares one, so don't accept one for a provider that doesn't.
+	if (field === "publicKey" && !provider.credentialFields?.publicKey) return undefined;
 	return { providerId, field, spec: provider.credentialFields?.[field] ?? {} };
 }

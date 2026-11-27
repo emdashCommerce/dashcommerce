@@ -8,9 +8,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { PluginContext, RouteContext } from "emdash";
 import {
+	type PaymentProvider,
 	createMockPaymentProvider,
 	loadPaymentProviderCredentials,
-	type PaymentProvider,
 	registerPaymentProvider,
 	resetPaymentProviders,
 } from "../src/payment-provider";
@@ -29,6 +29,11 @@ function acme(): PaymentProvider {
 				label: "Webhook signing secret",
 				prefixes: ["awh_"],
 				help: "From the dashboard",
+			},
+			publicKey: {
+				label: "Browser public key",
+				prefixes: ["apk_test_", "apk_"],
+				help: "Used by on-page checkout",
 			},
 		},
 	};
@@ -51,12 +56,31 @@ describe("provider credentials in the settings API", () => {
 			paymentProvider: "acme",
 			acmeSecretKey: "ark_test_1234567890",
 			acmeWebhookSecret: "awh_1234567890",
+			acmePublicKey: "apk_test_1234567890",
 		});
 		expect(res).toEqual({ status: 200, body: { ok: true } });
 		expect(await loadPaymentProviderCredentials(ctx.kv, "acme")).toEqual({
 			secretKey: "ark_test_1234567890",
 			webhookSecret: "awh_1234567890",
+			publicKey: "apk_test_1234567890",
 		});
+	});
+
+	it("validates the public key against its declared prefixes", async () => {
+		registerPaymentProvider(acme());
+		const { ctx, kvStore } = makeRouteContext({});
+		const res = await call(ctx, "POST", { acmePublicKey: "sk_live_wrong" });
+		expect(res.status).toBe(400);
+		expect(String((res.body.errors as Record<string, string>).acmePublicKey)).toContain("apk_");
+		expect(kvStore.has("settings:acmePublicKey")).toBe(false);
+	});
+
+	it("refuses a public key for a provider that does not declare one", async () => {
+		registerPaymentProvider(createMockPaymentProvider({ id: "plain" }));
+		const { ctx } = makeRouteContext({});
+		const res = await call(ctx, "POST", { plainPublicKey: "pk_123" });
+		expect(res.status).toBe(400);
+		expect(Object.keys(res.body.errors as object)).toEqual(["plainPublicKey"]);
 	});
 
 	it("refuses a value without a declared prefix", async () => {
@@ -129,9 +153,11 @@ describe("provider credentials in the settings API", () => {
 		const { ctx } = makeRouteContext({
 			"settings:paymentProvider": "acme",
 			"settings:acmeSecretKey": "ak_test_abcd1234",
+			"settings:acmePublicKey": "apk_test_public5678",
 		});
 		const { body } = await call(ctx, "GET");
 		expect(JSON.stringify(body)).not.toContain("ak_test_abcd1234");
+		expect(JSON.stringify(body)).not.toContain("apk_test_public5678");
 		const providers = body._providers as Array<Record<string, unknown>>;
 		expect(providers.map((p) => p.id)).toEqual(["stripe", "acme"]);
 		const acmeRow = providers.find((p) => p.id === "acme");
@@ -148,14 +174,36 @@ describe("provider credentials in the settings API", () => {
 					prefixes: ["awh_"],
 					help: "From the dashboard",
 				},
+				publicKey: {
+					label: "Browser public key",
+					prefixes: ["apk_test_", "apk_"],
+					help: "Used by on-page checkout",
+				},
 			},
 			checkoutStyles: ["hosted"],
 			canCheckConnection: false,
 			secrets: {
 				secretKey: { isSet: true, hint: "••••1234" },
 				webhookSecret: { isSet: false, hint: null },
+				publicKey: { isSet: true, hint: "••••5678" },
 			},
 		});
+	});
+
+	it("omits the public key row for providers that do not declare one", async () => {
+		registerPaymentProvider(createMockPaymentProvider({ id: "plain" }));
+		const { ctx } = makeRouteContext({});
+		const providers = (await call(ctx, "GET")).body._providers as Array<Record<string, unknown>>;
+		expect(providers.find((p) => p.id === "plain")).toMatchObject({
+			secrets: {
+				secretKey: { isSet: false, hint: null },
+				webhookSecret: { isSet: false, hint: null },
+			},
+		});
+		const plain = providers.find((p) => p.id === "plain") as {
+			secrets: Record<string, unknown>;
+		};
+		expect(plain.secrets.publicKey).toBeUndefined();
 	});
 
 	it("leaves Stripe's keys exactly as before", async () => {

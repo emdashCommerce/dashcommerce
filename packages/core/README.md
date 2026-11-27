@@ -62,12 +62,12 @@ Stripe is built in. A gateway package (for example `@dashcommerce/paystack`) reg
    emdash({ plugins: [dashcommerce({ allowedHosts: ["api.paystack.co"] })] });
    ```
 
-3. **Choose the provider and enter its keys** in Settings → Payment provider. They are saved as `settings:<id>SecretKey` and `settings:<id>WebhookSecret`, masked like Stripe's.
+3. **Choose the provider and enter its keys** in Settings → Payment provider. They are saved as `settings:<id>SecretKey` and `settings:<id>WebhookSecret` (plus `settings:<id>PublicKey` when the provider declares one), masked like Stripe's.
 4. **Point the provider's webhooks** at `/_emdash/api/plugins/dashcommerce/checkout/webhook?provider=<id>`.
 
 For provider authors, `PaymentProvider` can declare:
 
-- `credentialFields`: the label, accepted prefixes and help text for the settings form.
+- `credentialFields`: the label, accepted prefixes and help text for the settings form. A `publicKey` field is shown only when declared, for on-page checkout that needs the browser key (Flutterwave Inline); `credentials.publicKey` carries the saved value.
 - `webhookHeaders`: the headers that identify its webhooks, besides `x-<id>-signature`. `verifyWebhook` receives every request header, and `credentials` (the provider's saved secret key and webhook secret) for headers signed with the API key rather than the webhook secret.
 - `checkoutStyles`: `["hosted", "on_page"]` to offer checkout over the store's page. `initCheckout` then returns `{ kind: "on_page", client }`, and the storefront hands `client` to the provider's browser client. `client` is public: `create-session` sends it to the browser as JSON, so put only what the browser needs in it (Paystack sends `{ accessCode }`), never a secret key or webhook secret.
 - `checkConnection`: one read-only call with the saved keys, behind a "Test connection" button in Settings. Return `{ ok, message }`, with `ok: false` and a message the merchant can act on for a wrong or under-permitted key.
