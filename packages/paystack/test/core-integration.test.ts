@@ -52,6 +52,8 @@ interface FakePaystackOptions {
 	verifyOutages?: number;
 	/** Milliseconds verify takes to answer, so two deliveries can overlap. */
 	verifyDelayMs?: number;
+	/** Currencies the merchant's Paystack account is not enabled for. */
+	refusedCurrencies?: string[];
 }
 
 /**
@@ -75,6 +77,16 @@ function fakePaystack(options: FakePaystackOptions = {}) {
 		if (pathname === "/transaction/initialize") {
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			lastInit = body;
+			if (options.refusedCurrencies?.includes(String(body.currency))) {
+				return json(
+					{
+						status: false,
+						message: "Currency not supported by merchant",
+						code: "unsupported_currency",
+					},
+					403,
+				);
+			}
 			const reference = String(body.reference);
 			if (!/^[A-Za-z0-9.=-]+$/.test(reference)) {
 				return json({ status: false, message: "Invalid transaction reference" }, 400);
@@ -423,6 +435,19 @@ describe("@dashcommerce/paystack through core", () => {
 		expect(replay.status).toBe(200);
 		expect(((await replay.json()) as { duplicate?: boolean }).duplicate).toBe(true);
 		expect(orders.size).toBe(1);
+	});
+
+	it("tells the customer when the Paystack account refuses the cart's currency", async () => {
+		const paystack = fakePaystack({ refusedCurrencies: ["KES"] });
+		const { ctx } = makeContext(paystackSettings, paystack.fetch);
+		const res = await startCheckout(ctx, "sess_paystack_currency");
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { error?: string; code?: string; currency?: string };
+		expect(body.code).toBe("currency_not_supported");
+		expect(body.currency).toBe("KES");
+		expect(body.error).toBe(
+			"This shop can't take payments in KES right now. Choose another currency, or contact the shop.",
+		);
 	});
 
 	it("creates no order for a signed event whose reference Paystack does not know", async () => {

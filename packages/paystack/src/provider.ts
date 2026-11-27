@@ -21,6 +21,7 @@ import type {
 	VerifyWebhookInput,
 	VerifyWebhookResult,
 } from "@dashcommerce/core/payment-provider";
+import { CurrencyNotSupportedError } from "@dashcommerce/core/payment-provider";
 import { PaystackApiError, type PaystackClientOptions, call, callEnvelope } from "./client";
 import { PAYSTACK_LOGO } from "./logo";
 import { verifyPaystackSignature } from "./webhook-verify";
@@ -414,8 +415,9 @@ export const paystackPaymentProvider: PaymentProvider = {
 			throw new Error("Paystack requires a valid customer email to initialize checkout");
 		}
 
-		if (!SUPPORTED_CURRENCIES.has(input.currency.trim().toUpperCase())) {
-			throw new Error(`Paystack does not support currency ${input.currency}`);
+		const currency = input.currency.trim().toUpperCase();
+		if (!SUPPORTED_CURRENCIES.has(currency)) {
+			throw new CurrencyNotSupportedError(currency);
 		}
 		if (input.mode === "subscription") {
 			throw new Error("Paystack provider does not support subscription checkout");
@@ -425,22 +427,32 @@ export const paystackPaymentProvider: PaymentProvider = {
 		const channels = mapChannels(input.preferredChannels);
 		const checkoutRef = paystackReferenceFor(input.orderDraftId);
 
-		const data = await call<PaystackInitializeData>(ctx, {
-			client,
-			path: "/transaction/initialize",
-			body: {
-				email,
-				amount: input.amount,
-				currency: input.currency.toUpperCase(),
-				reference: checkoutRef,
-				callback_url: paystackCallbackUrl(input.successUrl),
-				metadata: {
-					...input.metadata,
-					orderDraftId: input.orderDraftId,
+		let data: PaystackInitializeData;
+		try {
+			data = await call<PaystackInitializeData>(ctx, {
+				client,
+				path: "/transaction/initialize",
+				body: {
+					email,
+					amount: input.amount,
+					currency,
+					reference: checkoutRef,
+					callback_url: paystackCallbackUrl(input.successUrl),
+					metadata: {
+						...input.metadata,
+						orderDraftId: input.orderDraftId,
+					},
+					...(channels ? { channels } : {}),
 				},
-				...(channels ? { channels } : {}),
-			},
-		});
+			});
+		} catch (err) {
+			// An account not enabled for the currency (Paystack answers 403
+			// `unsupported_currency`). Core turns this into a clear message.
+			if (err instanceof PaystackApiError && err.body.code === "unsupported_currency") {
+				throw new CurrencyNotSupportedError(currency);
+			}
+			throw err;
+		}
 
 		if (input.checkoutStyle === "on_page") {
 			return {
