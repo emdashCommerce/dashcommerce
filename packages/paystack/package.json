@@ -1,0 +1,52 @@
+{
+	"name": "@dashcommerce/paystack",
+	"version": "0.0.0",
+	"description": "Paystack payment provider for @dashcommerce/core: card and M-Pesa through Paystack's hosted page or its Popup on your checkout, signed webhooks, live status checks and refunds.",
+	"type": "module",
+	"main": "dist/index.mjs",
+	"module": "dist/index.mjs",
+	"types": "dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"types": "./dist/index.d.mts"
+		},
+		"./checkout-client": {
+			"import": "./dist/checkout-client.mjs",
+			"types": "./dist/checkout-client.d.mts"
+		}
+	},
+	"files": ["dist", "README.md"],
+	"engines": {
+		"node": ">=20"
+	},
+	"keywords": ["dashcommerce", "paystack", "payments", "mpesa", "kenya", "africa"],
+	"author": "DashCommerce contributors",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/emdashCommerce/dashcommerce.git",
+		"directory": "packages/paystack"
+	},
+	"homepage": "https://dashcommerce.dev",
+	"bugs": {
+		"url": "https://github.com/emdashCommerce/dashcommerce/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"peerDependencies": {
+		"@dashcommerce/core": "^0.4.0"
+	},
+	"devDependencies": {
+		"@dashcommerce/core": "workspace:*",
+		"tsdown": "^0.20.0",
+		"typescript": "^5.9.3"
+	}
+}
