@@ -545,10 +545,23 @@ export interface ReviewSummary {
 export interface VendorPaymentAccount {
 	accountReference: string;
 	status: "active" | "pending" | "disabled";
+	/** Account holder name returned by the provider's account resolution. */
+	accountName?: string;
+	/** False when the provider created the account but has not verified it. */
+	verified?: boolean;
+	bankName?: string;
+	bankCode?: string;
+	/** ISO-2 country of the payout account. */
+	country?: string;
+	/** Last four digits, never the full account number. */
+	maskedAccountNumber?: string;
 	/** Settlement currency, when the provider ties the account to one. */
 	currency?: CurrencyCode;
 	/** Human label for the admin, e.g. the bank name. */
 	label?: string;
+	/** Provider-specific extras, e.g. the numeric subaccount id. */
+	metadata?: Record<string, string>;
+	createdAt?: IsoDateTime;
 	updatedAt: IsoDateTime;
 }
 
