@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import type { PluginContext } from "emdash";
+import type { PluginContext, RouteContext } from "emdash";
 import { refundOrder } from "../src/orders/refund";
 import {
 	type PaymentProvider,
@@ -13,7 +13,8 @@ import {
 	registerPaymentProvider,
 	resetPaymentProviders,
 } from "../src/payment-provider";
-import type { Order } from "../src/types";
+import { adminApiRoutes } from "../src/routes/admin-api";
+import type { Order, Refund } from "../src/types";
 import { deliverWebhook, makeRouteContext, startCheckout } from "./helpers/route-harness";
 
 afterEach(() => resetPaymentProviders());
@@ -99,6 +100,64 @@ describe("refund idempotency", () => {
 
 		expect(calls()).toBe(2);
 		expect(getCol("refunds").size).toBe(2);
+	});
+
+	it("replays a full refund through the admin route after losing the response", async () => {
+		const { ctx, getCol, calls, order } = await paidOrder();
+		const input = {
+			amount: order.paidTotal.amount,
+			currency: order.currency,
+			reason: "Original reason",
+			refundRequestId: "refund:full-balance",
+		};
+		const submit = () =>
+			adminApiRoutes["admin/orders/refund"].handler(
+				{
+					request: new Request(`http://test/admin/orders/refund?id=${order.id}`, {
+						method: "POST",
+					}),
+					input,
+				} as RouteContext,
+				ctx,
+			);
+
+		// The first response is lost after Core has recorded the refund.
+		expect((await submit()).status).toBe(200);
+		const retry = await submit();
+		expect(retry.status).toBe(200);
+		const { refund } = (await retry.json()) as { refund: Refund };
+		expect(refund).toMatchObject({
+			orderId: order.id,
+			amount: order.paidTotal,
+			reason: input.reason,
+			refundRequestId: input.refundRequestId,
+		});
+		expect(calls()).toBe(1);
+		expect(getCol("refunds").size).toBe(1);
+		expect(getCol("orders").get(order.id)?.refundedTotal).toEqual(order.paidTotal);
+	});
+
+	it("rejects reuse of a request id for a different order", async () => {
+		const { ctx, getCol, calls, order } = await paidOrder();
+		const otherOrder = {
+			...order,
+			id: "other-order",
+			orderNumber: "OTHER-1",
+			stripePaymentIntentId: "pi_other",
+			paymentReference: "pay_other",
+		};
+		getCol("orders").set(otherOrder.id, { ...otherOrder });
+		const input = {
+			orderId: order.id,
+			amount: order.paidTotal,
+			idempotencyKey: "refund:one-order",
+		};
+		await refundOrder(ctx, input);
+		await expect(refundOrder(ctx, { ...input, orderId: otherOrder.id })).rejects.toThrow(
+			/different order/i,
+		);
+		expect(calls()).toBe(1);
+		expect(getCol("refunds").size).toBe(1);
 	});
 
 	it("rejects an empty request id", async () => {

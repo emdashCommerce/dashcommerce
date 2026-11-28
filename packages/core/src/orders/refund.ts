@@ -92,22 +92,24 @@ export async function refundOrder(ctx: PluginContext, input: RefundOrderInput): 
 	if (input.amount.amount <= 0) {
 		throw new Error("Refund amount must be > 0");
 	}
-	const remaining = order.paidTotal.amount - order.refundedTotal.amount;
-	if (input.amount.amount > remaining) {
-		throw new Error(`Refund ${input.amount.amount} exceeds remaining refundable ${remaining}`);
-	}
-
-	// A retry with the same request id must not call the provider again.
-	// Stripe caches its idempotency key; this covers providers whose key is
-	// a comment tag and whose refund list may be unavailable.
+	// Look up retries before checking the balance, which the original
+	// request may already have reduced.
 	const existing = await findRefundByRequestId(ctx, refundRequestId);
 	if (existing) {
+		if (existing.orderId !== order.id) {
+			throw new Error("Refund request id belongs to a different order");
+		}
 		ctx.log.info("Refund already recorded for this request id; returning it", {
 			refundId: existing.id,
 			orderId: order.id,
 			refundRequestId,
 		});
 		return existing;
+	}
+
+	const remaining = order.paidTotal.amount - order.refundedTotal.amount;
+	if (input.amount.amount > remaining) {
+		throw new Error(`Refund ${input.amount.amount} exceeds remaining refundable ${remaining}`);
 	}
 
 	// Provider call first — if this fails, we don't write anything.
