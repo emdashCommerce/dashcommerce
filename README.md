@@ -331,7 +331,7 @@ stripe listen --forward-to localhost:4321/_emdash/api/plugins/dashcommerce/check
 
 ## Contributing
 
-Pre-release, so the surface is still shifting. Small PRs welcome; large new features please open an issue first so we can align with the roadmap in `CHANGELOG.md`.
+Pre-release, so the surface is still shifting. Small PRs welcome; large new features please open an issue first so we can align with the roadmap in `CHANGELOG.md`. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for setup, tests and provider conventions, and the issue templates for bugs, features and new providers. Report vulnerabilities privately per [`SECURITY.md`](./SECURITY.md).
 
 ## License
 
