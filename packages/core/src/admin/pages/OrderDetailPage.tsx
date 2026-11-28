@@ -25,7 +25,13 @@ import {
 import { MoneyDisplay } from "../ui/MoneyDisplay";
 import { StatusBadge } from "../ui/StatusBadge";
 import { EmptyState } from "../ui/EmptyState";
-import type { Order, OrderItem, OrderStatus, Refund } from "../../types";
+import type {
+	Order,
+	OrderItem,
+	OrderProviderSplitAllocation,
+	OrderStatus,
+	Refund,
+} from "../../types";
 import { T } from "../theme";
 
 // Allowed forward transitions mirrored from `../../orders/status.ts` so the
@@ -130,6 +136,7 @@ export function OrderDetailPage() {
 			<BackToOrdersLink />
 			<OrderHeader order={order} onChanged={reload} />
 			<ItemsCard items={items} />
+			<SplitSettlementCard order={order} />
 			<RefundCard order={order} items={items} onRefunded={reload} />
 			<RefundHistoryCard refunds={refunds} />
 		</div>
@@ -302,6 +309,61 @@ function ItemsCard({ items }: { items: OrderItem[] }) {
 						},
 					]}
 				/>
+			)}
+		</Card>
+	);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Split settlement
+// ────────────────────────────────────────────────────────────────────────────
+
+function SplitSettlementCard({ order }: { order: Order }) {
+	const split = order.providerSplits;
+	if (!split) return null;
+	return (
+		<Card title="Split settlement">
+			<p style={{ color: T.textMuted, marginTop: 0 }}>
+				Reported by {split.providerId} when the payment was captured. This records what the
+				provider says each account earned; it does not change the shares DashCommerce
+				computed.
+			</p>
+			<Alert type="warning" title="Refunds on split payments">
+				A refund comes out of the platform balance; vendor shares are not recovered
+				automatically. If the provider cannot refund a split payment from DashCommerce, use
+				its dashboard.
+			</Alert>
+			<Table<OrderProviderSplitAllocation>
+				data={split.allocations}
+				getRowKey={(a) => a.accountReference}
+				columns={[
+					{
+						key: "vendor",
+						header: "Vendor",
+						render: (a) => a.vendorId ?? "Unmatched account",
+					},
+					{
+						key: "account",
+						header: "Account",
+						render: (a) => a.accountReference,
+					},
+					{
+						key: "amount",
+						header: "Settled",
+						render: (a) => <MoneyDisplay value={a.amount} />,
+					},
+				]}
+			/>
+			{split.platformRemainder && (
+				<p style={{ marginBottom: 4 }}>
+					<strong>Platform remainder:</strong>{" "}
+					<MoneyDisplay value={split.platformRemainder} />
+				</p>
+			)}
+			{split.providerFee && (
+				<p style={{ marginBottom: 0 }}>
+					<strong>Provider fee:</strong> <MoneyDisplay value={split.providerFee} />
+				</p>
 			)}
 		</Card>
 	);

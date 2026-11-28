@@ -227,6 +227,19 @@ export type NormalizedPaymentEvent =
 			shippingAddress?: PaymentProviderAddress;
 			billingAddress?: PaymentProviderAddress;
 			channel?: string;
+			/**
+			 * Provider-reported settlement of a split payment, when the
+			 * provider returns one. Amounts are integer minor units. Core
+			 * stores it on the order for reconciliation; it never changes the
+			 * vendor shares core computed.
+			 */
+			splitSettlement?: {
+				allocations: Array<{ accountReference: string; amountMinor: number }>;
+				platformRemainderMinor?: number;
+				providerFeeMinor?: number;
+				currency?: string;
+				raw?: unknown;
+			};
 			raw: unknown;
 	  }
 	| {
@@ -323,6 +336,14 @@ export interface PaymentProviderCapabilities {
 	 * `initCheckout`.
 	 */
 	splits?: boolean;
+	/**
+	 * True when the provider can refund a split payment through core.
+	 * Missing means yes (Stripe Connect refunds work, though vendor shares
+	 * are not clawed back). Declare `false` when the provider's API cannot
+	 * refund a split charge; core then refuses before calling it and tells
+	 * the merchant to use the provider's dashboard.
+	 */
+	splitRefunds?: boolean;
 }
 
 /** How the admin settings form shows and validates one credential. */
