@@ -42,7 +42,7 @@
 		"test": "bun test"
 	},
 	"peerDependencies": {
-		"@dashcommerce/core": "^0.4.0"
+		"@dashcommerce/core": ">=0.4.0 <1.0.0"
 	},
 	"devDependencies": {
 		"@dashcommerce/core": "workspace:*",
