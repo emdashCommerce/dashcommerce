@@ -1,5 +1,33 @@
 # Changelog — @dashcommerce/core
 
+## 0.5.0
+
+### Minor Changes
+
+- [#99](https://github.com/emdashCommerce/dashcommerce/pull/99) [`6f81f05`](https://github.com/emdashCommerce/dashcommerce/commit/6f81f05756a5dc97710b4dfc071a09925a4bc481) Thanks [@alexasomba](https://github.com/alexasomba)! - Let a payment provider save a browser public key.
+
+  - `PaymentProviderCredentials.publicKey` and `credentialFields.publicKey`, saved as `settings:<id>PublicKey` and validated against the prefixes the provider declares. Providers that need it for on-page checkout (Flutterwave Inline) can hand it to their browser client; nothing else changes for providers that do not.
+  - Settings shows the field only for a provider that declares it, beside the secret key and webhook secret. A provider that does not declare one cannot have a public key saved, and its settings row is unchanged.
+  - `loadPaymentProviderCredentials` returns `publicKey` when one is set.
+
+- [#101](https://github.com/emdashCommerce/dashcommerce/pull/101) [`422fc82`](https://github.com/emdashCommerce/dashcommerce/commit/422fc821ff59adf8de5f6eb5da534d489d47950a) Thanks [@alexasomba](https://github.com/alexasomba)! - Let a payment provider split one payment across vendor payout accounts.
+
+  - `capabilities.splits` and `InitCheckoutInput.allocations` / `platformRemainderMinor`. Core computes exact per-vendor minor amounts from trusted cart prices and the vendor's platform fee; a provider only routes them to the account reference core supplies.
+  - `Vendor.paymentAccounts`, keyed by provider id, for providers other than Stripe: `accountReference`, `status`, and an optional settlement currency and label. Stripe Connect keeps its existing fields.
+  - `Vendor.stripeAccountId` is optional. A vendor paid through another provider omits it, so a shop without Stripe can create more than one vendor; a missing field is NULL, so the unique index does not clash.
+  - A cart-wide discount comes out of the platform remainder, matching the Connect plan; a discount larger than that remainder is refused with a readable 409 instead of silently reducing a vendor's payout.
+  - `admin/vendors/item` accepts `POST` to create a vendor without Stripe, and `PATCH` with `paymentAccount` / `paymentAccounts` to add, replace or remove a provider account. Vendor routes open when Connect is on **or** a split-capable provider is registered.
+  - Settings exposes each provider's `capabilities`. The Vendors page adds a vendor and edits payout accounts when a split-capable provider is active, without requiring Stripe.
+  - A vendor cart is refused with a readable 409 when the active provider cannot split, or when a vendor has no active account for it, instead of silently charging the platform account.
+
+### Patch Changes
+
+- [#91](https://github.com/emdashCommerce/dashcommerce/pull/91) [`05f9d34`](https://github.com/emdashCommerce/dashcommerce/commit/05f9d34b55e8b8b33f6534202365a6100c5671a2) Thanks [@moset15](https://github.com/moset15)! - Docs: an on-page checkout's `client` data is public. `create-session` sends it to the browser, so provider authors must never put a secret key or webhook secret in it.
+
+- [#93](https://github.com/emdashCommerce/dashcommerce/pull/93) [`07f19e7`](https://github.com/emdashCommerce/dashcommerce/commit/07f19e7667a23f86e64ba51cd5b3f1dcf703aede) Thanks [@moset15](https://github.com/moset15)! - The log line for a skipped duplicate webhook now reads "Webhook deduped" and names the provider, instead of "Stripe webhook deduped" for every provider. Its fields are now `providerId`, `eventId` (was `stripeEventId`) and `type`.
+
+- [#92](https://github.com/emdashCommerce/dashcommerce/pull/92) [`016dc31`](https://github.com/emdashCommerce/dashcommerce/commit/016dc31f571768086aa4e5978219a182a6155cc6) Thanks [@moset15](https://github.com/moset15)! - Settings refuse a `paymentProvider` that isn't registered on the server, with a 400 that names the registered providers. Before, a typo or a provider whose package wasn't imported saved fine and then failed at checkout.
+
 ## 0.4.0
 
 ### Minor Changes
