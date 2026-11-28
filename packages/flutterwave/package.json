@@ -1,0 +1,61 @@
+{
+	"name": "@dashcommerce/flutterwave",
+	"version": "0.0.0",
+	"description": "Flutterwave payment provider for @dashcommerce/core: card, M-Pesa and mobile money through hosted checkout or Inline, verified webhooks, live status checks, refunds, vendor splits and Payment Plans subscriptions.",
+	"type": "module",
+	"main": "dist/index.mjs",
+	"module": "dist/index.mjs",
+	"types": "dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"types": "./dist/index.d.mts"
+		},
+		"./checkout-client": {
+			"import": "./dist/checkout-client.mjs",
+			"types": "./dist/checkout-client.d.mts"
+		}
+	},
+	"files": ["dist", "README.md"],
+	"engines": {
+		"node": ">=20"
+	},
+	"keywords": [
+		"dashcommerce",
+		"flutterwave",
+		"payments",
+		"mpesa",
+		"mobile-money",
+		"africa",
+		"subscriptions",
+		"payment-plans"
+	],
+	"author": "DashCommerce contributors",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/emdashCommerce/dashcommerce.git",
+		"directory": "packages/flutterwave"
+	},
+	"homepage": "https://dashcommerce.dev",
+	"bugs": {
+		"url": "https://github.com/emdashCommerce/dashcommerce/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"peerDependencies": {
+		"@dashcommerce/core": "^0.4.0"
+	},
+	"devDependencies": {
+		"@dashcommerce/core": "workspace:*",
+		"tsdown": "^0.20.0",
+		"typescript": "^5.9.3"
+	}
+}

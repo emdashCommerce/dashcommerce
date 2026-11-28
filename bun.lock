@@ -57,6 +57,18 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/flutterwave": {
+      "name": "@dashcommerce/flutterwave",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@dashcommerce/core": "workspace:*",
+        "tsdown": "^0.20.0",
+        "typescript": "^5.9.3",
+      },
+      "peerDependencies": {
+        "@dashcommerce/core": "^0.4.0",
+      },
+    },
     "packages/lite": {
       "name": "@dashcommerce/lite",
       "version": "0.2.0",
@@ -350,6 +362,8 @@
     "@dashcommerce/core": ["@dashcommerce/core@workspace:packages/core"],
 
     "@dashcommerce/create": ["@dashcommerce/create@workspace:packages/create"],
+
+    "@dashcommerce/flutterwave": ["@dashcommerce/flutterwave@workspace:packages/flutterwave"],
 
     "@dashcommerce/lite": ["@dashcommerce/lite@workspace:packages/lite"],
 

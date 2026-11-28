@@ -1,3 +1,4 @@
+export { minorUnitsFactor } from "../money";
 export {
 	addressFromProviderSession,
 	splitPersonName,
@@ -46,7 +47,12 @@ export type {
 	PaymentProviderRuntimeContext,
 	PaymentProviderShippingOption,
 	PaymentProviderSplitAllocation,
+	PaymentProviderBank,
+	CreatedPayoutAccount,
+	CreatePayoutAccountInput,
+	ResolvePayoutAccountInput,
 	PaymentStatusResult,
+	ProviderSubscriptionInfo,
 	RefundResult,
 	VerifyWebhookInput,
 	VerifyWebhookResult,

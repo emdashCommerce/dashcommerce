@@ -1,0 +1,33 @@
+{
+	"id": 10633643,
+	"tx_ref": "dc-0123456789abcdef0123456789abcdef",
+	"flw_ref": "3593256329",
+	"device_fingerprint": "sanitized",
+	"amount": 1500,
+	"currency": "KES",
+	"charged_amount": 1500,
+	"app_fee": 73.5,
+	"merchant_fee": 0,
+	"processor_response": "Transaction Successful",
+	"auth_model": "LIPA_MPESA",
+	"ip": "203.0.113.10",
+	"narration": "FLW-PBF MPESA Transaction ",
+	"status": "successful",
+	"payment_type": "mpesa",
+	"created_at": "2026-11-24T15:15:57.000Z",
+	"account_id": 123456,
+	"meta": {
+		"MOMO_NETWORK": "SAFARICOM",
+		"orderDraftId": "0123456789abcdef0123456789abcdef",
+		"subaccount_split": "{\"subaccount\":\"RS_A075186F846E729B97277DA02E6CD019\",\"transaction_charge\":450,\"transaction_charge_type\":\"flat_subaccount\"}",
+		"split_settlement_info": "{\"RS_CD57DC0FB468D17CC4EF6E28A2B70A62\":{\"merchant_commission\":0,\"subaccount_earning\":900},\"total_merchant_commission\":76.5,\"RS_A075186F846E729B97277DA02E6CD019\":{\"merchant_commission\":0,\"subaccount_earning\":450}}"
+	},
+	"amount_settled": 1426.5,
+	"customer": {
+		"id": 1234567,
+		"name": "Test Buyer",
+		"phone_number": "254700000000",
+		"email": "buyer@example.com",
+		"created_at": "2026-11-24T13:56:39.000Z"
+	}
+}

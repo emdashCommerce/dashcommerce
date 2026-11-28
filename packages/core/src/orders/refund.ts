@@ -177,6 +177,18 @@ async function providerRefundWithDedup(
 ): Promise<StripeRefund> {
 	const providerId = order.providerId ?? "stripe";
 	const provider = requirePaymentProvider(providerId);
+	if (provider.capabilities?.splitRefunds === false) {
+		const isSplit =
+			Boolean(order.providerSplits) ||
+			(order.providerSplitRequested ??
+				(provider.capabilities.splits === true &&
+					(await loadOrderItems(ctx, order.id)).some((item) => item.vendorId)));
+		if (isSplit) {
+			throw new Error(
+				`${provider.label} cannot refund split payments from DashCommerce. Refund this order in the ${provider.label} dashboard.`,
+			);
+		}
+	}
 	const creds = await loadPaymentProviderCredentials(ctx.kv, providerId);
 	if (!creds) {
 		throw new Error(`Payment provider "${providerId}" is not configured`);

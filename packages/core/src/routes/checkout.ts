@@ -591,10 +591,38 @@ export const checkoutRoutes = {
 					{ status: 409, headers: { "Content-Type": "application/json" } },
 				);
 			}
+			// Recurring vendor splits are not implemented for any provider:
+			// Stripe's subscription path does not send transfer_data, and
+			// Flutterwave's Payment Plans do not guarantee subaccount payouts on
+			// renewal. Refuse rather than underpay the vendor.
+			if (isSubscriptionCart && recalculated.items.some((item) => item.vendorId)) {
+				return new Response(
+					JSON.stringify({
+						error:
+							"Subscription carts with vendor-owned items are not supported yet. Split the subscription from the vendor items.",
+						code: "subscription_vendor_items",
+					}),
+					{ status: 409, headers: { "Content-Type": "application/json" } },
+				);
+			}
 
 			let transferDataPreview: { destination: string; amount?: number } | undefined;
 			let applicationFeePreview: number | undefined;
 			const hasVendorItems = recalculated.items.some((item) => item.vendorId);
+			// Recurring vendor splits are not implemented for any provider:
+			// Stripe's subscription path does not send transfer_data, and
+			// Flutterwave's Payment Plans do not guarantee subaccount payouts on
+			// renewal. Refuse rather than underpay the vendor.
+			if (isSubscriptionCart && hasVendorItems) {
+				return new Response(
+					JSON.stringify({
+						error:
+							"Subscription carts with vendor-owned items are not supported yet. Split the subscription from the vendor items.",
+						code: "subscription_vendor_items",
+					}),
+					{ status: 409, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			if (provider.id === "stripe" && (await connectEnabled(ctx))) {
 				try {
 					const plan = await computeSplit(ctx, recalculated);
@@ -874,6 +902,14 @@ export const checkoutRoutes = {
 				{ ...initCheckout, checkoutStyle: onPage ? "on_page" : "hosted" },
 				creds,
 			);
+			const snapshot: CheckoutDraftSnapshot = {
+				cart: recalculated,
+				ttlMs: DRAFT_TTL_MS,
+				createdAt: new Date().toISOString(),
+				providerId: provider.id,
+				checkoutReference: checkoutResult.checkoutReference,
+				providerSplitRequested: Boolean(allocations?.length),
+			};
 			if (onPage) {
 				if (checkoutResult.kind !== "on_page") {
 					return new Response(
@@ -881,13 +917,7 @@ export const checkoutRoutes = {
 						{ status: 502, headers: { "Content-Type": "application/json" } },
 					);
 				}
-				await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
-					cart: recalculated,
-					ttlMs: DRAFT_TTL_MS,
-					createdAt: new Date().toISOString(),
-					providerId: provider.id,
-					checkoutReference: checkoutResult.checkoutReference,
-				});
+				await ctx.kv.set(draftKey(orderDraftId), snapshot);
 				return new Response(
 					JSON.stringify({
 						kind: "on_page",
@@ -914,13 +944,7 @@ export const checkoutRoutes = {
 				);
 			}
 
-			await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
-				cart: recalculated,
-				ttlMs: DRAFT_TTL_MS,
-				createdAt: new Date().toISOString(),
-				providerId: provider.id,
-				checkoutReference: checkoutResult.checkoutReference,
-			});
+			await ctx.kv.set(draftKey(orderDraftId), snapshot);
 
 			return new Response(
 				JSON.stringify({
@@ -962,6 +986,7 @@ export type CheckoutDraftSnapshot = {
 	createdAt: string;
 	providerId?: string;
 	checkoutReference?: string;
+	providerSplitRequested?: boolean;
 };
 
 export function draftKey(orderDraftId: string): string {

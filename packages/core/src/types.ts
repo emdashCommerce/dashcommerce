@@ -203,6 +203,27 @@ export interface VendorSplit {
 	stripePaymentIntentId?: string; // when multi-PI model is used
 }
 
+/** One vendor's share of a split payment, as the provider settled it. */
+export interface OrderProviderSplitAllocation {
+	/** Matched vendor, when core can resolve the provider account reference. */
+	vendorId?: string;
+	accountReference: string;
+	amount: Money;
+}
+
+/**
+ * Provider-reported settlement of a split payment, stored for reconciliation.
+ * This never changes the shares core computed; it records what the provider
+ * says each account actually earned, plus its fee and the platform remainder.
+ */
+export interface OrderProviderSplit {
+	providerId: string;
+	allocations: OrderProviderSplitAllocation[];
+	platformRemainder?: Money;
+	providerFee?: Money;
+	capturedAt: IsoDateTime;
+}
+
 export interface Order {
 	id: string;
 	orderNumber: string; // human-facing, zero-padded incrementing
@@ -225,6 +246,10 @@ export interface Order {
 	taxLines: TaxLine[];
 	couponCodes: string[];
 	vendorSplits?: VendorSplit[];
+	/** Checkout sent split allocations to the payment provider. */
+	providerSplitRequested?: boolean;
+	/** Provider-reported settlement of a split payment, for reconciliation. */
+	providerSplits?: OrderProviderSplit;
 	subscriptionIds?: string[];
 	stripePaymentIntentId: string; // unique — Stripe PaymentIntent id
 	/**
@@ -473,7 +498,20 @@ export type SubscriptionStatus =
 
 export interface Subscription {
 	id: string;
-	stripeSubscriptionId: string; // unique
+	/**
+	 * Provider subscription id. Unique. Stripe uses `sub_…`; Flutterwave
+	 * uses the payment plan id, because DashCommerce creates one plan per
+	 * subscription. The field name is legacy.
+	 */
+	stripeSubscriptionId: string;
+	/** Gateway that owns this subscription. Unset means Stripe. */
+	providerId?: string;
+	/**
+	 * The provider's raw subscription/plan id, without the storage prefix.
+	 * Provider-managed rows store `${providerId}:${id}` in
+	 * `stripeSubscriptionId` so two providers cannot collide on a numeric id.
+	 */
+	providerSubscriptionId?: string;
 	customerId: string;
 	productId: string;
 	variantId?: string;
@@ -494,11 +532,22 @@ export interface Subscription {
 
 export interface SubscriptionInvoice {
 	id: string;
-	stripeInvoiceId: string; // unique
+	/**
+	 * Provider invoice/charge id. Unique. Stripe uses `in_…`; Flutterwave
+	 * uses the recurring transaction id. The field name is legacy.
+	 */
+	stripeInvoiceId: string;
+	/** Gateway that owns this invoice. Unset means Stripe. */
+	providerId?: string;
+	/** The provider's raw invoice/charge id, without the storage prefix. */
+	providerInvoiceId?: string;
 	subscriptionId: string;
 	amount: Money;
 	status: "draft" | "open" | "paid" | "uncollectible" | "void";
 	paidAt?: IsoDateTime;
+	/** Billing period granted by this provider-managed invoice. */
+	periodStart?: IsoDateTime;
+	periodEnd?: IsoDateTime;
 	attemptCount: number;
 	createdAt: IsoDateTime;
 }
@@ -545,10 +594,23 @@ export interface ReviewSummary {
 export interface VendorPaymentAccount {
 	accountReference: string;
 	status: "active" | "pending" | "disabled";
+	/** Account holder name returned by the provider's account resolution. */
+	accountName?: string;
+	/** False when the provider created the account but has not verified it. */
+	verified?: boolean;
+	bankName?: string;
+	bankCode?: string;
+	/** ISO-2 country of the payout account. */
+	country?: string;
+	/** Last four digits, never the full account number. */
+	maskedAccountNumber?: string;
 	/** Settlement currency, when the provider ties the account to one. */
 	currency?: CurrencyCode;
 	/** Human label for the admin, e.g. the bank name. */
 	label?: string;
+	/** Provider-specific extras, e.g. the numeric subaccount id. */
+	metadata?: Record<string, string>;
+	createdAt?: IsoDateTime;
 	updatedAt: IsoDateTime;
 }
 

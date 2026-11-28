@@ -227,6 +227,26 @@ export type NormalizedPaymentEvent =
 			shippingAddress?: PaymentProviderAddress;
 			billingAddress?: PaymentProviderAddress;
 			channel?: string;
+			/**
+			/**
+			 * Provider-reported settlement of a split payment, when the
+			 * provider returns one. Amounts are integer minor units. Core
+			 * stores it on the order for reconciliation; it never changes the
+			 * vendor shares core computed.
+			 */
+			splitSettlement?: {
+				allocations: Array<{ accountReference: string; amountMinor: number }>;
+				platformRemainderMinor?: number;
+				providerFeeMinor?: number;
+				currency?: string;
+				raw?: unknown;
+			};
+			/**
+			 * Present when this charge belongs to a provider-managed
+			 * subscription. Core records the first payment as an order and
+			 * later charges as subscription invoices.
+			 */
+			subscription?: ProviderSubscriptionInfo;
 			raw: unknown;
 	  }
 	| {
@@ -237,6 +257,23 @@ export type NormalizedPaymentEvent =
 			checkoutReference?: string;
 			paymentReference?: string;
 			reason?: string;
+			raw: unknown;
+	  }
+	| {
+			/**
+			 * A provider-managed subscription changed state outside a charge
+			 * (e.g. Flutterwave's `subscription.cancelled`). Core updates the
+			 * local row; it does not create an order or an invoice.
+			 */
+			type: "subscription.updated";
+			providerId: string;
+			providerEventId: string;
+			providerSubscriptionId: string;
+			status: ProviderSubscriptionInfo["status"];
+			currentPeriodStart?: string;
+			currentPeriodEnd?: string;
+			cancelAtPeriodEnd?: boolean;
+			canceledAt?: string;
 			raw: unknown;
 	  }
 	| {
@@ -323,6 +360,14 @@ export interface PaymentProviderCapabilities {
 	 * `initCheckout`.
 	 */
 	splits?: boolean;
+	/**
+	 * True when the provider can refund a split payment through core.
+	 * Missing means yes (Stripe Connect refunds work, though vendor shares
+	 * are not clawed back). Declare `false` when the provider's API cannot
+	 * refund a split charge; core then refuses before calling it and tells
+	 * the merchant to use the provider's dashboard.
+	 */
+	splitRefunds?: boolean;
 }
 
 /** How the admin settings form shows and validates one credential. */
@@ -342,12 +387,89 @@ export interface ConnectionCheckResult {
 	mode?: "test" | "live";
 }
 
+/**
+ * Provider-reported subscription state. `providerSubscriptionId` is the id
+ * the provider uses for cancel/resume; for Flutterwave it is the payment
+ * plan id, because DashCommerce creates one plan per subscription.
+ */
+export interface ProviderSubscriptionInfo {
+	providerSubscriptionId: string;
+	status:
+		| "active"
+		| "trialing"
+		| "past_due"
+		| "canceled"
+		| "paused"
+		| "unpaid"
+		| "incomplete"
+		| "incomplete_expired";
+	currentPeriodStart?: string;
+	currentPeriodEnd?: string;
+	cancelAtPeriodEnd?: boolean;
+	canceledAt?: string;
+	trialEndsAt?: string;
+	/** Integer minor units, when the provider reports it. */
+	amount?: number;
+	currency?: string;
+	interval?: "day" | "week" | "month" | "year";
+	intervalCount?: number;
+}
+
 export interface PaymentStatusResult {
 	status: "pending" | "succeeded" | "failed";
 	paymentReference?: string;
 	amount?: number;
 	currency?: string;
 	reason?: string;
+	/** Present when the payment is a subscription charge. */
+	subscription?: ProviderSubscriptionInfo;
+}
+
+/** A bank or mobile-money provider in a country, for payout onboarding. */
+export interface PaymentProviderBank {
+	code: string;
+	name: string;
+}
+
+export interface ResolvePayoutAccountInput {
+	accountNumber: string;
+	bankCode: string;
+}
+
+export interface CreatePayoutAccountInput {
+	accountNumber: string;
+	bankCode: string;
+	/** ISO-2 country of the account. */
+	country: string;
+	businessName: string;
+	businessEmail: string;
+	businessMobile: string;
+	businessContact?: string;
+	businessContactMobile?: string;
+	/**
+	 * Default split type stored on the payout account, when the provider has
+	 * one. Core still sends exact per-vendor allocations on each payment; this
+	 * is only the account's fallback configuration.
+	 */
+	splitType?: "percentage" | "flat";
+	/** Decimal percentage (0.1) or a major-unit flat amount, per `splitType`. */
+	splitValue?: number;
+	metadata?: Record<string, string>;
+}
+
+/** What a provider returns after creating a vendor payout account. */
+export interface CreatedPayoutAccount {
+	accountReference: string;
+	/** Absent when the provider cannot resolve account names. */
+	accountName?: string;
+	/** False when the provider created the account but has not verified it. */
+	verified?: boolean;
+	bankName?: string;
+	bankCode?: string;
+	country?: string;
+	/** Last four digits, never the full account number. */
+	maskedAccountNumber?: string;
+	metadata?: Record<string, string>;
 }
 
 export interface PaymentProvider {
@@ -441,6 +563,29 @@ export interface PaymentProvider {
 	): Promise<PaymentStatusResult>;
 
 	/**
+	 * Provider-managed subscription lifecycle. Optional and independent;
+	 * core falls back to its Stripe Billing path for Stripe subscriptions.
+	 * The provider id is the one core stored on the local subscription.
+	 */
+	getSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		providerSubscriptionId: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
+
+	cancelSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string; atPeriodEnd?: boolean },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
+
+	resumeSubscription?(
+		ctx: PaymentProviderRuntimeContext,
+		input: { providerSubscriptionId: string },
+		credentials: PaymentProviderCredentials,
+	): Promise<ProviderSubscriptionInfo>;
+
+	/**
 	 * Optional check behind the "Test connection" button in Settings: one
 	 * read-only call with the saved credentials. It must not create or change
 	 * anything at the provider. Return `ok: false` with a message the merchant
@@ -450,4 +595,28 @@ export interface PaymentProvider {
 		ctx: PaymentProviderRuntimeContext,
 		credentials: PaymentProviderCredentials,
 	): Promise<ConnectionCheckResult>;
+
+	/**
+	 * Provider-managed payout onboarding. When a provider implements these,
+	 * Vendors can list banks, resolve an account name and create a vendor
+	 * payout account without sending the merchant to the provider's
+	 * dashboard. All three are optional and independent.
+	 */
+	listPayoutBanks?(
+		ctx: PaymentProviderRuntimeContext,
+		country: string,
+		credentials: PaymentProviderCredentials,
+	): Promise<PaymentProviderBank[]>;
+
+	resolvePayoutAccount?(
+		ctx: PaymentProviderRuntimeContext,
+		input: ResolvePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<{ accountName: string }>;
+
+	createPayoutAccount?(
+		ctx: PaymentProviderRuntimeContext,
+		input: CreatePayoutAccountInput,
+		credentials: PaymentProviderCredentials,
+	): Promise<CreatedPayoutAccount>;
 }
