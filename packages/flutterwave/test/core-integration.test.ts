@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { type CartState, type Order, dashcommerce } from "@dashcommerce/core";
+import { type CartState, type Money, type Order, dashcommerce } from "@dashcommerce/core";
 import {
 	getPaymentProvider,
 	registerPaymentProvider,
@@ -31,8 +31,8 @@ function json(body: unknown, status = 200): Response {
 }
 
 interface FakeFlutterwaveOptions {
-	/** Minor units Flutterwave records as charged. Defaults to what checkout was asked for. */
-	chargedAmountMinor?: number;
+	/** Major units Flutterwave records as charged. Defaults to the outbound amount. */
+	chargedAmountMajor?: number;
 	/** Status verify reports. Defaults to "successful". */
 	verifyStatus?: string;
 	/** Number of verify calls that fail with a 503 before Flutterwave recovers. */
@@ -43,7 +43,7 @@ interface FakeFlutterwaveOptions {
 
 interface FakeTransaction {
 	id: number;
-	amountMinor: number;
+	amountMajor: number;
 	currency: string;
 	status: string;
 }
@@ -69,9 +69,9 @@ function fakeFlutterwave(options: FakeFlutterwaveOptions = {}) {
 				id: tx.id,
 				tx_ref: txRef,
 				flw_ref: `FLW-MOCK-${tx.id}`,
-				amount: tx.amountMinor / 100,
+				amount: tx.amountMajor,
 				currency: tx.currency,
-				charged_amount: tx.amountMinor / 100,
+				charged_amount: tx.amountMajor,
 				status: options.verifyStatus ?? tx.status,
 				processor_response: "Approved",
 				payment_type: "mpesa",
@@ -105,7 +105,7 @@ function fakeFlutterwave(options: FakeFlutterwaveOptions = {}) {
 			}
 			transactions.set(txRef, {
 				id: nextId++,
-				amountMinor: options.chargedAmountMinor ?? Math.round(body.amount * 100),
+				amountMajor: options.chargedAmountMajor ?? body.amount,
 				currency: String(body.currency),
 				status: "successful",
 			});
@@ -180,7 +180,7 @@ function fakeFlutterwave(options: FakeFlutterwaveOptions = {}) {
 				id: 8612 + refunds.length,
 				account_id: 73362,
 				transaction_id: transactionId,
-				amount_refunded: typeof body.amount === "number" ? body.amount : tx.amountMinor / 100,
+				amount_refunded: typeof body.amount === "number" ? body.amount : tx.amountMajor,
 				status: "completed",
 				comment: body.comments ?? null,
 				flw_ref: `URF_${transactionId}`,
@@ -206,9 +206,12 @@ function fakeFlutterwave(options: FakeFlutterwaveOptions = {}) {
 // the database does (dedup relies on them).
 const CORE_STORAGE = dashcommerce().storage as Record<string, { uniqueIndexes?: string[] }>;
 
+const DEFAULT_TICKET_PRICE = { amount: 150_000, currency: "KES" };
+
 function makeContext(
 	initialKv: Record<string, unknown>,
 	fetchImpl: typeof fetch | ((url: string, init?: RequestInit) => Promise<Response>),
+	ticketPrice: Money = DEFAULT_TICKET_PRICE,
 ) {
 	const kvStore = new Map<string, unknown>(Object.entries(initialKv));
 	const collections = new Map<string, Map<string, unknown>>();
@@ -275,7 +278,7 @@ function makeContext(
 				data: {
 					title: "Matchday ticket",
 					type: "simple",
-					prices: { KES: { amount: 150000 } },
+					prices: { [ticketPrice.currency]: { amount: ticketPrice.amount } },
 					virtual: true,
 					manage_stock: false,
 				},
@@ -309,12 +312,12 @@ function makeContext(
 	return { ctx, getCol };
 }
 
-function ticketCart(sessionId: string): CartState {
-	const kes = (amount: number) => ({ amount, currency: "KES" });
+function ticketCart(sessionId: string, price: Money = DEFAULT_TICKET_PRICE): CartState {
+	const zero = { amount: 0, currency: price.currency };
 	const address = { line1: "Ngong Road", city: "Nairobi", country: "KE" };
 	return {
 		sessionId,
-		currency: "KES",
+		currency: price.currency,
 		customerEmail: "supporter@example.com",
 		billingAddress: address,
 		shippingAddress: address,
@@ -325,17 +328,17 @@ function ticketCart(sessionId: string): CartState {
 				quantity: 1,
 				title: "Matchday ticket",
 				isDigital: true,
-				unitPrice: kes(150000),
-				lineSubtotal: kes(150000),
+				unitPrice: price,
+				lineSubtotal: price,
 			},
 		],
 		coupons: [],
 		taxLines: [],
-		subtotal: kes(150000),
-		discountTotal: kes(0),
-		shippingTotal: kes(0),
-		taxTotal: kes(0),
-		total: kes(150000),
+		subtotal: price,
+		discountTotal: zero,
+		shippingTotal: zero,
+		taxTotal: zero,
+		total: price,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 	} as unknown as CartState;
@@ -416,6 +419,7 @@ function chargeCompleted(
 	amountMajor = 1500,
 	status = "successful",
 	extraMeta: Record<string, unknown> = {},
+	currency = "KES",
 ) {
 	return JSON.stringify({
 		event: "charge.completed",
@@ -425,7 +429,7 @@ function chargeCompleted(
 			tx_ref: txRef,
 			flw_ref: `FLW-MOCK-${id}`,
 			amount: amountMajor,
-			currency: "KES",
+			currency,
 			charged_amount: amountMajor,
 			app_fee: Number((amountMajor * 0.049).toFixed(2)),
 			status,
@@ -519,28 +523,45 @@ describe("@dashcommerce/flutterwave through core", () => {
 		expect(getCol("orders").size).toBe(0);
 	});
 
-	it("holds the order when Flutterwave confirms a different amount than the cart", async () => {
-		// The payload claims the full amount; Flutterwave's own record says less.
-		const flutterwave = fakeFlutterwave({ chargedAmountMinor: 100 });
-		const { ctx, getCol } = makeContext(flutterwaveSettings, flutterwave.fetch);
-		const initRes = await startCheckout(ctx, "sess_flw_4");
-		const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
-		const txRef = String(flutterwave.getLastInit()?.tx_ref);
-		const tx = flutterwave.transactions.get(txRef);
-		if (!tx) throw new Error("checkout did not register a transaction");
+	it.each([
+		{ currency: "KES", priceMinor: 150_000, priceMajor: 1_500, chargedMajor: 1 },
+		{ currency: "UGX", priceMinor: 10_000, priceMajor: 10_000, chargedMajor: 100 },
+	])(
+		"holds the order when Flutterwave verifies less than the $currency price",
+		async ({ currency, priceMinor, priceMajor, chargedMajor }) => {
+			// The webhook claims the full amount; Flutterwave's verify response says less.
+			const flutterwave = fakeFlutterwave({ chargedAmountMajor: chargedMajor });
+			const price = { currency, amount: priceMinor };
+			const { ctx, getCol } = makeContext(flutterwaveSettings, flutterwave.fetch, price);
+			const sessionId = `sess_flw_mismatch_${currency}`;
+			const initRes = await startCheckout(ctx, sessionId, ticketCart(sessionId, price));
+			expect(initRes.status).toBe(200);
+			const { orderDraftId } = (await initRes.json()) as { orderDraftId: string };
+			const txRef = String(flutterwave.getLastInit()?.tx_ref);
+			const tx = flutterwave.transactions.get(txRef);
+			if (!tx) throw new Error("checkout did not register a transaction");
 
-		const payload = chargeCompleted(txRef, orderDraftId, tx.id, 1500);
-		const res = await deliverWebhook(ctx, payload, SECRET_HASH);
-		expect(res.status).toBe(200);
+			const payload = chargeCompleted(
+				txRef,
+				orderDraftId,
+				tx.id,
+				priceMajor,
+				"successful",
+				{},
+				currency,
+			);
+			const res = await deliverWebhook(ctx, payload, SECRET_HASH);
+			expect(res.status).toBe(200);
 
-		const order = Array.from(getCol("orders").values())[0] as Order & {
-			metadata?: Record<string, unknown>;
-		};
-		expect(order).toBeDefined();
-		expect(order.status).toBe("on-hold");
-		expect(order.metadata?.paymentAmountMismatch).toBe(true);
-		expect(order.metadata?.receivedAmount).toBe(100);
-	});
+			const order = Array.from(getCol("orders").values())[0] as Order & {
+				metadata?: Record<string, unknown>;
+			};
+			expect(order).toBeDefined();
+			expect(order.status).toBe("on-hold");
+			expect(order.metadata?.paymentAmountMismatch).toBe(true);
+			expect(order.metadata?.receivedAmount).toBe(100);
+		},
+	);
 
 	it("creates the order when Flutterwave's retry follows a failed first delivery", async () => {
 		// Flutterwave is briefly down when core confirms the first delivery, so
@@ -668,6 +689,51 @@ describe("@dashcommerce/flutterwave through core", () => {
 		expect(flutterwave.refunds).toHaveLength(2);
 	});
 
+	it.each(["UGX", "RWF", "XAF", "XOF"])(
+		"charges, verifies and refunds whole %s amounts",
+		async (currency) => {
+			const flutterwave = fakeFlutterwave();
+			const price = { currency, amount: 10_000 };
+			const { ctx, getCol } = makeContext(flutterwaveSettings, flutterwave.fetch, price);
+			const sessionId = `sess_flw_whole_${currency}`;
+			const init = await startCheckout(ctx, sessionId, ticketCart(sessionId, price));
+			expect(init.status).toBe(200);
+			expect(flutterwave.getLastInit()).toMatchObject({ amount: 10_000, currency });
+
+			const { orderDraftId } = (await init.json()) as { orderDraftId: string };
+			const txRef = String(flutterwave.getLastInit()?.tx_ref);
+			const tx = flutterwave.transactions.get(txRef);
+			if (!tx) throw new Error("checkout did not register a transaction");
+			const payload = chargeCompleted(
+				txRef,
+				orderDraftId,
+				tx.id,
+				10_000,
+				"successful",
+				{},
+				currency,
+			);
+			const webhook = await deliverWebhook(ctx, payload, SECRET_HASH);
+			expect(webhook.status).toBe(200);
+			expect(flutterwave.getVerifyCalls()).toBe(1);
+			const order = Array.from(getCol("orders").values())[0] as Order;
+			expect(order.paidTotal).toEqual(price);
+
+			const refund = await flutterwavePaymentProvider.refund(
+				{ http: ctx.http, log: ctx.log },
+				{
+					refundRequestId: `refund-whole-${currency}`,
+					paymentReference: String(tx.id),
+					amount: 2_500,
+					currency,
+				},
+				{ secretKey: SECRET_KEY },
+			);
+			expect(flutterwave.refunds[0]?.amount_refunded).toBe(2_500);
+			expect(refund).toMatchObject({ status: "succeeded", amount: 2_500, currency });
+		},
+	);
+
 	it("sends vendor allocations to Flutterwave as flat subaccounts", async () => {
 		const flutterwave = fakeFlutterwave();
 		const { ctx, getCol } = makeContext(flutterwaveSettings, flutterwave.fetch);
@@ -758,7 +824,7 @@ describe("@dashcommerce/flutterwave through core", () => {
 
 		// Inline creates the transaction in the browser, so the fake only learns
 		// about it when the signed webhook arrives.
-		const tx = { id: 777001, amountMinor: 150000, currency: "KES", status: "successful" };
+		const tx = { id: 777001, amountMajor: 1500, currency: "KES", status: "successful" };
 		flutterwave.transactions.set(body.client.txRef ?? "", tx);
 
 		const res = await deliverWebhook(

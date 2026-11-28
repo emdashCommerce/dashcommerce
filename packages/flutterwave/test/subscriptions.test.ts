@@ -65,6 +65,39 @@ describe("Flutterwave subscription intervals", () => {
 });
 
 describe("Flutterwave subscription checkout", () => {
+	it("uses whole units when creating and reading a zero-decimal plan", async () => {
+		const posted: Array<{ path: string; amount: number }> = [];
+		const runtime = ctx(async (url, init) => {
+			const { pathname } = new URL(url);
+			if (init?.method === "POST") {
+				const body = JSON.parse(String(init.body)) as { amount: number };
+				posted.push({ path: pathname, amount: body.amount });
+			}
+			if (pathname === "/v3/payments") {
+				return ok({ link: "https://checkout.flutterwave.com/v3/hosted/pay/abc" });
+			}
+			return ok({ id: 254811, amount: 10_000, currency: "RWF", interval: "monthly" });
+		});
+		const [line] = subscriptionInput().lineItems;
+		if (!line) throw new Error("expected a recurring line");
+		await flutterwavePaymentProvider.initCheckout(
+			runtime,
+			subscriptionInput({
+				amount: 11_000,
+				currency: "RWF",
+				lineItems: [{ ...line, amount: 10_000, currency: "RWF" }],
+			}),
+			credentials,
+		);
+		expect(posted).toEqual([
+			{ path: "/v3/payment-plans", amount: 10_000 },
+			{ path: "/v3/payments", amount: 11_000 },
+		]);
+		expect(
+			await flutterwavePaymentProvider.getSubscription?.(runtime, "254811", credentials),
+		).toMatchObject({ amount: 10_000, currency: "RWF" });
+	});
+
 	it("creates one payment plan and passes its id to hosted checkout", async () => {
 		const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
 		const runtime = ctx(async (url, init) => {

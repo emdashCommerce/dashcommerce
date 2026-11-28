@@ -1,3 +1,4 @@
+export { minorUnitsFactor } from "../money";
 export {
 	addressFromProviderSession,
 	splitPersonName,

@@ -1,11 +1,12 @@
 ---
 "@dashcommerce/flutterwave": minor
+"@dashcommerce/core": minor
 ---
 
 New package: a Flutterwave payment provider for DashCommerce, built on core's PaymentProvider interface.
 
 - Hosted checkout and on-page Flutterwave Inline (card, M-Pesa, mobile money) in NGN, USD, GBP, EUR, KES, GHS, ZAR, UGX, TZS, RWF, XOF, XAF, ZMW, MWK and EGP.
-- Amounts convert at the boundary: core keeps minor units, Flutterwave's v3 API charges major units.
+- Amounts convert at the boundary using the currency's minor-unit factor, now available in Core's payment-provider entry point. UGX, RWF, XOF and XAF use whole units in both systems.
 - Orders only from a signed `charge.completed`, confirmed with a live verify. `verif-hash` is checked in constant time against the secret hash; repeat and overlapping deliveries are deduplicated.
 - Refunds by transaction id or `tx_ref`, guarded against duplicates on retry, with Flutterwave's refund webhook moving each refund to succeeded or failed.
 - Split payments: core's exact per-vendor allocations map to `subaccounts` with `flat_subaccount`, for hosted and Inline. The subaccount default may be percentage or flat; the transaction override keeps the shares exact.

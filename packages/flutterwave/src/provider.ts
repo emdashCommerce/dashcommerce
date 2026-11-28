@@ -11,6 +11,7 @@
  * not store; the hosted page is the equivalent flow today.
  */
 
+import { minorUnitsFactor } from "@dashcommerce/core/payment-provider";
 import type {
 	ConnectionCheckResult,
 	CreatePayoutAccountInput,
@@ -101,18 +102,19 @@ function metadataOf(raw: unknown): Record<string, unknown> | undefined {
 }
 
 /** Core minor units → Flutterwave major units, e.g. 250000 → 2500. */
-export function toMajorUnits(amount: number): number {
+export function toMajorUnits(amount: number, currency: string): number {
 	if (!Number.isSafeInteger(amount) || amount < 0) {
 		throw new Error("Flutterwave amount must be a non-negative integer in minor units");
 	}
-	return Number((amount / 100).toFixed(2));
+	return amount / minorUnitsFactor(currency.trim());
 }
 
 /** Flutterwave major units → core minor units, e.g. 2500 → 250000. */
-export function toMinorUnits(amount: unknown): number | undefined {
+export function toMinorUnits(amount: unknown, currency: string): number | undefined {
 	const value = typeof amount === "string" ? Number(amount) : amount;
 	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
-	return Math.round(value * 100);
+	const minor = Math.round(value * minorUnitsFactor(currency.trim()));
+	return Number.isSafeInteger(minor) ? minor : undefined;
 }
 
 function toFlutterwaveClient(credentials: PaymentProviderCredentials) {
@@ -270,7 +272,7 @@ function subaccountsFor(input: InitCheckoutInput): FlutterwaveSubaccount[] | und
 		return {
 			id: reference,
 			transaction_charge_type: "flat_subaccount" as const,
-			transaction_charge: toMajorUnits(allocation.amountMinor),
+			transaction_charge: toMajorUnits(allocation.amountMinor, input.currency),
 		};
 	});
 	if (total > input.amount) {
@@ -350,7 +352,7 @@ async function createSubscriptionPlan(
 		path: "/payment-plans",
 		body: {
 			name: `DC ${line.name}`,
-			amount: toMajorUnits(recurringTotal),
+			amount: toMajorUnits(recurringTotal, input.currency),
 			currency: input.currency.toUpperCase(),
 			interval: planInterval(recurring.interval, recurring.intervalCount),
 			duration: 0,
@@ -546,18 +548,18 @@ function splitSettlementFrom(
 	let platformRemainderMinor: number | undefined;
 	for (const [key, value] of Object.entries(info)) {
 		if (key === "total_merchant_commission") {
-			const amount = toMinorUnits(value);
+			const amount = toMinorUnits(value, currency);
 			if (amount !== undefined) platformRemainderMinor = amount;
 			continue;
 		}
 		if (!value || typeof value !== "object") continue;
-		const amount = toMinorUnits((value as Record<string, unknown>).subaccount_earning);
+		const amount = toMinorUnits((value as Record<string, unknown>).subaccount_earning, currency);
 		if (amount !== undefined) {
 			allocations.push({ accountReference: key, amountMinor: amount });
 		}
 	}
 	if (allocations.length === 0) return undefined;
-	const fee = toMinorUnits(appFee);
+	const fee = toMinorUnits(appFee, currency);
 	return {
 		allocations,
 		...(platformRemainderMinor !== undefined ? { platformRemainderMinor } : {}),
@@ -836,7 +838,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				client: {
 					publicKey: publicKey ?? "",
 					txRef: checkoutRef,
-					amount: String(toMajorUnits(input.amount)),
+					amount: String(toMajorUnits(input.amount, currency)),
 					currency,
 					customerEmail: email,
 					...(name ? { customerName: name } : {}),
@@ -856,7 +858,7 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				path: "/payments",
 				body: {
 					tx_ref: checkoutRef,
-					amount: toMajorUnits(input.amount),
+					amount: toMajorUnits(input.amount, currency),
 					currency,
 					redirect_url: flutterwaveCallbackUrl(input.successUrl),
 					customer: {
@@ -1017,8 +1019,8 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			};
 		}
 
-		const amount = toMinorUnits(d.amount);
 		const currency = d.currency?.toUpperCase();
+		const amount = currency ? toMinorUnits(d.amount, currency) : undefined;
 		if (amount === undefined || !currency) {
 			return {
 				type: "unhandled",
@@ -1277,8 +1279,8 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 
 		const rawStatus = data.status?.toLowerCase() ?? "";
 		const status = TRANSACTION_STATUS[rawStatus];
-		const amount = toMinorUnits(data.amount);
 		const currency = data.currency?.toUpperCase();
+		const amount = currency ? toMinorUnits(data.amount, currency) : undefined;
 		const id = data.id === undefined ? undefined : String(data.id);
 		const subscription =
 			amount !== undefined && currency ? subscriptionFromCharge(data, amount, currency) : undefined;
@@ -1307,12 +1309,13 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			path: `/payment-plans/${encodeURIComponent(id)}`,
 		});
 		const interval = parsePlanInterval(data.interval);
-		const amount = toMinorUnits(data.amount);
+		const currency = data.currency?.toUpperCase();
+		const amount = currency ? toMinorUnits(data.amount, currency) : undefined;
 		return {
 			providerSubscriptionId: String(data.id ?? id),
 			status: planStatus(data.status),
 			...(amount !== undefined ? { amount } : {}),
-			...(data.currency ? { currency: data.currency.toUpperCase() } : {}),
+			...(currency ? { currency } : {}),
 			interval: interval.interval,
 			intervalCount: interval.intervalCount,
 		};
@@ -1363,12 +1366,13 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 			},
 		});
 		const interval = parsePlanInterval(plan.interval);
-		const amount = toMinorUnits(plan.amount);
+		const currency = plan.currency?.toUpperCase();
+		const amount = currency ? toMinorUnits(plan.amount, currency) : undefined;
 		return {
 			providerSubscriptionId: id,
 			status: "active",
 			...(amount !== undefined ? { amount } : {}),
-			...(plan.currency ? { currency: plan.currency.toUpperCase() } : {}),
+			...(currency ? { currency } : {}),
 			interval: interval.interval,
 			intervalCount: interval.intervalCount,
 		};
@@ -1408,12 +1412,14 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 				client,
 				path: `/transactions/${transactionId}/refund`,
 				body: {
-					...(input.amount !== undefined ? { amount: toMajorUnits(input.amount) } : {}),
+					...(input.amount !== undefined
+						? { amount: toMajorUnits(input.amount, input.currency) }
+						: {}),
 					comments: refundCommentFor(input.refundRequestId, input.reason),
 				},
 			}));
 
-		const amount = toMinorUnits(data.amount_refunded) ?? input.amount ?? 0;
+		const amount = toMinorUnits(data.amount_refunded, input.currency) ?? input.amount ?? 0;
 		if (disburseStatusOf(data.meta) === "failed") {
 			ctx.log.warn(
 				"Flutterwave accepted the refund but its disbursement failed; the customer has not been paid yet",
@@ -1433,7 +1439,8 @@ export const flutterwavePaymentProvider: PaymentProvider = {
 	},
 
 	formatAmount(amount: number, currency: string): string {
-		const major = (amount / 100).toFixed(2);
+		const factor = minorUnitsFactor(currency.trim());
+		const major = (amount / factor).toFixed(Math.log10(factor));
 		return `${currency.toUpperCase()} ${major}`;
 	},
 };

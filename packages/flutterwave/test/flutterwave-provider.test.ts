@@ -103,26 +103,33 @@ describe("flutterwavePaymentProvider", () => {
 
 	describe("amount conversion", () => {
 		it("converts core minor units to Flutterwave major units", () => {
-			expect(toMajorUnits(250000)).toBe(2500);
-			expect(toMajorUnits(1)).toBe(0.01);
-			expect(toMajorUnits(0)).toBe(0);
+			expect(toMajorUnits(250000, "NGN")).toBe(2500);
+			expect(toMajorUnits(1, "NGN")).toBe(0.01);
+			expect(toMajorUnits(0, "NGN")).toBe(0);
 		});
 
 		it("converts Flutterwave major units back to core minor units", () => {
-			expect(toMinorUnits(2500)).toBe(250000);
-			expect(toMinorUnits("0.01")).toBe(1);
-			expect(toMinorUnits(12.345)).toBe(1235);
+			expect(toMinorUnits(2500, "NGN")).toBe(250000);
+			expect(toMinorUnits("0.01", "NGN")).toBe(1);
+			expect(toMinorUnits(12.345, "NGN")).toBe(1235);
+		});
+
+		it.each(["UGX", "RWF", "XAF", "XOF"])("keeps %s amounts in whole units", (currency) => {
+			expect(toMajorUnits(10_000, currency.toLowerCase())).toBe(10_000);
+			expect(toMinorUnits("10000", currency)).toBe(10_000);
+			expect(flutterwavePaymentProvider.formatAmount(10_000, currency)).toBe(`${currency} 10000`);
 		});
 
 		it("refuses a negative or fractional minor amount", () => {
-			expect(() => toMajorUnits(-1)).toThrow(/non-negative integer/);
-			expect(() => toMajorUnits(1.5)).toThrow(/non-negative integer/);
+			expect(() => toMajorUnits(-1, "NGN")).toThrow(/non-negative integer/);
+			expect(() => toMajorUnits(1.5, "NGN")).toThrow(/non-negative integer/);
 		});
 
 		it("ignores a missing or malformed major amount", () => {
-			expect(toMinorUnits(undefined)).toBeUndefined();
-			expect(toMinorUnits("abc")).toBeUndefined();
-			expect(toMinorUnits(-1)).toBeUndefined();
+			expect(toMinorUnits(undefined, "NGN")).toBeUndefined();
+			expect(toMinorUnits("abc", "NGN")).toBeUndefined();
+			expect(toMinorUnits(-1, "NGN")).toBeUndefined();
+			expect(toMinorUnits(Number.MAX_SAFE_INTEGER, "NGN")).toBeUndefined();
 		});
 	});
 
@@ -433,6 +440,27 @@ describe("flutterwavePaymentProvider", () => {
 				]);
 			});
 
+			it("sends whole-unit charges and exact allocations to Inline", async () => {
+				const ctx = makeMockRuntimeContext(async () => {
+					throw new Error("Inline checkout must not call Flutterwave");
+				});
+				const result = await flutterwavePaymentProvider.initCheckout(
+					ctx,
+					checkoutInput({
+						checkoutStyle: "on_page",
+						amount: 10_000,
+						currency: "UGX",
+						allocations: [{ vendorId: "v1", accountReference: "RS_V1", amountMinor: 8_500 }],
+					}),
+					{ ...credentials, publicKey: "FLWPUBK_TEST-abc123-X" },
+				);
+				if (result.kind !== "on_page") throw new Error("expected on_page");
+				expect(result.client.amount).toBe("10000");
+				expect(JSON.parse(result.client.subaccounts ?? "[]")).toEqual([
+					{ id: "RS_V1", transaction_charge_type: "flat_subaccount", transaction_charge: 8_500 },
+				]);
+			});
+
 			it("sends no subaccounts for a cart without vendor allocations", async () => {
 				let body: Record<string, unknown> = {};
 				const ctx = makeMockRuntimeContext(async (_url, init) => {
@@ -569,6 +597,33 @@ describe("flutterwavePaymentProvider", () => {
 				email: "fan@example.com",
 				name: "Aidi Onyango",
 				phone: "+254700000000",
+			});
+		});
+
+		it("keeps whole-unit payment and split settlement amounts from the webhook", () => {
+			const payload = chargeEvent({
+				currency: "XOF",
+				amount: 10_000,
+				app_fee: 400,
+				meta: {
+					orderDraftId: draftId,
+					split_settlement_info: {
+						RS_V1: { subaccount_earning: "8500" },
+						total_merchant_commission: 1_100,
+					},
+				},
+			});
+			const event = flutterwavePaymentProvider.parseWebhookEvent(JSON.stringify(payload));
+			expect(event).toMatchObject({
+				type: "charge.succeeded",
+				currency: "XOF",
+				amount: 10_000,
+				splitSettlement: {
+					currency: "XOF",
+					allocations: [{ accountReference: "RS_V1", amountMinor: 8_500 }],
+					platformRemainderMinor: 1_100,
+					providerFeeMinor: 400,
+				},
 			});
 		});
 
