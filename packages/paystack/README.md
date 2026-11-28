@@ -2,7 +2,7 @@
 
 A Paystack `PaymentProvider` for DashCommerce. Customers pay on Paystack's hosted page by card or M-Pesa (Paystack's `mobile_money` channel). DashCommerce creates the order when Paystack's signed `charge.success` webhook arrives and the transaction is confirmed with Paystack.
 
-> **Needs `@dashcommerce/core` 0.4.0 or later.** 0.4.0 is the first core release that can call `api.paystack.co`, save Paystack keys, pass `Paystack-Signature` to the provider and take refund updates. This package's first release, 0.1.0, goes out with it.
+> **Needs `@dashcommerce/core` 0.4.0 or later.** 0.4.0 is the first core release that can call `api.paystack.co`, save Paystack keys, pass `Paystack-Signature` to the provider and take refund updates. This package's first release, 0.1.0, goes out alongside core 0.5.0. It accepts any core from 0.4.0 up to 1.0: this repository's CI runs the package's tests against the current core on every pull request, so each core release made here has been tested with it.
 
 ## What it does
 
@@ -45,7 +45,7 @@ Paystack sends no `charge.failed` webhook. A payment that fails or is abandoned 
 1. **Install** both packages:
 
    ```sh
-   npm install @dashcommerce/core@^0.4.0 @dashcommerce/paystack
+   npm install @dashcommerce/core @dashcommerce/paystack
    ```
 
 2. **Register the provider at runtime.** Import the package in a module the server loads before any request, such as `src/middleware.ts`:
