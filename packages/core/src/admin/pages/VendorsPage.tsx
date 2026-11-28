@@ -726,7 +726,11 @@ function PayoutAccountForm({
 	const [banks, setBanks] = useState<Array<{ code: string; name: string }> | null>(null);
 	const [bankCode, setBankCode] = useState("");
 	const [accountNumber, setAccountNumber] = useState("");
-	const [accountName, setAccountName] = useState<string | null>(null);
+	const [verification, setVerification] = useState<{
+		key: string;
+		accountName?: string;
+		error?: string;
+	} | null>(null);
 	const [businessName, setBusinessName] = useState(vendor.name);
 	const [businessEmail, setBusinessEmail] = useState(vendor.email);
 	const [businessMobile, setBusinessMobile] = useState("");
@@ -804,14 +808,19 @@ function PayoutAccountForm({
 	}
 
 	const requiresVerification = provider.payoutVerification;
+	const normalizedAccountNumber = accountNumber.trim();
+	const verificationKey = JSON.stringify([provider.id, country, bankCode, normalizedAccountNumber]);
+	const currentVerification = verification?.key === verificationKey ? verification : null;
+	const accountName = currentVerification?.accountName;
+	const formError = error ?? currentVerification?.error;
 	const valid =
 		country.length === 2 &&
 		bankCode.length > 0 &&
-		accountNumber.trim().length >= 4 &&
+		normalizedAccountNumber.length >= 4 &&
 		businessName.trim().length > 0 &&
 		/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail) &&
 		businessMobile.trim().length > 0 &&
-		(!requiresVerification || accountName !== null) &&
+		(!requiresVerification || Boolean(accountName)) &&
 		typeof splitValue === "number" &&
 		splitValue >= 0 &&
 		(splitType === "flat" ? splitValue > 0 : splitValue <= 100);
@@ -819,15 +828,19 @@ function PayoutAccountForm({
 	async function verify(): Promise<void> {
 		setVerifying(true);
 		setError(null);
+		setVerification(null);
 		try {
-			const res = await api.post<{ accountName: string }>(
-				"admin/vendors/payout-account/resolve",
-				{ providerId: provider.id, accountNumber: accountNumber.trim(), bankCode },
-			);
-			setAccountName(res.accountName);
+			const res = await api.post<{ accountName: string }>("admin/vendors/payout-account/resolve", {
+				providerId: provider.id,
+				accountNumber: normalizedAccountNumber,
+				bankCode,
+			});
+			setVerification({ key: verificationKey, accountName: res.accountName });
 		} catch (err) {
-			setAccountName(null);
-			setError(err instanceof Error ? err.message : "Could not verify the account");
+			setVerification({
+				key: verificationKey,
+				error: err instanceof Error ? err.message : "Could not verify the account",
+			});
 		} finally {
 			setVerifying(false);
 		}
@@ -840,7 +853,7 @@ function PayoutAccountForm({
 			await api.post("admin/vendors/payout-account", {
 				providerId: provider.id,
 				vendorId: vendor.id,
-				accountNumber: accountNumber.trim(),
+				accountNumber: normalizedAccountNumber,
 				bankCode,
 				country,
 				businessName: businessName.trim(),
@@ -861,9 +874,9 @@ function PayoutAccountForm({
 	return (
 		<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
 			<h3 style={{ margin: "0 0 8px", fontSize: "1em" }}>{provider.label} payout account</h3>
-			{error && (
+			{formError && (
 				<Alert type="error" title="Could not set up the account">
-					{error}
+					{formError}
 				</Alert>
 			)}
 			<FormField label="Country">
@@ -872,7 +885,7 @@ function PayoutAccountForm({
 					onChange={(e) => {
 						setCountry(e.currentTarget.value);
 						setBankCode("");
-						setAccountName(null);
+						setVerification(null);
 					}}
 					options={countries.map((c) => ({ value: c.value, label: c.label }))}
 					disabled={creating}
@@ -890,7 +903,7 @@ function PayoutAccountForm({
 					value={bankCode || null}
 					onChange={(next) => {
 						setBankCode(next ?? "");
-						setAccountName(null);
+						setVerification(null);
 					}}
 					options={(banks ?? []).map((b) => ({ value: b.code, label: b.name }))}
 					placeholder="Search banks or mobile money…"
@@ -903,7 +916,7 @@ function PayoutAccountForm({
 					value={accountNumber}
 					onChange={(e) => {
 						setAccountNumber(e.currentTarget.value);
-						setAccountName(null);
+						setVerification(null);
 					}}
 					disabled={creating}
 				/>
@@ -913,7 +926,7 @@ function PayoutAccountForm({
 					<Button
 						size="sm"
 						onClick={verify}
-						disabled={creating || verifying || !bankCode || accountNumber.trim().length < 4}
+						disabled={creating || verifying || !bankCode || normalizedAccountNumber.length < 4}
 					>
 						{verifying ? "Verifying…" : "Verify account"}
 					</Button>
@@ -979,7 +992,7 @@ function PayoutAccountForm({
 					disabled={creating}
 				/>
 			</FormField>
-			<Button variant="primary" onClick={create} disabled={!valid || creating}>
+			<Button variant="primary" onClick={create} disabled={!valid || creating || verifying}>
 				{creating ? "Creating…" : "Create payout account"}
 			</Button>
 		</div>

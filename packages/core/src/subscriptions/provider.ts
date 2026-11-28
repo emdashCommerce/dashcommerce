@@ -165,13 +165,22 @@ export async function recordProviderSubscriptionInvoice(
 	const existing = existingResult.items[0];
 	const existingInvoice = existing?.data as SubscriptionInvoice | undefined;
 	const status = input.status ?? "paid";
-	// A paid invoice is final. Returning it avoids extending the period a
-	// second time if the same charge is delivered with a different event id.
 	if (existingInvoice?.status === "paid" && status === "paid") {
+		await applyProviderInvoicePeriod(ctx, existingInvoice);
 		return { ...existingInvoice, id: existing?.id ?? existingInvoice.id };
 	}
 	const id = existing?.id ?? randomId();
 	const now = new Date().toISOString();
+	const periodStart =
+		status === "paid" ? (input.periodStart ?? input.subscription.currentPeriodStart) : undefined;
+	const periodEnd = periodStart
+		? (input.periodEnd ??
+			addSubscriptionInterval(
+				periodStart,
+				input.subscription.interval,
+				input.subscription.intervalCount,
+			))
+		: undefined;
 
 	const invoice: SubscriptionInvoice = {
 		id,
@@ -181,29 +190,32 @@ export async function recordProviderSubscriptionInvoice(
 		subscriptionId: input.subscription.id,
 		amount: money(input.currency, input.amount),
 		status,
-		...(status === "paid" ? { paidAt: input.paidAt ?? now } : {}),
+		...(status === "paid" ? { paidAt: input.paidAt ?? now, periodStart, periodEnd } : {}),
 		attemptCount: input.attemptCount ?? 0,
-		createdAt: (existing?.data as SubscriptionInvoice | undefined)?.createdAt ?? now,
+		createdAt: existingInvoice?.createdAt ?? now,
 	};
+	// Freeze the period before updating the subscription so a replay can
+	// finish applying it without extending a second time.
 	await invoiceStore(ctx).put(id, invoice);
-
-	if (status === "paid") {
-		const periodStart = input.periodStart ?? input.subscription.currentPeriodStart;
-		const periodEnd =
-			input.periodEnd ??
-			addSubscriptionInterval(
-				periodStart,
-				input.subscription.interval,
-				input.subscription.intervalCount,
-			);
-		await providerSubsStore(ctx).put(input.subscription.id, {
-			...input.subscription,
-			status: "active",
-			currentPeriodStart: periodStart,
-			currentPeriodEnd: periodEnd,
-			updatedAt: now,
-		});
-	}
-
+	await applyProviderInvoicePeriod(ctx, invoice);
 	return invoice;
+}
+
+async function applyProviderInvoicePeriod(
+	ctx: PluginContext,
+	invoice: SubscriptionInvoice,
+): Promise<void> {
+	const { periodStart, periodEnd } = invoice;
+	if (invoice.status !== "paid" || !periodStart || !periodEnd) return;
+	const store = providerSubsStore(ctx);
+	const subscription = await store.get(invoice.subscriptionId);
+	if (!subscription) throw new Error(`Subscription ${invoice.subscriptionId} is missing`);
+	if (Date.parse(subscription.currentPeriodEnd) >= Date.parse(periodEnd)) return;
+	await store.put(invoice.subscriptionId, {
+		...subscription,
+		status: "active",
+		currentPeriodStart: periodStart,
+		currentPeriodEnd: periodEnd,
+		updatedAt: new Date().toISOString(),
+	});
 }

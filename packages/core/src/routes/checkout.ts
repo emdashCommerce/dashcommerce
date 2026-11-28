@@ -902,6 +902,14 @@ export const checkoutRoutes = {
 				{ ...initCheckout, checkoutStyle: onPage ? "on_page" : "hosted" },
 				creds,
 			);
+			const snapshot: CheckoutDraftSnapshot = {
+				cart: recalculated,
+				ttlMs: DRAFT_TTL_MS,
+				createdAt: new Date().toISOString(),
+				providerId: provider.id,
+				checkoutReference: checkoutResult.checkoutReference,
+				providerSplitRequested: Boolean(allocations?.length),
+			};
 			if (onPage) {
 				if (checkoutResult.kind !== "on_page") {
 					return new Response(
@@ -909,13 +917,7 @@ export const checkoutRoutes = {
 						{ status: 502, headers: { "Content-Type": "application/json" } },
 					);
 				}
-				await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
-					cart: recalculated,
-					ttlMs: DRAFT_TTL_MS,
-					createdAt: new Date().toISOString(),
-					providerId: provider.id,
-					checkoutReference: checkoutResult.checkoutReference,
-				});
+				await ctx.kv.set(draftKey(orderDraftId), snapshot);
 				return new Response(
 					JSON.stringify({
 						kind: "on_page",
@@ -942,13 +944,7 @@ export const checkoutRoutes = {
 				);
 			}
 
-			await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
-				cart: recalculated,
-				ttlMs: DRAFT_TTL_MS,
-				createdAt: new Date().toISOString(),
-				providerId: provider.id,
-				checkoutReference: checkoutResult.checkoutReference,
-			});
+			await ctx.kv.set(draftKey(orderDraftId), snapshot);
 
 			return new Response(
 				JSON.stringify({
@@ -990,6 +986,7 @@ export type CheckoutDraftSnapshot = {
 	createdAt: string;
 	providerId?: string;
 	checkoutReference?: string;
+	providerSplitRequested?: boolean;
 };
 
 export function draftKey(orderDraftId: string): string {

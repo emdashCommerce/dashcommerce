@@ -16,7 +16,7 @@ import {
 } from "../src/payment-provider";
 import sandbox from "../src/sandbox-entry";
 import type { Order, Vendor } from "../src/types";
-import { makeRouteContext, ticketCart } from "./helpers/route-harness";
+import { deliverWebhook, makeRouteContext, ticketCart } from "./helpers/route-harness";
 
 afterEach(() => resetPaymentProviders());
 
@@ -114,6 +114,99 @@ async function paidSplitOrder(providerImpl: PaymentProvider) {
 }
 
 describe("split refunds", () => {
+	it.each([
+		{ mode: "hosted", split: true },
+		{ mode: "embedded", split: true },
+		{ mode: "hosted", split: false },
+	])(
+		"honors the checkout split in $mode mode with split=$split and no settlement",
+		async ({ mode, split }) => {
+			const base = createMockPaymentProvider({
+				id: "flw",
+				onPageCheckout: true,
+				capabilities: { splits: true, splitRefunds: false },
+				getPaymentStatusResult: {
+					status: "succeeded",
+					amount: 150_000,
+					currency: "KES",
+					paymentReference: "pay_without_settlement",
+				},
+			});
+			let allocationCount = 0;
+			let refundCalls = 0;
+			registerPaymentProvider({
+				...base,
+				webhookHeaders: ["verif-hash"],
+				async initCheckout(ctx, input, credentials) {
+					allocationCount = input.allocations?.length ?? 0;
+					return base.initCheckout(ctx, input, credentials);
+				},
+				async refund(ctx, input, credentials) {
+					refundCalls += 1;
+					return base.refund(ctx, input, credentials);
+				},
+			});
+			const { ctx, getCol } = makeRouteContext({
+				"settings:paymentProvider": "flw",
+				"settings:checkoutMode": mode,
+				"settings:flwSecretKey": "test-key",
+				"settings:flwWebhookSecret": "test-secret",
+			});
+			getCol("vendors").set("v1", vendor("v1", "RS_V1"));
+			const cart = ticketCart("sess_without_settlement");
+			if (split) cart.items = cart.items.map((line) => ({ ...line, vendorId: "v1" }));
+			await ctx.kv.set(`cart:${cart.sessionId}`, cart);
+			const routeCtx = {
+				...ctx,
+				input: { customerEmail: "supporter@example.com" },
+				request: new Request("http://test/checkout/create-session", {
+					method: "POST",
+					headers: { Cookie: `dashcommerce_sid=${cart.sessionId}` },
+				}),
+			} as unknown as RouteContext;
+			const checkout = (await sandbox.routes["checkout/create-session"].handler(
+				routeCtx,
+				ctx,
+			)) as Response;
+			expect(checkout.status).toBe(200);
+			expect(allocationCount).toBe(split ? 1 : 0);
+			const { orderDraftId } = (await checkout.json()) as { orderDraftId: string };
+			const webhook = await deliverWebhook(
+				ctx,
+				JSON.stringify({
+					id: "evt_without_settlement",
+					type: "charge.succeeded",
+					orderDraftId,
+					paymentReference: "pay_without_settlement",
+					amount: 150_000,
+					currency: "KES",
+				}),
+				{ "verif-hash": "signed" },
+			);
+			expect(webhook.status).toBe(200);
+			const order = [...getCol("orders").values()][0] as Order;
+			expect(order.providerSplitRequested).toBe(split);
+			expect(order.providerSplits).toBeUndefined();
+
+			const input = {
+				orderId: order.id,
+				amount: { amount: 10_000, currency: "KES" },
+				idempotencyKey: "refund:without-settlement",
+			};
+			if (split) {
+				await expect(refundOrder(ctx, input)).rejects.toThrow(/cannot refund split payments/i);
+				// Orders saved before the flag can still identify their vendor items.
+				const { providerSplitRequested: _old, ...legacyOrder } = order;
+				getCol("orders").set(order.id, legacyOrder);
+				await expect(refundOrder(ctx, input)).rejects.toThrow(/cannot refund split payments/i);
+				expect(refundCalls).toBe(0);
+			} else {
+				await expect(refundOrder(ctx, input)).resolves.toMatchObject({ status: "succeeded" });
+				expect(refundCalls).toBe(1);
+			}
+		},
+	);
+
 	it("refuses before calling a provider that cannot refund splits", async () => {
 		const { ctx, getCol, order } = await paidSplitOrder(provider(false));
 		await expect(

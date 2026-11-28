@@ -264,13 +264,14 @@ export interface CreateOrderInput {
 	paymentIntent: StripePaymentIntent;
 	cartSnapshot: CartState;
 	orderDraftId: string;
+	providerSplitRequested?: boolean;
 }
 
 export async function createOrderFromPaymentIntent(
 	ctx: PluginContext,
 	input: CreateOrderInput,
 ): Promise<{ order: Order; duplicate: boolean }> {
-	const { paymentIntent: pi, cartSnapshot: cart, orderDraftId } = input;
+	const { paymentIntent: pi, cartSnapshot: cart, orderDraftId, providerSplitRequested } = input;
 
 	// (1) Idempotency check.
 	const existing = await findOrderByPaymentIntent(ctx, pi.id);
@@ -376,6 +377,7 @@ export async function createOrderFromPaymentIntent(
 		refundedTotal: zero(cart.currency),
 		taxLines: cart.taxLines,
 		couponCodes: cart.coupons.map((c) => c.code),
+		...(providerSplitRequested === undefined ? {} : { providerSplitRequested }),
 		stripePaymentIntentId: pi.id,
 		providerId: pi.metadata?.providerId ?? "stripe",
 		paymentReference: pi.id,

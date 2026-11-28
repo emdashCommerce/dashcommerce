@@ -101,6 +101,30 @@ function setup(current: { paymentReference: string; subscription: ProviderSubscr
 	return harness;
 }
 
+function failNextPut(
+	ctx: PluginContext,
+	collectionName: "orders" | "subscriptions" | "subscription_invoices",
+	matches: (row: Record<string, unknown>) => boolean = () => true,
+) {
+	let fail = true;
+	ctx.storage = new Proxy(ctx.storage, {
+		get(target, key) {
+			const collection = Reflect.get(target, key);
+			if (key !== collectionName) return collection;
+			return {
+				...collection,
+				async put(id: string, row: Record<string, unknown>) {
+					if (fail && matches(row)) {
+						fail = false;
+						throw new Error(`Simulated ${collectionName} write failure`);
+					}
+					return collection.put(id, row);
+				},
+			};
+		},
+	});
+}
+
 describe("addSubscriptionInterval", () => {
 	it("clamps a month-end start to the last day of the next month", () => {
 		expect(addSubscriptionInterval("2026-01-31T00:00:00.000Z", "month", 1)).toBe(
@@ -119,6 +143,86 @@ describe("addSubscriptionInterval", () => {
 });
 
 describe("provider-managed subscriptions", () => {
+	it.each(["subscriptions", "orders"] as const)(
+		"recovers the first charge when the %s write fails",
+		async (collection) => {
+			const current = {
+				paymentReference: "pay_first",
+				subscription: { providerSubscriptionId: "plan_recover", status: "active" as const },
+			};
+			const { ctx, getCol } = setup(current);
+			failNextPut(
+				ctx,
+				collection,
+				(row) => collection === "subscriptions" || Boolean(row.subscriptionIds),
+			);
+			const body = JSON.stringify({
+				id: "evt_first",
+				orderDraftId: DRAFT_ID,
+				paymentReference: current.paymentReference,
+			});
+
+			expect((await deliver(ctx, body)).status).toBe(500);
+			expect(getCol("orders").size).toBe(1);
+			const retry = await deliver(ctx, body);
+			expect(retry.status).toBe(200);
+			const [order] = getCol("orders").values();
+			const [sub] = getCol("subscriptions").values();
+			expect(order?.subscriptionIds).toEqual([sub?.id]);
+			expect(getCol("orders").size).toBe(1);
+			expect(getCol("subscriptions").size).toBe(1);
+			expect(getCol("subscription_invoices").size).toBe(0);
+		},
+	);
+
+	it.each(["subscription_invoices", "subscriptions"] as const)(
+		"retries a paid renewal when the %s write fails",
+		async (collection) => {
+			const current = {
+				paymentReference: "pay_initial",
+				subscription: {
+					providerSubscriptionId: "plan_renewal",
+					status: "active" as const,
+					currentPeriodStart: "2026-01-01T00:00:00.000Z",
+					currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+				},
+			};
+			const { ctx, getCol } = setup(current);
+			expect(
+				(
+					await deliver(
+						ctx,
+						JSON.stringify({
+							id: "evt_initial",
+							orderDraftId: DRAFT_ID,
+							paymentReference: current.paymentReference,
+						}),
+					)
+				).status,
+			).toBe(200);
+
+			failNextPut(ctx, collection);
+			current.paymentReference = "pay_renewal";
+			const renewal = {
+				id: "evt_renewal",
+				orderDraftId: "",
+				paymentReference: current.paymentReference,
+			};
+			expect((await deliver(ctx, JSON.stringify(renewal))).status).toBe(500);
+			const retry = await deliver(ctx, JSON.stringify(renewal));
+			expect(retry.status).toBe(200);
+			expect(await retry.json()).toMatchObject({ renewal: true });
+			expect(
+				(await deliver(ctx, JSON.stringify({ ...renewal, id: "evt_renewal_reissued" }))).status,
+			).toBe(200);
+
+			const [sub] = getCol("subscriptions").values();
+			expect(sub?.currentPeriodEnd).toBe("2026-03-01T00:00:00.000Z");
+			expect(getCol("orders").size).toBe(1);
+			expect(getCol("subscription_invoices").size).toBe(1);
+		},
+	);
+
 	it("creates an order and a local subscription from the first charge", async () => {
 		const current = {
 			paymentReference: "pay_sub_1",

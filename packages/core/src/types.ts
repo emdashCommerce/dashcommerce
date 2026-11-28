@@ -246,6 +246,8 @@ export interface Order {
 	taxLines: TaxLine[];
 	couponCodes: string[];
 	vendorSplits?: VendorSplit[];
+	/** Checkout sent split allocations to the payment provider. */
+	providerSplitRequested?: boolean;
 	/** Provider-reported settlement of a split payment, for reconciliation. */
 	providerSplits?: OrderProviderSplit;
 	subscriptionIds?: string[];
@@ -543,6 +545,9 @@ export interface SubscriptionInvoice {
 	amount: Money;
 	status: "draft" | "open" | "paid" | "uncollectible" | "void";
 	paidAt?: IsoDateTime;
+	/** Billing period granted by this provider-managed invoice. */
+	periodStart?: IsoDateTime;
+	periodEnd?: IsoDateTime;
 	attemptCount: number;
 	createdAt: IsoDateTime;
 }
