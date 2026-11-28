@@ -7,7 +7,8 @@
  * double-clicks don't submit twice.
  */
 
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { format as formatMoney, minorUnitsFactor } from "../../money";
 import {
 	Alert,
 	Button,
@@ -27,6 +28,14 @@ import { StatusBadge } from "../ui/StatusBadge";
 import { EmptyState } from "../ui/EmptyState";
 import type { Order, OrderItem, OrderStatus, Refund } from "../../types";
 import { T } from "../theme";
+
+/** Stable id for one refund attempt, so a retry after a timeout is idempotent. */
+function newRefundRequestId(): string {
+	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+		return `refund:${crypto.randomUUID()}`;
+	}
+	return `refund:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+}
 
 // Allowed forward transitions mirrored from `../../orders/status.ts` so the
 // UI can hide impossible targets without round-tripping to the server.
@@ -130,7 +139,7 @@ export function OrderDetailPage() {
 			<BackToOrdersLink />
 			<OrderHeader order={order} onChanged={reload} />
 			<ItemsCard items={items} />
-			<RefundCard order={order} items={items} onRefunded={reload} />
+			<RefundCard key={order.id} order={order} items={items} onRefunded={reload} />
 			<RefundHistoryCard refunds={refunds} />
 		</div>
 	);
@@ -311,6 +320,17 @@ function ItemsCard({ items }: { items: OrderItem[] }) {
 // Refund panel
 // ────────────────────────────────────────────────────────────────────────────
 
+interface RefundAttempt {
+	request: {
+		amount: number;
+		currency: string;
+		reason?: string;
+		restock?: boolean;
+		refundRequestId: string;
+	};
+	providerPending: boolean;
+}
+
 function RefundCard({
 	order,
 	items,
@@ -322,76 +342,113 @@ function RefundCard({
 }) {
 	const api = usePluginAPI();
 	const remainingMinor = order.paidTotal.amount - order.refundedTotal.amount;
-	const remainingMajor = remainingMinor / 100;
+	const factor = minorUnitsFactor(order.currency);
+	const remainingMajor = remainingMinor / factor;
+	const decimalPlaces = Math.log10(factor);
 
 	const [amountMajor, setAmountMajor] = useState<number | undefined>(undefined);
 	const [reason, setReason] = useState("");
 	const [restock, setRestock] = useState(false);
 	const [pending, setPending] = useState(false);
-
-	const fullRefund = useMemo(() => {
-		return typeof amountMajor === "number" && amountMajor >= remainingMajor;
-	}, [amountMajor, remainingMajor]);
+	const [attempt, setAttempt] = useState<RefundAttempt | null>(null);
+	const submitting = useRef(false);
+	const fieldsLocked = pending || attempt !== null;
 
 	async function issueRefund(): Promise<void> {
-		if (pending) return;
-		const amt = typeof amountMajor === "number" ? Math.round(amountMajor * 100) : 0;
-		if (!Number.isFinite(amt) || amt <= 0) {
+		if (submitting.current) return;
+		const amount = attempt?.request.amount ?? Math.round((amountMajor ?? 0) * factor);
+		if (!Number.isSafeInteger(amount) || amount <= 0) {
 			toast.error("Enter a positive refund amount");
 			return;
 		}
-		if (amt > remainingMinor) {
+		if (!attempt && amount > remainingMinor) {
 			toast.error(
 				"Refund exceeds refundable balance",
 				"Reduce the amount to the remaining balance.",
 			);
 			return;
 		}
-		const ok = await confirm({
-			title: fullRefund ? "Refund the remaining balance?" : "Issue partial refund?",
-			description: fullRefund
-				? "Stripe will return the remaining balance to the customer immediately. This cannot be undone."
-				: "Stripe will return the specified amount to the customer. This cannot be undone.",
-			confirmLabel: "Issue refund",
-			destructive: true,
-		});
-		if (!ok) return;
 
+		submitting.current = true;
 		setPending(true);
 		try {
-			await api.post(`admin/orders/refund?id=${encodeURIComponent(order.id)}`, {
-				amount: amt,
-				currency: order.currency,
-				reason: reason || undefined,
-				restock: restock || undefined,
-			});
-			toast.success(
-				fullRefund ? "Full refund issued" : "Refund issued",
-				`${(amt / 100).toFixed(2)} ${order.currency} returned to customer.`,
+			let activeAttempt = attempt;
+			if (!activeAttempt) {
+				const fullRefund = amount === remainingMinor;
+				const ok = await confirm({
+					title: fullRefund ? "Refund the remaining balance?" : "Issue partial refund?",
+					description: `The payment provider will refund ${formatMoney({ amount, currency: order.currency })} to the customer. This cannot be undone.`,
+					confirmLabel: "Issue refund",
+					destructive: true,
+				});
+				if (!ok) return;
+				activeAttempt = {
+					request: {
+						amount,
+						currency: order.currency,
+						reason: reason || undefined,
+						restock: restock || undefined,
+						refundRequestId: newRefundRequestId(),
+					},
+					providerPending: false,
+				};
+				setAttempt(activeAttempt);
+			}
+
+			const result = await api.post<{ refund: Refund }>(
+				`admin/orders/refund?id=${encodeURIComponent(order.id)}`,
+				activeAttempt.request,
 			);
+			if (result.refund?.status === "pending") {
+				setAttempt({ ...activeAttempt, providerPending: true });
+				toast.info("Refund is pending", "Check its status again for the provider’s final result.");
+				return;
+			}
+			if (result.refund?.status === "failed") {
+				toast.error(
+					"Refund failed at the provider",
+					"The order was not changed. Start a new attempt when you are ready.",
+				);
+			} else if (result.refund?.status === "succeeded") {
+				toast.success(
+					"Refund issued",
+					`${formatMoney(result.refund.amount)} returned to customer.`,
+				);
+			} else {
+				throw new Error("The refund response did not include a recognized status.");
+			}
 			setAmountMajor(undefined);
 			setReason("");
 			setRestock(false);
+			setAttempt(null);
 			await onRefunded();
 		} catch (err) {
-			toast.error(
-				"Refund failed",
-				err instanceof Error ? err.message : String(err),
-			);
+			toast.error("Refund status unavailable", err instanceof Error ? err.message : String(err));
 		} finally {
+			submitting.current = false;
 			setPending(false);
 		}
 	}
 
 	return (
 		<Card title="Issue refund">
-			{remainingMinor <= 0 ? (
+			{remainingMinor <= 0 && !attempt ? (
 				<Alert type="info" title="No refundable balance">
 					This order has already been fully refunded or never captured
 					payment.
 				</Alert>
 			) : (
 				<div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+					{attempt && !pending && (
+						<Alert
+							type="info"
+							title={attempt.providerPending ? "Refund pending" : "Refund status unavailable"}
+						>
+							{attempt.providerPending
+								? "Check again for the provider’s final result."
+								: "Retry to check or submit the original refund with the same details."}
+						</Alert>
+					)}
 					<div style={{ fontSize: 13, color: T.text }}>
 						Up to <MoneyDisplay value={{ ...order.paidTotal, amount: remainingMinor }} /> can
 						still be refunded.
@@ -409,9 +466,9 @@ function RefundCard({
 								onChange={setAmountMajor}
 								min={0}
 								max={remainingMajor}
-								step={0.01}
-								placeholder={remainingMajor.toFixed(2)}
-								disabled={pending}
+								step={1 / factor}
+								placeholder={remainingMajor.toFixed(decimalPlaces)}
+								disabled={fieldsLocked}
 							/>
 						</FormField>
 						<FormField label="Reason" description="Optional, shown in refund history.">
@@ -419,7 +476,7 @@ function RefundCard({
 								value={reason}
 								onChange={(e) => setReason(e.currentTarget.value)}
 								placeholder="e.g. Damaged on arrival"
-								disabled={pending}
+								disabled={fieldsLocked}
 							/>
 						</FormField>
 					</div>
@@ -428,20 +485,26 @@ function RefundCard({
 							label="Restock items"
 							checked={restock}
 							onChange={setRestock}
-							disabled={pending}
+							disabled={fieldsLocked}
 						/>
 					)}
 					<div style={{ display: "flex", gap: 8 }}>
 						<Button
 							variant="danger"
-							disabled={pending || !amountMajor}
+							disabled={pending || (!attempt && !amountMajor)}
 							onClick={issueRefund}
 						>
-							{pending ? "Refunding…" : "Issue refund"}
+							{pending
+								? "Checking refund…"
+								: attempt?.providerPending
+									? "Check refund status"
+									: attempt
+										? "Retry refund"
+										: "Issue refund"}
 						</Button>
 						<Button
 							variant="secondary"
-							disabled={pending}
+							disabled={fieldsLocked}
 							onClick={() => setAmountMajor(remainingMajor)}
 						>
 							Fill remaining balance

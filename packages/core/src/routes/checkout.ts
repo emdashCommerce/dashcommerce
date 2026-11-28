@@ -514,6 +514,19 @@ export const checkoutRoutes = {
 			}
 
 			const policy = await readPricingPolicy(ctx);
+			// Stripe Tax is calculated by Stripe at checkout; core deliberately
+			// returns zero tax for this mode. A provider that does not implement
+			// Stripe's automatic_tax would charge the pre-tax total, so fail
+			// loudly instead of silently undercharging.
+			if (policy.taxMode === "stripe_tax" && provider.id !== "stripe") {
+				return new Response(
+					JSON.stringify({
+						error: `Stripe Tax is only available with Stripe. Set the tax mode to flat or table in Settings → Tax, or switch to Stripe.`,
+						code: "stripe_tax_requires_stripe",
+					}),
+					{ status: 409, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			const recalculated = await finalizeCheckoutCart(ctx, withContact, items, policy);
 			if (totalsChanged(withContact, recalculated)) {
 				await save(ctx, recalculated);

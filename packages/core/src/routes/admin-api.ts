@@ -353,10 +353,19 @@ async function postOrderRefund(
 		currency?: string;
 		reason?: string;
 		restock?: boolean;
+		refundRequestId?: string;
 		lineItemRefunds?: Array<{ orderItemId: string; quantity: number; amount: number; currency: string }>;
 	};
 	if (typeof input.amount !== "number" || !input.currency) {
 		return json({ error: "amount (minor units) and currency required" }, 400);
+	}
+	const requestedRefundId =
+		typeof input.refundRequestId === "string" ? input.refundRequestId.trim() : "";
+	if (requestedRefundId && !/^[A-Za-z0-9:_-]{1,200}$/.test(requestedRefundId)) {
+		return json(
+			{ error: "refundRequestId must be 1–200 letters, digits, colons, underscores or hyphens" },
+			400,
+		);
 	}
 	try {
 		const refund = await refundOrder(ctx, {
@@ -373,7 +382,7 @@ async function postOrderRefund(
 						})),
 					}
 				: {}),
-			idempotencyKey: `refund:${orderId}:${randomId()}`,
+			idempotencyKey: requestedRefundId || `refund:${orderId}:${randomId()}`,
 		});
 		return json({ refund });
 	} catch (err) {
